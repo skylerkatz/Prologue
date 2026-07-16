@@ -1,0 +1,61 @@
+src/components/OrphanedComments.tsx
+  s_59cd5ee6e8162a::t_d1fe6cd04cbce7 2-3,6,8-10,19-20,24-25,31,67-70,72-77
+src/diff/rows.ts
+  s_59cd5ee6e8162a::t_698694d86d7999 206-212
+  s_59cd5ee6e8162a::t_c199928ea811c0 326
+  s_59cd5ee6e8162a::t_73bd1353feb066 252-254,260,264-278,287
+  s_59cd5ee6e8162a::t_ba3300e7b4b0c9 7
+  s_59cd5ee6e8162a::t_6df26b91861e16 115-117,127-128
+src/components/DiffView.tsx
+  s_59cd5ee6e8162a::t_c283f88f0eb4c2 331-339,346-355,360,370
+  s_59cd5ee6e8162a::t_3e6f788b6365c1 602
+  s_59cd5ee6e8162a::t_f324d138269332 70-71
+  s_59cd5ee6e8162a::t_8d9242fc9f3a6f 99
+  s_59cd5ee6e8162a::t_eb394894d41ef0 628,636
+  s_59cd5ee6e8162a::t_c837193fb510c0 40,43-48
+  s_59cd5ee6e8162a::t_c01ffe86f6c757 594
+  s_59cd5ee6e8162a::t_81ee026c0b1c7e 662,670
+  s_59cd5ee6e8162a::t_501d6121c6aea6 735-736,744,749-755,759,762-764,767-771,773-777,779
+  s_59cd5ee6e8162a::t_f211a702db19df 392-393
+src/App.css
+  s_59cd5ee6e8162a::t_885b48925b7ec1 1115-1141
+src/types.ts
+  s_59cd5ee6e8162a::t_c866ff688b2198 166-168,172-188
+  s_59cd5ee6e8162a::t_6c28a89371a230 126-132
+  s_59cd5ee6e8162a::t_b7f27e7d475cb1 189-190
+src/components/ReviewShell.tsx
+  s_59cd5ee6e8162a::t_9a8c08aa79f02b 13-23
+  s_59cd5ee6e8162a::t_09b854131e3d0d 210-213,215,220-224,230,242,244-245
+  s_59cd5ee6e8162a::t_7eb1a2a1ed2816 186-188,191-195
+  s_59cd5ee6e8162a::t_ac477a5e024ecc 395,397,404-405,419
+  s_59cd5ee6e8162a::t_a67efaa0fe54ba 265-266
+  s_59cd5ee6e8162a::t_1f919a46d36a8e 196
+src/components/ReviewCommentsPanel.tsx
+  s_59cd5ee6e8162a::t_54dc83c394ac4c 2-3,6,8-9,11,20,22,29,50,52-54,56-61
+src/components/ArchivedReviews.tsx
+  s_59cd5ee6e8162a::t_3799334fedb3c9 1,3-4
+  s_59cd5ee6e8162a::t_e19ee2ba20aa4b 51-61
+  s_59cd5ee6e8162a::t_d7491e1a9cc47c 124,126,129,141-144
+src/components/Comments.tsx
+  s_59cd5ee6e8162a::t_3a722ba6136d75 332-432
+  s_59cd5ee6e8162a::t_9e1609a9c525c6 112-113,121-122,131,137
+  s_59cd5ee6e8162a::t_e9deff1539c2a4 204-211,226-235
+  s_59cd5ee6e8162a::t_7e797b799818df 172,176-177,180-183
+  s_59cd5ee6e8162a::t_10d9cfbd9d2660 287-293
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "8fd33b5c512f2afa33f5a4f8399ccd0fdc79621f",
+  "prompts": {},
+  "sessions": {
+    "s_59cd5ee6e8162a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f7f9958b-466b-4706-8710-9a61d1cd4c43",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
