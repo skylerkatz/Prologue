@@ -8,3 +8,9 @@ processes:
     auto_restart: true
     restart_when_changed: []
     env: {}
+  Frontend Only:
+    command: npm run dev
+    auto_start: false
+  TypeScript Check:
+    command: npx tsc --noEmit --watch
+    auto_start: false
