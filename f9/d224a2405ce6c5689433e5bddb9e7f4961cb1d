@@ -1,0 +1,26 @@
+src-tauri/src/diff.rs
+  s_1588a710df61ff::t_1b37942807de1c 7
+  s_1588a710df61ff::t_35131e4ca97302 399-402
+  s_1588a710df61ff::t_8165c8301c6030 19-38
+src-tauri/src/review.rs
+  s_1588a710df61ff::t_065b09ae73e203 1-808
+src-tauri/src/lib.rs
+  s_1588a710df61ff::t_fbcb6a2b61d18f 42-47
+  s_1588a710df61ff::t_dd4830c0ff4785 1,4,8-10,15-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "f9d224a2405ce6c5689433e5bddb9e7f4961cb1d",
+  "prompts": {},
+  "sessions": {
+    "s_1588a710df61ff": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e3d14ef2-522d-434d-89ff-66ded7c3d1ef",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
