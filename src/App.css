@@ -12,6 +12,9 @@
   --text-muted: #59636e;
   --accent: #0969da;
   --danger: #d1242f;
+  --added: #1a7f37;
+  --removed: #d1242f;
+  --renamed: #9a6700;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -23,6 +26,9 @@
     --text-muted: #9198a1;
     --accent: #4493f8;
     --danger: #f85149;
+    --added: #3fb950;
+    --removed: #f85149;
+    --renamed: #d29922;
   }
 }
 
@@ -261,12 +267,142 @@ button.primary:hover {
   color: #ffffff;
 }
 
-.diff-placeholder {
+.refresh-button {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.refresh-button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.refresh-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Diff file list */
+
+.diff-main {
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.diff-empty {
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--text-muted);
   padding: 2rem;
   text-align: center;
+}
+
+.file-list {
+  max-width: 56rem;
+  margin: 1rem auto;
+  padding: 0 1rem;
+}
+
+.file-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 0 0.25rem 0.5rem;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.file-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.file-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.45rem 0.75rem;
+}
+
+.file-row + .file-row {
+  border-top: 1px solid var(--border);
+}
+
+.file-row:hover {
+  background: var(--bg-subtle);
+}
+
+.status-badge {
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.status-added {
+  background: var(--added);
+}
+
+.status-modified {
+  background: var(--accent);
+}
+
+.status-deleted {
+  background: var(--removed);
+}
+
+.status-renamed {
+  background: var(--renamed);
+}
+
+.file-path {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-old-path,
+.file-rename-arrow {
+  color: var(--text-muted);
+}
+
+.file-counts {
+  flex: none;
+  display: inline-flex;
+  gap: 0.5rem;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.85rem;
+}
+
+.count-added {
+  color: var(--added);
+}
+
+.count-deleted {
+  color: var(--removed);
+}
+
+.file-binary {
+  color: var(--text-muted);
 }

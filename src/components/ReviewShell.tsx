@@ -1,5 +1,12 @@
-import type { BranchList, RepoInfo, WorkingTreeMode } from "../types";
-import { WORKING_TREE_MODES } from "../types";
+import { useEffect, useState } from "react";
+import { getDiffSummary } from "../ipc";
+import type {
+  BranchList,
+  DiffSummary,
+  RepoInfo,
+  WorkingTreeMode,
+} from "../types";
+import { FileList } from "./FileList";
 import { ModeToggle } from "./ModeToggle";
 
 interface ReviewShellProps {
@@ -8,9 +15,11 @@ interface ReviewShellProps {
   branch: string;
   baseBranch: string;
   mode: WorkingTreeMode;
+  refreshKey: number;
   onBranchChange: (branch: string) => void;
   onBaseBranchChange: (base: string) => void;
   onModeChange: (mode: WorkingTreeMode) => void;
+  onRefresh: () => void;
   onSwitchRepo: () => void;
 }
 
@@ -20,13 +29,45 @@ export function ReviewShell({
   branch,
   baseBranch,
   mode,
+  refreshKey,
   onBranchChange,
   onBaseBranchChange,
   onModeChange,
+  onRefresh,
   onSwitchRepo,
 }: ReviewShellProps) {
-  const modeLabel =
-    WORKING_TREE_MODES.find((m) => m.value === mode)?.label ?? mode;
+  const [summary, setSummary] = useState<DiffSummary | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!branch || !baseBranch) {
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    getDiffSummary(repo.path, baseBranch, branch, mode)
+      .then((next) => {
+        if (!cancelled) {
+          setSummary(next);
+        }
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setSummary(null);
+          setError(typeof e === "string" ? e : String(e));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [repo.path, branch, baseBranch, mode, refreshKey]);
 
   return (
     <div className="review-shell">
@@ -70,12 +111,28 @@ export function ReviewShell({
         </label>
         <div className="toolbar-spacer" />
         <ModeToggle mode={mode} onChange={onModeChange} />
+        <button
+          type="button"
+          className="refresh-button"
+          title="Refresh branches and diff"
+          onClick={onRefresh}
+          disabled={loading}
+        >
+          ↻ Refresh
+        </button>
       </header>
-      <main className="diff-placeholder">
-        <p>
-          Diff for <code>{baseBranch}</code> ← <code>{branch}</code> (
-          {modeLabel.toLowerCase()}) will render here in M2.
-        </p>
+      <main className="diff-main">
+        {error !== null ? (
+          <div className="diff-empty">
+            <p className="error">{error}</p>
+          </div>
+        ) : summary !== null ? (
+          <FileList summary={summary} />
+        ) : (
+          <div className="diff-empty">
+            <p>{loading ? "Computing diff…" : "Select branches to diff."}</p>
+          </div>
+        )}
       </main>
     </div>
   );

@@ -18,6 +18,7 @@ function App() {
   const [branch, setBranch] = useState("");
   const [baseBranch, setBaseBranch] = useState("");
   const [mode, setMode] = useState<WorkingTreeMode>("committed");
+  const [refreshKey, setRefreshKey] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -56,6 +57,20 @@ function App() {
     setRecents(await removeRecentRepo(path));
   }
 
+  /** Re-list branches (new ones appear) and recompute the current diff. */
+  async function refresh() {
+    if (!openState) {
+      return;
+    }
+    try {
+      const branchList = await listBranches(openState.repo.path);
+      setOpenState({ repo: openState.repo, branchList });
+    } catch {
+      // Keep the stale branch list; the diff itself still recomputes.
+    }
+    setRefreshKey((key) => key + 1);
+  }
+
   if (!openState) {
     return (
       <WelcomePage
@@ -75,9 +90,11 @@ function App() {
       branch={branch}
       baseBranch={baseBranch}
       mode={mode}
+      refreshKey={refreshKey}
       onBranchChange={setBranch}
       onBaseBranchChange={setBaseBranch}
       onModeChange={setMode}
+      onRefresh={() => void refresh()}
       onSwitchRepo={() => setOpenState(null)}
     />
   );
