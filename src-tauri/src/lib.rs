@@ -5,9 +5,21 @@ mod testutil;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_store::Builder::new().build())
+        .plugin(tauri_plugin_store::Builder::new().build());
+
+    // Agent automation bridge (WebSocket on 127.0.0.1:9223+). Debug builds
+    // with the `mcp-bridge` feature only; the plugin's default bind is
+    // 0.0.0.0, so pin it to localhost.
+    #[cfg(all(debug_assertions, feature = "mcp-bridge"))]
+    let builder = builder.plugin(
+        tauri_plugin_mcp_bridge::Builder::new()
+            .bind_address("127.0.0.1")
+            .build(),
+    );
+
+    builder
         .invoke_handler(tauri::generate_handler![
             repo::open_repo,
             repo::list_branches,
