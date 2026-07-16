@@ -1,3 +1,4 @@
+mod diff;
 mod repo;
 #[cfg(test)]
 mod testutil;
@@ -9,7 +10,9 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             repo::open_repo,
-            repo::list_branches
+            repo::list_branches,
+            diff::get_diff_summary,
+            diff::get_file_diff
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
