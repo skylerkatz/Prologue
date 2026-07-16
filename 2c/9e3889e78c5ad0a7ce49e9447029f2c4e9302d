@@ -1,0 +1,38 @@
+src-tauri/src/anchor.rs
+  s_3306764834fbc1::t_f93c41fb6fc2ce 333
+  s_3306764834fbc1::t_692042db543f55 192,202
+src/diff/segments.ts
+  s_3306764834fbc1::t_8ae7cec2612b35 1-71
+src/components/DiffView.tsx
+  s_3306764834fbc1::t_a96e4d24dc0027 880-888
+  s_3306764834fbc1::t_73f1637b86a224 13
+src-tauri/src/diff.rs
+  s_3306764834fbc1::t_72c9c731a86cd4 237,240
+  s_3306764834fbc1::t_4bdf59836d9ae5 90-94
+src/types.ts
+  s_3306764834fbc1::t_256a4943a27c3f 38-44,50-52
+src-tauri/src/intraline.rs
+  s_3306764834fbc1::t_8c71fbcb65bad2 1-80,83-210,215-293
+  s_3306764834fbc1::t_f878d3f52be309 81-82
+  s_3306764834fbc1::t_e045149edcbf14 211-214
+src-tauri/src/lib.rs
+  s_3306764834fbc1::t_521d92cf6cc2f5 5
+src/App.css
+  s_3306764834fbc1::t_a4dce7589d6779 832-843
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "2c9e3889e78c5ad0a7ce49e9447029f2c4e9302d",
+  "prompts": {},
+  "sessions": {
+    "s_3306764834fbc1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7637e194-9eca-4e7b-98e9-fed2bf425ae5",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
