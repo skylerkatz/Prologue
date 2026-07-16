@@ -23,6 +23,7 @@ import type {
 } from "../types";
 import { ArchivedReviews } from "./ArchivedReviews";
 import { DiffView } from "./DiffView";
+import { ExportMenu, type ExportTarget } from "./ExportMenu";
 import { FileList } from "./FileList";
 import { ModeToggle } from "./ModeToggle";
 import { OrphanedComments } from "./OrphanedComments";
@@ -222,6 +223,24 @@ export function ReviewShell({
     return comments.filter((c) => !orphaned.has(c.id));
   }, [comments, orphanedComments]);
 
+  const openCount = useMemo(
+    () => comments.filter((c) => c.state === "open").length,
+    [comments],
+  );
+
+  /** What the Export menu would export: the displayed diff's pinned params
+   * plus its active review; null (disabled) when there is neither. */
+  const exportTarget: ExportTarget | null =
+    view !== null && review !== null && review.status === "active" && !branchMerged
+      ? {
+          repoPath: repo.path,
+          base: view.base,
+          head: view.head,
+          mode: view.mode,
+          reviewId: review.id,
+        }
+      : null;
+
   const openCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const comment of comments) {
@@ -279,6 +298,7 @@ export function ReviewShell({
         </label>
         <div className="toolbar-spacer" />
         <ModeToggle mode={mode} onChange={onModeChange} />
+        <ExportMenu target={exportTarget} openCount={openCount} />
         <button
           type="button"
           className="refresh-button"

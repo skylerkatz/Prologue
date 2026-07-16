@@ -149,6 +149,13 @@ export interface NewCommentInput {
   body: string;
 }
 
+/** Clipboard export flavors; formatting happens in Rust. */
+export type ExportFormat =
+  | "markdown"
+  | "json"
+  | "prompt-markdown"
+  | "prompt-json";
+
 export const WORKING_TREE_MODES: ReadonlyArray<{
   value: WorkingTreeMode;
   label: string;

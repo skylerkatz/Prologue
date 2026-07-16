@@ -298,6 +298,64 @@ button.primary:hover {
   cursor: default;
 }
 
+/* Export dropdown + copy confirmation toast */
+
+.export-menu {
+  position: relative;
+}
+
+.export-options {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  min-width: 13rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+}
+
+.export-options button {
+  background: none;
+  border: none;
+  padding: 0.45rem 0.8rem;
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.export-options button:hover {
+  background: var(--bg-subtle);
+}
+
+.export-options button + button {
+  border-top: 1px solid var(--border);
+}
+
+.copy-toast {
+  position: fixed;
+  bottom: 1.25rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.85rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
+.copy-toast.error {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 /* Review body: file-list sidebar + diff pane */
 
 .diff-main {

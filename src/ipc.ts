@@ -6,6 +6,7 @@ import type {
   CommentState,
   ContextLines,
   DiffSummary,
+  ExportFormat,
   FileDiff,
   NewCommentInput,
   OpenReviewResult,
@@ -116,6 +117,28 @@ export function updateComment(
 
 export function deleteComment(commentId: number): Promise<void> {
   return invoke("delete_comment", { commentId });
+}
+
+/**
+ * Render the review's open comments as clipboard-ready text; SHAs, line
+ * ranges, and orphan status are resolved against the current diff in Rust.
+ */
+export function exportReview(
+  repoPath: string,
+  base: string,
+  head: string,
+  mode: WorkingTreeMode,
+  reviewId: number,
+  format: ExportFormat,
+): Promise<string> {
+  return invoke("export_review", {
+    repoPath,
+    base,
+    head,
+    mode,
+    reviewId,
+    format,
+  });
 }
 
 /** New-side lines `start..=end` (1-based, clamped) for expand-context. */
