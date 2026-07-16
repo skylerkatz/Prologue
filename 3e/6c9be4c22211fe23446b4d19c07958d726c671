@@ -1,0 +1,27 @@
+src/components/DiffView.tsx
+  s_3306764834fbc1::t_9c5e5339aef1de 439-526
+  s_3306764834fbc1::t_ed7054efa01014 108-111
+  s_3306764834fbc1::t_dc40ebc53e740f 626
+  s_3306764834fbc1::t_e5860cde515c67 652
+  s_3306764834fbc1::t_23fcfd0330d69d 562
+  s_3306764834fbc1::t_12bec9abea8f17 749,755-756,761-763
+  s_3306764834fbc1::t_d6d652844279f0 594
+src/App.css
+  s_3306764834fbc1::t_327e6ebaa48d02 722-726
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "3e6c9be4c22211fe23446b4d19c07958d726c671",
+  "prompts": {},
+  "sessions": {
+    "s_3306764834fbc1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7637e194-9eca-4e7b-98e9-fed2bf425ae5",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
