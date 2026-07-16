@@ -1,0 +1,21 @@
+solo.yml
+  s_b778e6ee266adf::t_6277d3a3c78a19 5
+.mcp.json
+  s_b778e6ee266adf::t_151dac76fac342 1-8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "9984d7f3099e770e5bb1997a6fda54365f57b615",
+  "prompts": {},
+  "sessions": {
+    "s_b778e6ee266adf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e065e1e-7166-463f-8f5e-87264c6dbd30",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
