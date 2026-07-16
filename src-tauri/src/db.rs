@@ -42,6 +42,10 @@ const MIGRATIONS: &[&str] = &[
         updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
     CREATE INDEX comments_by_review ON comments (review_id);",
+    // v2: comment replies — flat threads under a root comment. Replies carry
+    // review_id, parent_id, body, and timestamps; positional columns stay
+    // NULL (they inherit the root's context). Deleting a root cascades.
+    "ALTER TABLE comments ADD COLUMN parent_id INTEGER REFERENCES comments(id) ON DELETE CASCADE;",
 ];
 
 /// Open (creating if needed) the reviews database at `path` and bring its
@@ -133,6 +137,88 @@ mod tests {
         // ...but archived duplicates and other branches are fine.
         conn.execute(insert, ["/repo", "feature", "archived"]).unwrap();
         conn.execute(insert, ["/repo", "other", "active"]).unwrap();
+    }
+
+    /// A database as v1 left it: only the first migration applied, with a
+    /// review and comments already stored (Skyler's real reviews.db shape).
+    fn v1_database_with_rows(path: &Path) {
+        let conn = Connection::open(path).unwrap();
+        conn.execute_batch(&format!(
+            "CREATE TABLE schema_migrations (
+                version INTEGER PRIMARY KEY,
+                applied_at TEXT NOT NULL DEFAULT ({NOW})
+            );"
+        ))
+        .unwrap();
+        conn.execute_batch(MIGRATIONS[0]).unwrap();
+        conn.execute("INSERT INTO schema_migrations (version) VALUES (1)", [])
+            .unwrap();
+        conn.execute(
+            "INSERT INTO reviews (repo_path, branch, base_ref, mode)
+             VALUES ('/repo', 'feature', 'main', 'committed')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO comments (review_id, level, commit_sha, body, state)
+             VALUES (1, 'review', 'abc', 'existing note', 'resolved')",
+            [],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn v2_migration_applies_in_place_to_a_v1_database_with_rows() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("reviews.db");
+        v1_database_with_rows(&path);
+
+        let conn = open(&path).unwrap();
+        let version: i64 = conn
+            .query_row("SELECT MAX(version) FROM schema_migrations", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, MIGRATIONS.len() as i64);
+
+        // Existing rows survive, with parent_id defaulting to NULL.
+        let (body, state, parent_id): (String, String, Option<i64>) = conn
+            .query_row(
+                "SELECT body, state, parent_id FROM comments WHERE id = 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(body, "existing note");
+        assert_eq!(state, "resolved");
+        assert_eq!(parent_id, None);
+    }
+
+    #[test]
+    fn deleting_a_root_comment_cascades_to_its_replies() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = open(&dir.path().join("reviews.db")).unwrap();
+        conn.execute(
+            "INSERT INTO reviews (repo_path, branch, base_ref, mode)
+             VALUES ('/repo', 'feature', 'main', 'committed')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO comments (review_id, level, commit_sha, body)
+             VALUES (1, 'review', 'abc', 'root')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO comments (review_id, level, commit_sha, body, parent_id)
+             VALUES (1, 'review', 'abc', 'reply', 1), (1, 'review', 'abc', 'reply two', 1)",
+            [],
+        )
+        .unwrap();
+        conn.execute("DELETE FROM comments WHERE id = 1", []).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM comments", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
     }
 
     #[test]

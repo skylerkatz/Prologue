@@ -129,6 +129,11 @@ pub struct Comment {
     pub commit_sha: String,
     pub state: CommentState,
     pub body: String,
+    /// Thread root this comment replies to; None for roots. Threads are one
+    /// level deep — a reply's parent is always a root. Replies inherit the
+    /// root's file/side/lines/anchor context (their own stay NULL), and
+    /// their lifecycle is the root's (`state` is meaningless on replies).
+    pub parent_id: Option<i64>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -144,6 +149,12 @@ pub struct NewComment {
     pub side: Option<CommentSide>,
     pub start_line: Option<u32>,
     pub end_line: Option<u32>,
+    /// Set to any comment in a thread to reply; the reply attaches to the
+    /// thread ROOT (replying to a reply joins the same flat thread). All
+    /// positional fields above are ignored for replies — a reply inherits
+    /// its context from the root.
+    #[serde(default)]
+    pub parent_id: Option<i64>,
     pub body: String,
 }
 
@@ -501,7 +512,7 @@ pub(crate) fn list_comments_impl(conn: &Connection, review_id: i64) -> Result<Ve
     let mut stmt = conn
         .prepare(
             "SELECT id, review_id, level, file_path, side, start_line, end_line,
-                    code_anchor, commit_sha, state, body, created_at, updated_at
+                    code_anchor, commit_sha, state, body, parent_id, created_at, updated_at
              FROM comments WHERE review_id = ?1 ORDER BY id",
         )
         .map_err(db_err)?;
@@ -527,6 +538,7 @@ type CommentColumns = (
     String,
     String,
     String,
+    Option<i64>,
     String,
     String,
 );
@@ -546,6 +558,7 @@ fn comment_columns(r: &rusqlite::Row<'_>) -> rusqlite::Result<CommentColumns> {
         r.get(10)?,
         r.get(11)?,
         r.get(12)?,
+        r.get(13)?,
     ))
 }
 
@@ -562,6 +575,7 @@ fn comment_from_columns(c: CommentColumns) -> Result<Comment, String> {
         commit_sha,
         state,
         body,
+        parent_id,
         created_at,
         updated_at,
     ) = c;
@@ -583,6 +597,7 @@ fn comment_from_columns(c: CommentColumns) -> Result<Comment, String> {
         commit_sha,
         state: CommentState::parse(&state)?,
         body,
+        parent_id,
         created_at,
         updated_at,
     })
@@ -591,7 +606,7 @@ fn comment_from_columns(c: CommentColumns) -> Result<Comment, String> {
 fn get_comment(conn: &Connection, id: i64) -> Result<Comment, String> {
     conn.query_row(
         "SELECT id, review_id, level, file_path, side, start_line, end_line,
-                code_anchor, commit_sha, state, body, created_at, updated_at
+                code_anchor, commit_sha, state, body, parent_id, created_at, updated_at
          FROM comments WHERE id = ?1",
         [id],
         comment_columns,
@@ -641,6 +656,9 @@ pub(crate) fn create_comment_impl(
         return Err("Comment text cannot be empty".to_owned());
     }
     ensure_review_active(conn, comment.review_id)?;
+    if let Some(parent_id) = comment.parent_id {
+        return create_reply(conn, repo_path, head, comment.review_id, parent_id, &comment.body);
+    }
     let (file_path, side, start_line, end_line, anchor) = match comment.level {
         CommentLevel::Review => (None, None, None, None, None),
         CommentLevel::File => {
@@ -698,6 +716,46 @@ pub(crate) fn create_comment_impl(
     get_comment(conn, conn.last_insert_rowid())
 }
 
+/// Append a reply to the thread containing `parent_id`. The reply attaches
+/// to the thread root, keeping threads one level deep; it carries only
+/// review_id, parent_id, body, and the head SHA at reply time — file, side,
+/// lines, and anchor stay NULL (the root's context speaks for the thread).
+fn create_reply(
+    conn: &Connection,
+    repo_path: &str,
+    head: &str,
+    review_id: i64,
+    parent_id: i64,
+    body: &str,
+) -> Result<Comment, String> {
+    let parent = get_comment(conn, parent_id)?;
+    let root = match parent.parent_id {
+        None => parent,
+        Some(root_id) => get_comment(conn, root_id)?,
+    };
+    if root.review_id != review_id {
+        return Err(format!(
+            "Comment C{} belongs to a different review",
+            root.id
+        ));
+    }
+    if root.state != CommentState::Open {
+        return Err(format!(
+            "Cannot reply to a {} thread — reopen it first",
+            root.state.as_str()
+        ));
+    }
+    let repo = open_git_repo(repo_path)?;
+    let commit_sha = diff::resolve_commit(&repo, head)?.id().to_string();
+    conn.execute(
+        "INSERT INTO comments (review_id, level, parent_id, commit_sha, body)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        (review_id, root.level.as_str(), root.id, &commit_sha, body),
+    )
+    .map_err(db_err)?;
+    get_comment(conn, conn.last_insert_rowid())
+}
+
 pub(crate) fn update_comment_impl(
     conn: &Connection,
     comment_id: i64,
@@ -736,6 +794,19 @@ pub(crate) fn update_comment_state_impl(
     state: CommentState,
 ) -> Result<Comment, String> {
     ensure_comment_mutable(conn, comment_id)?;
+    // Lifecycle lives on thread roots; a reply has no state of its own.
+    let parent_id: Option<i64> = conn
+        .query_row(
+            "SELECT parent_id FROM comments WHERE id = ?1",
+            [comment_id],
+            |r| r.get(0),
+        )
+        .map_err(db_err)?;
+    if parent_id.is_some() {
+        return Err(
+            "Replies have no independent state — resolve or dismiss the thread root".to_owned(),
+        );
+    }
     // `updated_at` deliberately untouched: it tracks body edits ("(edited)"),
     // not lifecycle changes.
     conn.execute(
@@ -938,7 +1009,17 @@ mod tests {
             side: None,
             start_line: None,
             end_line: None,
+            parent_id: None,
             body: body.to_owned(),
+        }
+    }
+
+    /// A reply to `parent_id`; level and positional fields are ignored by
+    /// the reply path, so any placeholder level works.
+    fn reply(review_id: i64, parent_id: i64, body: &str) -> NewComment {
+        NewComment {
+            parent_id: Some(parent_id),
+            ..new_comment(review_id, CommentLevel::Review, body)
         }
     }
 
@@ -956,6 +1037,7 @@ mod tests {
             side: Some(side),
             start_line: Some(start),
             end_line: Some(end),
+            parent_id: None,
             body: "needs work".to_owned(),
         }
     }
@@ -1170,6 +1252,153 @@ mod tests {
         assert!(update_comment_state_impl(&conn, 999, CommentState::Resolved).is_err());
     }
 
+    #[test]
+    fn replies_attach_to_the_thread_root_at_every_level() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = test_db(&dir);
+        let fixture = fixture();
+        let review =
+            open_review_impl(&conn, &fixture.path(), "feature", "main", DiffMode::Committed)
+                .unwrap();
+
+        let review_root =
+            create(&conn, &fixture, new_comment(review.id, CommentLevel::Review, "overall"));
+        let mut file_root = new_comment(review.id, CommentLevel::File, "split this");
+        file_root.file_path = Some("code.txt".to_owned());
+        let file_root = create(&conn, &fixture, file_root);
+        let line_root = create(
+            &conn,
+            &fixture,
+            line_comment(review.id, "code.txt", CommentSide::New, 6, 7),
+        );
+
+        for root in [&review_root, &file_root, &line_root] {
+            let r = create(&conn, &fixture, reply(review.id, root.id, "to clarify"));
+            assert_eq!(r.parent_id, Some(root.id));
+            assert_eq!(r.level, root.level);
+            assert_eq!(r.review_id, review.id);
+            assert_eq!(r.commit_sha, head_sha(&fixture));
+            // Replies inherit context from the root: no position of their own.
+            assert_eq!(r.file_path, None);
+            assert_eq!(r.side, None);
+            assert_eq!((r.start_line, r.end_line), (None, None));
+            assert_eq!(r.code_anchor, None);
+            assert_eq!(r.state, CommentState::Open);
+        }
+        assert_eq!(list_comments_impl(&conn, review.id).unwrap().len(), 6);
+    }
+
+    #[test]
+    fn replying_to_a_reply_joins_the_same_flat_thread() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = test_db(&dir);
+        let fixture = fixture();
+        let review =
+            open_review_impl(&conn, &fixture.path(), "feature", "main", DiffMode::Committed)
+                .unwrap();
+        let root = create(&conn, &fixture, new_comment(review.id, CommentLevel::Review, "root"));
+        let first = create(&conn, &fixture, reply(review.id, root.id, "first reply"));
+        // Replying to the reply lands under the root, never nests deeper.
+        let second = create(&conn, &fixture, reply(review.id, first.id, "second reply"));
+        assert_eq!(second.parent_id, Some(root.id));
+    }
+
+    #[test]
+    fn reply_creation_is_validated() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = test_db(&dir);
+        let fixture = fixture();
+        let review =
+            open_review_impl(&conn, &fixture.path(), "feature", "main", DiffMode::Committed)
+                .unwrap();
+        let root = create(&conn, &fixture, new_comment(review.id, CommentLevel::Review, "root"));
+        let try_create = |c: NewComment| {
+            create_comment_impl(&conn, &fixture.path(), "main", "feature", DiffMode::Committed, c)
+        };
+
+        let err = try_create(reply(review.id, 999, "hi")).unwrap_err();
+        assert!(err.contains("Comment not found"), "{err}");
+
+        let err = try_create(reply(review.id, root.id, "   ")).unwrap_err();
+        assert!(err.contains("empty"), "{err}");
+
+        // A reply cannot cross into another review's thread.
+        let other =
+            open_review_impl(&conn, &fixture.path(), "other", "main", DiffMode::Committed)
+                .unwrap();
+        let err = try_create(reply(other.id, root.id, "hi")).unwrap_err();
+        assert!(err.contains("different review"), "{err}");
+
+        // Closed threads take no new replies until reopened.
+        update_comment_state_impl(&conn, root.id, CommentState::Resolved).unwrap();
+        let err = try_create(reply(review.id, root.id, "late")).unwrap_err();
+        assert!(err.contains("reopen"), "{err}");
+        update_comment_state_impl(&conn, root.id, CommentState::Open).unwrap();
+        try_create(reply(review.id, root.id, "on time")).unwrap();
+    }
+
+    #[test]
+    fn replies_have_no_independent_lifecycle_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = test_db(&dir);
+        let fixture = fixture();
+        let review =
+            open_review_impl(&conn, &fixture.path(), "feature", "main", DiffMode::Committed)
+                .unwrap();
+        let root = create(&conn, &fixture, new_comment(review.id, CommentLevel::Review, "root"));
+        let r = create(&conn, &fixture, reply(review.id, root.id, "reply"));
+
+        for state in [CommentState::Resolved, CommentState::Dismissed, CommentState::Open] {
+            let err = update_comment_state_impl(&conn, r.id, state).unwrap_err();
+            assert!(err.contains("thread root"), "{err}");
+        }
+        // The root's lifecycle still governs the thread.
+        let resolved = update_comment_state_impl(&conn, root.id, CommentState::Resolved).unwrap();
+        assert_eq!(resolved.state, CommentState::Resolved);
+    }
+
+    #[test]
+    fn deleting_a_root_cascades_the_thread_but_a_reply_deletes_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = test_db(&dir);
+        let fixture = fixture();
+        let review =
+            open_review_impl(&conn, &fixture.path(), "feature", "main", DiffMode::Committed)
+                .unwrap();
+        let root = create(&conn, &fixture, new_comment(review.id, CommentLevel::Review, "root"));
+        let keep = create(&conn, &fixture, reply(review.id, root.id, "kept until cascade"));
+        let mistake = create(&conn, &fixture, reply(review.id, root.id, "typo"));
+
+        // Deleting a reply removes just it (mistakes only).
+        delete_comment_impl(&conn, mistake.id).unwrap();
+        let ids: Vec<i64> = list_comments_impl(&conn, review.id)
+            .unwrap()
+            .iter()
+            .map(|c| c.id)
+            .collect();
+        assert_eq!(ids, vec![root.id, keep.id]);
+
+        // Deleting the root cascades the whole thread (SQLite FK path).
+        delete_comment_impl(&conn, root.id).unwrap();
+        assert!(list_comments_impl(&conn, review.id).unwrap().is_empty());
+    }
+
+    #[test]
+    fn replies_can_be_edited_like_any_comment() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = test_db(&dir);
+        let fixture = fixture();
+        let review =
+            open_review_impl(&conn, &fixture.path(), "feature", "main", DiffMode::Committed)
+                .unwrap();
+        let root = create(&conn, &fixture, new_comment(review.id, CommentLevel::Review, "root"));
+        let r = create(&conn, &fixture, reply(review.id, root.id, "v1"));
+
+        let edited = update_comment_impl(&conn, r.id, "v2").unwrap();
+        assert_eq!(edited.body, "v2");
+        assert_eq!(edited.parent_id, Some(root.id));
+    }
+
     /// Edit code.txt on feature (as a new commit) and re-anchor the review's
     /// comments against the refreshed committed diff.
     fn reanchor_after_edit(
@@ -1292,6 +1521,71 @@ mod tests {
         // Last known position is kept, never nulled.
         let stored = get_comment(&conn, comment.id).unwrap();
         assert_eq!((stored.start_line, stored.end_line), (Some(6), Some(7)));
+    }
+
+    #[test]
+    fn reanchor_skips_replies_and_moves_threads_as_a_unit() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = test_db(&dir);
+        let fixture = fixture();
+        let review =
+            open_review_impl(&conn, &fixture.path(), "feature", "main", DiffMode::Committed)
+                .unwrap();
+        let root = create(
+            &conn,
+            &fixture,
+            line_comment(review.id, "code.txt", CommentSide::New, 6, 7),
+        );
+        let r = create(&conn, &fixture, reply(review.id, root.id, "context from me"));
+
+        // Shift the commented code down: only the root re-anchors; the reply
+        // has no position and follows the thread implicitly.
+        let mut lines = feature_lines();
+        lines.splice(0..0, ["intro one".to_owned(), "intro two".to_owned()]);
+        let results = reanchor_after_edit(&conn, &fixture, review.id, &lines);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].comment_id, root.id);
+        assert_eq!(results[0].status, AnchorStatus::Anchored);
+        let stored = get_comment(&conn, r.id).unwrap();
+        assert_eq!(stored.parent_id, Some(root.id));
+        assert_eq!((stored.start_line, stored.end_line), (None, None));
+
+        // Orphan the root: the reply stays attached to it.
+        let reverted: Vec<String> = (1..=10).map(|n| format!("alpha {n}")).collect();
+        let results = reanchor_after_edit(&conn, &fixture, review.id, &reverted);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].status, AnchorStatus::Orphaned);
+        assert_eq!(get_comment(&conn, r.id).unwrap().parent_id, Some(root.id));
+    }
+
+    #[test]
+    fn archived_reviews_refuse_reply_mutations_too() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = test_db(&dir);
+        let fixture = fixture();
+        let review =
+            open_review_impl(&conn, &fixture.path(), "feature", "main", DiffMode::Committed)
+                .unwrap();
+        let root = create(&conn, &fixture, new_comment(review.id, CommentLevel::Review, "root"));
+        let r = create(&conn, &fixture, reply(review.id, root.id, "reply"));
+        archive_review(&conn, review.id).unwrap();
+
+        let err = create_comment_impl(
+            &conn,
+            &fixture.path(),
+            "main",
+            "feature",
+            DiffMode::Committed,
+            reply(review.id, root.id, "late reply"),
+        )
+        .unwrap_err();
+        assert!(err.contains("read-only"), "{err}");
+        let err = update_comment_impl(&conn, r.id, "rewrite").unwrap_err();
+        assert!(err.contains("read-only"), "{err}");
+        let err = delete_comment_impl(&conn, r.id).unwrap_err();
+        assert!(err.contains("read-only"), "{err}");
+        // Archived threads stay browsable, replies included.
+        assert_eq!(list_comments_impl(&conn, review.id).unwrap().len(), 2);
     }
 
     #[test]

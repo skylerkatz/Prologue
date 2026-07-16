@@ -442,6 +442,7 @@ mod tests {
                 side,
                 start_line: lines.map(|(s, _)| s),
                 end_line: lines.map(|(_, e)| e),
+                parent_id: None,
                 body: body.to_owned(),
             },
         )
