@@ -424,44 +424,90 @@ mod tests {
         assert_eq!(summary.total_deletions, 1);
     }
 
-    #[test]
-    fn committed_diff_matches_git_cli_three_dot_numstat() {
-        let fixture = branch_fixture();
-        let summary = summary_for(&fixture, DiffMode::Committed);
+    /// The new-side path from a numstat entry; renames render as
+    /// "old => new" or "prefix/{old => new}/suffix".
+    fn numstat_new_path(raw: &str) -> String {
+        if let (Some(open), Some(close)) = (raw.find('{'), raw.find('}')) {
+            let inside = &raw[open + 1..close];
+            let new = inside.split(" => ").nth(1).unwrap_or(inside);
+            let mut path = format!("{}{}{}", &raw[..open], new, &raw[close + 1..]);
+            // An empty old/new side leaves a doubled separator behind.
+            while path.contains("//") {
+                path = path.replace("//", "/");
+            }
+            path
+        } else if let Some((_, new)) = raw.split_once(" => ") {
+            new.to_owned()
+        } else {
+            raw.to_owned()
+        }
+    }
 
+    /// `git diff <base>...<head> --numstat` as sorted (adds, dels, path) rows.
+    fn git_cli_numstat(repo_path: &str, base: &str, head: &str) -> Vec<(usize, usize, String)> {
+        let range = format!("{base}...{head}");
         let output = Command::new("git")
-            .args(["-C", &fixture.path(), "diff", "main...feature", "--numstat"])
+            .args(["-C", repo_path, "diff", &range, "--numstat"])
             .output()
             .expect("git CLI available");
         assert!(output.status.success());
 
-        // numstat lines: "<adds>\t<dels>\t<path>"; renames render the path as
-        // "old => new" or "prefix{old => new}suffix".
         let stdout = String::from_utf8(output.stdout).unwrap();
-        let mut expected: Vec<(usize, usize, String)> = stdout
+        let mut rows: Vec<(usize, usize, String)> = stdout
             .lines()
             .map(|line| {
                 let mut parts = line.splitn(3, '\t');
-                let adds = parts.next().unwrap().parse().unwrap();
-                let dels = parts.next().unwrap().parse().unwrap();
+                let adds = parts.next().unwrap();
+                let dels = parts.next().unwrap();
                 let raw_path = parts.next().unwrap();
-                let path = match raw_path.split_once(" => ") {
-                    Some((_, new)) => new.trim_end_matches('}').to_owned(),
-                    None => raw_path.to_owned(),
-                };
-                (adds, dels, path)
+                (
+                    // Binary entries report "-"; our summary reports 0.
+                    adds.parse().unwrap_or(0),
+                    dels.parse().unwrap_or(0),
+                    numstat_new_path(raw_path),
+                )
             })
             .collect();
-        expected.sort_by(|x, y| x.2.cmp(&y.2));
+        rows.sort_by(|x, y| x.2.cmp(&y.2));
+        rows
+    }
 
-        let mut actual: Vec<(usize, usize, String)> = summary
+    fn summary_rows(summary: &DiffSummary) -> Vec<(usize, usize, String)> {
+        let mut rows: Vec<(usize, usize, String)> = summary
             .files
             .iter()
             .map(|f| (f.additions, f.deletions, f.path.clone()))
             .collect();
-        actual.sort_by(|x, y| x.2.cmp(&y.2));
+        rows.sort_by(|x, y| x.2.cmp(&y.2));
+        rows
+    }
 
-        assert_eq!(actual, expected);
+    #[test]
+    fn committed_diff_matches_git_cli_three_dot_numstat() {
+        let fixture = branch_fixture();
+        let summary = summary_for(&fixture, DiffMode::Committed);
+        let expected = git_cli_numstat(&fixture.path(), "main", "feature");
+        assert!(!expected.is_empty());
+        assert_eq!(summary_rows(&summary), expected);
+    }
+
+    #[test]
+    fn committed_diff_matches_git_cli_on_this_real_repo() {
+        // CARGO_MANIFEST_DIR is src-tauri; the git repo root is its parent.
+        let repo_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let summary = get_diff_summary(
+            repo_path.clone(),
+            "main".into(),
+            "HEAD".into(),
+            DiffMode::Committed,
+        )
+        .unwrap();
+        let expected = git_cli_numstat(&repo_path, "main", "HEAD");
+        assert_eq!(summary_rows(&summary), expected);
     }
 
     /// Fixture for mode tests: distinct files change at each layer.
