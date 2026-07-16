@@ -1,0 +1,29 @@
+package.json
+  s_c9020c0f6c714c::t_2ee7e666dea8f5 15
+src-tauri/Cargo.toml
+  s_c9020c0f6c714c::t_f5c63b30efda8c 22
+src-tauri/src/lib.rs
+  s_c9020c0f6c714c::t_b6118307934985 16
+src-tauri/capabilities/default.json
+  s_c9020c0f6c714c::t_d4f1345096a9df 8
+package-lock.json
+  s_c9020c0f6c714c::t_0959bac8bd72c9 13,1413-1421
+src-tauri/Cargo.lock
+  s_c9020c0f6c714c::t_53b5e6161859a3 50-70,362-370,464-469,610,702,709-714,813-818,837-842,868-873,890-895,1118-1127,1325-1335,1342-1350,1357,1366,1642,2062-2070,2160,2544-2553,2608-2618,2692,2821-2835,3759-3773,4023-4036,4363-4373,4651-4720,4823-4828,5294-5311,5383-5399
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "880582e9f0d319f51e452438f738acb1e9182f65",
+  "prompts": {},
+  "sessions": {
+    "s_c9020c0f6c714c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b659dcf8-eff4-4044-8eee-78292b2e93c7",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
