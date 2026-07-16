@@ -1,0 +1,20 @@
+src-tauri/src/repo.rs
+  s_bbae36569299dd::t_53e1076afaef48 4,10
+  s_bbae36569299dd::t_307ed34f64a1d1 53-98
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "192e60538b8752983f22b359032be49583617fa8",
+  "prompts": {},
+  "sessions": {
+    "s_bbae36569299dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0ed93194-96cc-4ded-8086-88dc79a43ade",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
