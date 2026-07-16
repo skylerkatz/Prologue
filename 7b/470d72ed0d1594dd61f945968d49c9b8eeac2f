@@ -1,0 +1,21 @@
+.gitignore
+  s_ba32f2986040a5::t_6481a21398f169 26
+solo.yml
+  s_ba32f2986040a5::t_39a665581de0a0 17-25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "7b470d72ed0d1594dd61f945968d49c9b8eeac2f",
+  "prompts": {},
+  "sessions": {
+    "s_ba32f2986040a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "78461b80-01f7-4132-bbca-096b37bf1e1c",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
