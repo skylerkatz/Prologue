@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getDiffSummary } from "../ipc";
 import type {
   BranchList,
@@ -6,6 +6,7 @@ import type {
   RepoInfo,
   WorkingTreeMode,
 } from "../types";
+import { DiffView } from "./DiffView";
 import { FileList } from "./FileList";
 import { ModeToggle } from "./ModeToggle";
 
@@ -23,6 +24,19 @@ interface ReviewShellProps {
   onSwitchRepo: () => void;
 }
 
+/**
+ * A summary pinned to the parameters it was computed with, so the diff view
+ * never fetches file hunks against refs the summary doesn't describe.
+ */
+interface DiffViewState {
+  summary: DiffSummary;
+  base: string;
+  head: string;
+  mode: WorkingTreeMode;
+  /** Bumped per fetch; remounts DiffView so lazy-loaded hunks reset too. */
+  generation: number;
+}
+
 export function ReviewShell({
   repo,
   branchList,
@@ -36,9 +50,14 @@ export function ReviewShell({
   onRefresh,
   onSwitchRepo,
 }: ReviewShellProps) {
-  const [summary, setSummary] = useState<DiffSummary | null>(null);
+  const [view, setView] = useState<DiffViewState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [scrollTarget, setScrollTarget] = useState<{
+    path: string;
+    nonce: number;
+  } | null>(null);
+  const generation = useRef(0);
 
   useEffect(() => {
     if (!branch || !baseBranch) {
@@ -48,14 +67,22 @@ export function ReviewShell({
     setLoading(true);
     setError(null);
     getDiffSummary(repo.path, baseBranch, branch, mode)
-      .then((next) => {
+      .then((summary) => {
         if (!cancelled) {
-          setSummary(next);
+          generation.current += 1;
+          setView({
+            summary,
+            base: baseBranch,
+            head: branch,
+            mode,
+            generation: generation.current,
+          });
+          setScrollTarget(null);
         }
       })
       .catch((e: unknown) => {
         if (!cancelled) {
-          setSummary(null);
+          setView(null);
           setError(typeof e === "string" ? e : String(e));
         }
       })
@@ -126,11 +153,39 @@ export function ReviewShell({
           <div className="diff-empty">
             <p className="error">{error}</p>
           </div>
-        ) : summary !== null ? (
-          <FileList summary={summary} />
-        ) : (
+        ) : view === null ? (
           <div className="diff-empty">
             <p>{loading ? "Computing diff…" : "Select branches to diff."}</p>
+          </div>
+        ) : view.summary.files.length === 0 ? (
+          <div className="diff-empty">
+            <p>
+              No changes between <code>{view.summary.baseRef}</code> and{" "}
+              <code>{view.summary.headRef}</code>.
+            </p>
+          </div>
+        ) : (
+          <div className="review-body">
+            <aside className="file-sidebar">
+              <FileList
+                summary={view.summary}
+                onSelect={(path) =>
+                  setScrollTarget((prev) => ({
+                    path,
+                    nonce: (prev?.nonce ?? 0) + 1,
+                  }))
+                }
+              />
+            </aside>
+            <DiffView
+              key={view.generation}
+              repoPath={repo.path}
+              base={view.base}
+              head={view.head}
+              mode={view.mode}
+              summary={view.summary}
+              scrollTarget={scrollTarget}
+            />
           </div>
         )}
       </main>
