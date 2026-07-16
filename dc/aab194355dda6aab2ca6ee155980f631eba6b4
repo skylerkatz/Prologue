@@ -1,0 +1,23 @@
+src/ipc.ts
+  s_9731889da3e9a2::t_adce07331e3296 4
+  s_9731889da3e9a2::t_25b7b63fb62376 39-49
+  s_9731889da3e9a2::t_7063d7280e9c7a 50
+src/types.ts
+  s_9731889da3e9a2::t_c094ca2c0a10a8 60-73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "dcaab194355dda6aab2ca6ee155980f631eba6b4",
+  "prompts": {},
+  "sessions": {
+    "s_9731889da3e9a2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8699cef0-752e-4a27-8e16-9006aa6dee3b",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
