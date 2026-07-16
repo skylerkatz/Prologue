@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { getContextLines, getFileDiff } from "../ipc";
 import { guardReason, type GuardReason } from "../diff/guards";
@@ -54,7 +54,11 @@ export function DiffView({
     summary.files.map(initialFileState),
   );
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const inFlight = useRef(new Set<number>());
+  // Dedupe set, kept on success: a scroll-render can re-fire the load effect
+  // before React applies the loaded state, and the `diff === null` guard
+  // alone would re-fetch. Entries are only removed to allow error retries.
+  const requested = useRef(new Set<number>());
+  const activeLoads = useRef(0);
 
   const updateState = useCallback(
     (fi: number, update: (state: FileViewState) => FileViewState) => {
@@ -65,10 +69,11 @@ export function DiffView({
 
   const loadFile = useCallback(
     (fi: number) => {
-      if (inFlight.current.has(fi)) {
+      if (requested.current.has(fi)) {
         return;
       }
-      inFlight.current.add(fi);
+      requested.current.add(fi);
+      activeLoads.current += 1;
       getFileDiff(repoPath, base, head, mode, summary.files[fi].path)
         .then((diff) => {
           updateState(fi, (s) => ({
@@ -82,10 +87,11 @@ export function DiffView({
           }));
         })
         .catch((e: unknown) => {
+          requested.current.delete(fi);
           updateState(fi, (s) => ({ ...s, error: errorText(e) }));
         })
         .finally(() => {
-          inFlight.current.delete(fi);
+          activeLoads.current -= 1;
         });
     },
     [repoPath, base, head, mode, summary, updateState],
@@ -168,7 +174,7 @@ export function DiffView({
   // Runs after every render; the guards keep it a cheap no-op once loaded.
   useEffect(() => {
     for (const item of items) {
-      if (inFlight.current.size >= MAX_CONCURRENT_LOADS) {
+      if (activeLoads.current >= MAX_CONCURRENT_LOADS) {
         break;
       }
       const row = rows[item.index];
@@ -240,7 +246,11 @@ interface RowContentProps {
   onExpand: (fi: number, gi: number, direction: ExpandDirection) => void;
 }
 
-function RowContent({
+/**
+ * Memoized so scrolling — which only moves wrapper transforms — never
+ * re-renders row subtrees; row objects are stable across scroll frames.
+ */
+const RowContent = memo(function RowContent({
   row,
   files,
   states,
@@ -289,7 +299,7 @@ function RowContent({
         />
       );
   }
-}
+});
 
 function FileHeaderRow({
   file,
