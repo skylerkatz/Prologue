@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
 use std::path::Path;
 
@@ -40,13 +40,17 @@ pub fn export_review(
     export_review_impl(&conn, &repo_path, &base, &head, mode, review_id, format)
 }
 
-/// One open comment plus whether it is orphaned in the current diff (its
+/// One open thread root plus whether it is orphaned in the current diff (its
 /// anchor no longer matches, or its file left the diff entirely). Orphaned
 /// comments still export — the reviewer wrote them — marked with their
-/// last known location.
+/// last known location. Replies ride along with their root: only the root's
+/// state decides whether the thread exports, and every reply of an exported
+/// thread is included.
 struct ExportComment<'a> {
     comment: &'a Comment,
     orphaned: bool,
+    /// The thread's replies in chronological (id) order.
+    replies: Vec<&'a Comment>,
 }
 
 /// Everything the renderers need, already ordered: review-level comments
@@ -85,15 +89,25 @@ pub(crate) fn export_review_impl(
     let diff_paths: HashSet<&str> = summary.files.iter().map(|f| f.path.as_str()).collect();
 
     let comments = review::list_comments_impl(conn, review_id)?;
+    // Replies grouped under their root, already in chronological (id) order.
+    let mut replies_by_root: HashMap<i64, Vec<&Comment>> = HashMap::new();
+    for c in &comments {
+        if let Some(root_id) = c.parent_id {
+            replies_by_root.entry(root_id).or_default().push(c);
+        }
+    }
+    // Only open THREADS export: the root's state governs; a reply's own
+    // `state` column is meaningless.
     let open: Vec<ExportComment> = comments
         .iter()
-        .filter(|c| c.state == CommentState::Open)
+        .filter(|c| c.parent_id.is_none() && c.state == CommentState::Open)
         .map(|c| ExportComment {
             comment: c,
             orphaned: orphaned_anchors.contains(&c.id)
                 || c.file_path
                     .as_deref()
                     .is_some_and(|p| !diff_paths.contains(p)),
+            replies: replies_by_root.remove(&c.id).unwrap_or_default(),
         })
         .collect();
     if open.is_empty() {
@@ -245,6 +259,7 @@ fn render_markdown(data: &ExportData) -> String {
         out.push_str("\n## Review comments\n");
         for entry in &data.review_level {
             write!(out, "\n### {}\n\n{}\n", comment_heading(entry), entry.comment.body).unwrap();
+            push_replies_markdown(&mut out, entry);
         }
     }
     for (path, group) in &data.files {
@@ -255,9 +270,26 @@ fn render_markdown(data: &ExportData) -> String {
                 write!(out, "\n{}\n", fenced_anchor(anchor)).unwrap();
             }
             write!(out, "\n{}\n", entry.comment.body).unwrap();
+            push_replies_markdown(&mut out, entry);
         }
     }
     out
+}
+
+/// The thread's replies as two-space-indented blocks after the root's body:
+/// `**C<id> (reply)**` then the reply text, every line indented so the
+/// thread reads as one unit.
+fn push_replies_markdown(out: &mut String, entry: &ExportComment) {
+    for reply in &entry.replies {
+        write!(out, "\n  **C{} (reply)**\n\n", reply.id).unwrap();
+        for line in reply.body.lines() {
+            if line.is_empty() {
+                out.push('\n');
+            } else {
+                writeln!(out, "  {line}").unwrap();
+            }
+        }
+    }
 }
 
 /// JSON export shape. Field names are the documented export contract
@@ -286,6 +318,16 @@ struct JsonComment<'a> {
     comment: &'a str,
     commit_sha: &'a str,
     orphaned: bool,
+    /// The thread's replies in chronological order; empty when there are
+    /// none. Part of the documented export contract.
+    replies: Vec<JsonReply<'a>>,
+}
+
+#[derive(Serialize)]
+struct JsonReply<'a> {
+    id: i64,
+    comment: &'a str,
+    created_at: &'a str,
 }
 
 impl<'a> JsonComment<'a> {
@@ -302,6 +344,15 @@ impl<'a> JsonComment<'a> {
             comment: &c.body,
             commit_sha: &c.commit_sha,
             orphaned: entry.orphaned,
+            replies: entry
+                .replies
+                .iter()
+                .map(|r| JsonReply {
+                    id: r.id,
+                    comment: &r.body,
+                    created_at: &r.created_at,
+                })
+                .collect(),
         }
     }
 }
@@ -340,6 +391,9 @@ fn render_prompt(data: &ExportData, payload: ExportFormat) -> Result<String, Str
          - Comments marked orphaned could not be re-located in the current diff; their file \
          and line range are the last known location. Do your best to find and address them; \
          if the code is truly gone, say so in the checklist.\n\
+         - Some comments carry replies: clarifying context the reviewer added under the \
+         original comment. Read them as part of that comment; the checklist maps only \
+         top-level comment IDs, never reply IDs.\n\
          - Make the code changes only; do not try to update or resolve the review itself.\n\n\
          When you are finished, end your reply with a checklist mapping every comment ID to \
          what was done, one line per comment, for example:\n\n\
@@ -363,7 +417,9 @@ fn render_prompt(data: &ExportData, payload: ExportFormat) -> Result<String, Str
                  (review | file | line), file, side (old | new), start_line, end_line, \
                  code_anchor ({hunkHeader, contextBefore, lines, contextAfter} — `lines` \
                  are the commented lines verbatim), comment (the reviewer's text), \
-                 commit_sha (the head SHA when the comment was written), and orphaned.\n\n",
+                 commit_sha (the head SHA when the comment was written), orphaned, and \
+                 replies ([{id, comment, created_at}] — the reviewer's clarifying \
+                 follow-ups, in order).\n\n",
             );
             out.push_str(&fenced(&render_json(data)?, "json"));
             out.push('\n');
@@ -466,6 +522,33 @@ mod tests {
         )
     }
 
+    fn reply_to(
+        conn: &Connection,
+        fixture: &FixtureRepo,
+        review_id: i64,
+        parent_id: i64,
+        body: &str,
+    ) -> Comment {
+        create_comment_impl(
+            conn,
+            &fixture.path(),
+            "main",
+            "feature",
+            DiffMode::Committed,
+            NewComment {
+                review_id,
+                level: CommentLevel::Review, // ignored: replies inherit the root's level
+                file_path: None,
+                side: None,
+                start_line: None,
+                end_line: None,
+                parent_id: Some(parent_id),
+                body: body.to_owned(),
+            },
+        )
+        .unwrap()
+    }
+
     /// Review-level, file-level, new-side line, and old-side line comments,
     /// as most tests want them. Returns (review_id, line comment on
     /// code.txt, line comment on d.txt).
@@ -490,6 +573,11 @@ mod tests {
         let conn = test_db(&dir);
         let fixture = fixture();
         let (review_id, on_code, on_deleted) = seeded_review(&conn, &fixture);
+        // Replies on the review-level thread (C5) and the code.txt line
+        // thread (C6, plus C7 written as a reply to C6 — same flat thread).
+        reply_to(&conn, &fixture, review_id, 1, "and keep names short");
+        let c6 = reply_to(&conn, &fixture, review_id, on_code.id, "specifically beta 6a");
+        reply_to(&conn, &fixture, review_id, c6.id, "well, beta 6b too");
 
         let out = export(&conn, &fixture, review_id, ExportFormat::Markdown).unwrap();
         let expected = format!(
@@ -509,6 +597,10 @@ Line comments quote a code anchor: the first line is the hunk header, `>` marks 
 ### C1
 
 Overall: tighten naming
+
+  **C5 (reply)**
+
+  and keep names short
 
 ## code.txt
 
@@ -531,6 +623,14 @@ split this file
 ```
 
 rename these
+
+  **C6 (reply)**
+
+  specifically beta 6a
+
+  **C7 (reply)**
+
+  well, beta 6b too
 
 ## d.txt
 
@@ -559,6 +659,9 @@ why delete this file?
         let conn = test_db(&dir);
         let fixture = fixture();
         let (review_id, on_code, on_deleted) = seeded_review(&conn, &fixture);
+        let on_review_reply = reply_to(&conn, &fixture, review_id, 1, "and keep names short");
+        let on_code_reply =
+            reply_to(&conn, &fixture, review_id, on_code.id, "specifically beta 6a");
 
         let out = export(&conn, &fixture, review_id, ExportFormat::Json).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
@@ -575,13 +678,18 @@ why delete this file?
                     "id": 1, "level": "review", "file": null, "side": null,
                     "start_line": null, "end_line": null, "code_anchor": null,
                     "comment": "Overall: tighten naming", "commit_sha": head_sha,
-                    "orphaned": false
+                    "orphaned": false,
+                    "replies": [{
+                        "id": on_review_reply.id,
+                        "comment": "and keep names short",
+                        "created_at": on_review_reply.created_at
+                    }]
                 },
                 {
                     "id": 2, "level": "file", "file": "code.txt", "side": null,
                     "start_line": null, "end_line": null, "code_anchor": null,
                     "comment": "split this file", "commit_sha": head_sha,
-                    "orphaned": false
+                    "orphaned": false, "replies": []
                 },
                 {
                     "id": 3, "level": "line", "file": "code.txt", "side": "new",
@@ -593,7 +701,12 @@ why delete this file?
                         "contextAfter": ["alpha 7", "alpha 8", "alpha 9"]
                     },
                     "comment": "rename these", "commit_sha": head_sha,
-                    "orphaned": false
+                    "orphaned": false,
+                    "replies": [{
+                        "id": on_code_reply.id,
+                        "comment": "specifically beta 6a",
+                        "created_at": on_code_reply.created_at
+                    }]
                 },
                 {
                     "id": 4, "level": "line", "file": "d.txt", "side": "old",
@@ -605,7 +718,7 @@ why delete this file?
                         "contextAfter": []
                     },
                     "comment": "why delete this file?", "commit_sha": head_sha,
-                    "orphaned": false
+                    "orphaned": false, "replies": []
                 }
             ]
         });
@@ -618,6 +731,8 @@ why delete this file?
         let conn = test_db(&dir);
         let fixture = fixture();
         let (review_id, on_code, on_deleted) = seeded_review(&conn, &fixture);
+        // A reply written while the code.txt thread was still open.
+        reply_to(&conn, &fixture, review_id, on_code.id, "buried with its thread");
 
         update_comment_state_impl(&conn, on_code.id, CommentState::Resolved).unwrap();
         update_comment_state_impl(&conn, on_deleted.id, CommentState::Dismissed).unwrap();
@@ -628,6 +743,10 @@ why delete this file?
         assert!(!out.contains("C3"), "resolved comment must not export: {out}");
         assert!(!out.contains("C4"), "dismissed comment must not export: {out}");
         assert!(!out.contains("## d.txt"), "file group with no open comments: {out}");
+        // Root state governs the whole thread: replies of closed roots stay out.
+        assert!(!out.contains("buried with its thread"), "{out}");
+        let json = export(&conn, &fixture, review_id, ExportFormat::Json).unwrap();
+        assert!(!json.contains("buried with its thread"), "{json}");
     }
 
     #[test]
@@ -702,6 +821,10 @@ why delete this file?
         assert!(prompt_md.contains("locate the target by matching the anchor text"));
         assert!(prompt_md.contains("removed or replaced code"));
         assert!(prompt_md.contains("marked orphaned"));
+        assert!(
+            prompt_md.contains("the checklist maps only top-level comment IDs, never reply IDs"),
+            "{prompt_md}"
+        );
         assert!(prompt_md.contains("checklist mapping every comment ID"));
         assert!(prompt_md.contains("- C12 — extracted the duplicated query into a helper"));
         assert!(prompt_md.ends_with(&markdown), "prompt must embed the markdown payload verbatim");
@@ -709,6 +832,10 @@ why delete this file?
         let json = export(&conn, &fixture, review_id, ExportFormat::Json).unwrap();
         let prompt_json = export(&conn, &fixture, review_id, ExportFormat::PromptJson).unwrap();
         assert!(prompt_json.contains("The review follows as JSON"));
+        assert!(
+            prompt_json.contains("replies ([{id, comment, created_at}]"),
+            "{prompt_json}"
+        );
         assert!(prompt_json.contains(&format!("```json\n{json}\n```")), "{prompt_json}");
     }
 
