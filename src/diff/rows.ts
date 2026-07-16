@@ -1,4 +1,10 @@
-import type { DiffLine, FileDiff, FileSummary } from "../types";
+import type {
+  Comment,
+  CommentSide,
+  DiffLine,
+  FileDiff,
+  FileSummary,
+} from "../types";
 import { guardReason, type GuardReason } from "./guards";
 
 /** Fixed row height for diff lines; keeps scroll estimates honest. */
@@ -88,7 +94,10 @@ export type Row =
   | { kind: "error"; fi: number; message: string }
   | { kind: "empty"; fi: number }
   | { kind: "hunk"; fi: number; hi: number; header: string }
-  | { kind: "line"; fi: number; line: DiffLine }
+  /** `hi` is set for hunk lines; expanded gap-context lines carry none. */
+  | { kind: "line"; fi: number; line: DiffLine; hi?: number }
+  | { kind: "comment"; fi: number; comment: Comment }
+  | { kind: "composer"; fi: number }
   | {
       kind: "expand";
       fi: number;
@@ -100,6 +109,21 @@ export type Row =
       growBottom: boolean;
     };
 
+/**
+ * Where the single open comment composer sits: after a file's header, or
+ * below the selection's last line. Review-level composing lives outside the
+ * virtualized list.
+ */
+export type ComposerLocation =
+  | { level: "file"; fi: number }
+  | {
+      level: "line";
+      fi: number;
+      side: CommentSide;
+      startLine: number;
+      endLine: number;
+    };
+
 const ROW_HEIGHTS: Record<Exclude<Row["kind"], "skeleton">, number> = {
   file: 42,
   notice: 60,
@@ -107,6 +131,8 @@ const ROW_HEIGHTS: Record<Exclude<Row["kind"], "skeleton">, number> = {
   empty: 40,
   hunk: 26,
   line: LINE_HEIGHT,
+  comment: 96,
+  composer: 150,
   expand: 26,
 };
 
@@ -129,11 +155,82 @@ export function rowKey(row: Row): string {
       return `m${row.fi}`;
     case "hunk":
       return `h${row.fi}:${row.hi}`;
+    case "comment":
+      return `c${row.comment.id}`;
+    // Only one composer exists at a time.
+    case "composer":
+      return "composer";
     case "expand":
       return `x${row.fi}:${row.gi}`;
     case "line":
       return `l${row.fi}:${row.line.oldLineno ?? ""}:${row.line.newLineno ?? ""}`;
   }
+}
+
+/** The side a diff line's comments belong to (context lines count as new). */
+export function lineSide(line: DiffLine): CommentSide {
+  return line.kind === "deletion" ? "old" : "new";
+}
+
+/** The line number on the side given by [`lineSide`]. */
+export function lineNumber(line: DiffLine): number {
+  return (line.kind === "deletion" ? line.oldLineno : line.newLineno) ?? 0;
+}
+
+/** Line-level comments of one file keyed by `side:endLine`, in id order. */
+export type LineCommentIndex = Map<string, Comment[]>;
+
+export interface FileComments {
+  /** File-level comments in id order. */
+  file: Comment[];
+  line: LineCommentIndex;
+}
+
+export const lineCommentKey = (side: CommentSide, endLine: number): string =>
+  `${side}:${endLine}`;
+
+/**
+ * Group file- and line-level comments by file index so `buildRows` can place
+ * them without scanning the comment list per row.
+ */
+export function indexComments(
+  files: FileSummary[],
+  comments: Comment[],
+): Map<number, FileComments> {
+  const byPath = new Map(files.map((file, fi) => [file.path, fi]));
+  const index = new Map<number, FileComments>();
+  for (const comment of comments) {
+    if (comment.level === "review" || comment.filePath === null) {
+      continue;
+    }
+    const fi = byPath.get(comment.filePath);
+    if (fi === undefined) {
+      // Not part of the current diff (e.g. other working-tree mode); the
+      // sidebar count still includes it.
+      continue;
+    }
+    let entry = index.get(fi);
+    if (entry === undefined) {
+      entry = { file: [], line: new Map() };
+      index.set(fi, entry);
+    }
+    if (
+      comment.level === "line" &&
+      comment.side !== null &&
+      comment.endLine !== null
+    ) {
+      const key = lineCommentKey(comment.side, comment.endLine);
+      const bucket = entry.line.get(key);
+      if (bucket === undefined) {
+        entry.line.set(key, [comment]);
+      } else {
+        bucket.push(comment);
+      }
+    } else {
+      entry.file.push(comment);
+    }
+  }
+  return index;
 }
 
 /** Approximate body height for a file whose hunks are still loading. */
@@ -143,11 +240,14 @@ function skeletonHeight(file: FileSummary): number {
 
 /**
  * Flatten the whole diff — every file — into one list of virtualizable rows.
- * Only rows the virtualizer asks for are ever rendered.
+ * Only rows the virtualizer asks for are ever rendered. Comment and composer
+ * rows join the same list, so the DOM stays bounded however many exist.
  */
 export function buildRows(
   files: FileSummary[],
   states: FileViewState[],
+  comments: Map<number, FileComments>,
+  composer: ComposerLocation | null,
 ): Row[] {
   const rows: Row[] = [];
   files.forEach((file, fi) => {
@@ -155,6 +255,13 @@ export function buildRows(
     const state = states[fi];
     if (!state.expanded) {
       return;
+    }
+    const fileComments = comments.get(fi);
+    for (const comment of fileComments?.file ?? []) {
+      rows.push({ kind: "comment", fi, comment });
+    }
+    if (composer?.level === "file" && composer.fi === fi) {
+      rows.push({ kind: "composer", fi });
     }
     const guard = guardReason(file);
     if (guard === "binary") {
@@ -178,6 +285,8 @@ export function buildRows(
       rows.push({ kind: "empty", fi });
       return;
     }
+    const lineComposer =
+      composer?.level === "line" && composer.fi === fi ? composer : null;
     const gaps = computeGaps(diff);
     diff.hunks.forEach((hunk, hi) => {
       if (gaps.length > 0) {
@@ -185,7 +294,17 @@ export function buildRows(
       }
       rows.push({ kind: "hunk", fi, hi, header: hunk.header });
       for (const line of hunk.lines) {
-        rows.push({ kind: "line", fi, line });
+        rows.push({ kind: "line", fi, line, hi });
+        const key = lineCommentKey(lineSide(line), lineNumber(line));
+        for (const comment of fileComments?.line.get(key) ?? []) {
+          rows.push({ kind: "comment", fi, comment });
+        }
+        if (
+          lineComposer !== null &&
+          lineCommentKey(lineComposer.side, lineComposer.endLine) === key
+        ) {
+          rows.push({ kind: "composer", fi });
+        }
       }
     });
     if (gaps.length > 0) {

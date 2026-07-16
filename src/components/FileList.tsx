@@ -9,14 +9,18 @@ const STATUS_LABELS: Record<FileStatus, string> = {
 
 interface FileListProps {
   summary: DiffSummary;
+  /** Open (unresolved) comment count per file path; absent means zero. */
+  openCounts: ReadonlyMap<string, number>;
   onSelect: (path: string) => void;
 }
 
 function FileRow({
   file,
+  openCount,
   onSelect,
 }: {
   file: FileSummary;
+  openCount: number;
   onSelect: (path: string) => void;
 }) {
   return (
@@ -44,6 +48,14 @@ function FileRow({
           )}
           {file.path}
         </span>
+        {openCount > 0 && (
+          <span
+            className="comment-count"
+            title={`${openCount} open ${openCount === 1 ? "comment" : "comments"}`}
+          >
+            {openCount}
+          </span>
+        )}
         {file.binary ? (
           <span className="file-counts file-binary">BIN</span>
         ) : (
@@ -57,7 +69,7 @@ function FileRow({
   );
 }
 
-export function FileList({ summary, onSelect }: FileListProps) {
+export function FileList({ summary, openCounts, onSelect }: FileListProps) {
   return (
     <div className="file-list">
       <div className="file-list-header">
@@ -72,7 +84,12 @@ export function FileList({ summary, onSelect }: FileListProps) {
       </div>
       <ul>
         {summary.files.map((file) => (
-          <FileRow key={file.path} file={file} onSelect={onSelect} />
+          <FileRow
+            key={file.path}
+            file={file}
+            openCount={openCounts.get(file.path) ?? 0}
+            onSelect={onSelect}
+          />
         ))}
       </ul>
     </div>

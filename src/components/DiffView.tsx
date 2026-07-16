@@ -7,18 +7,26 @@ import {
   computeGaps,
   CONTEXT_CHUNK,
   estimateRowHeight,
+  indexComments,
   initialFileState,
+  lineNumber,
+  lineSide,
   rowKey,
+  type ComposerLocation,
   type FileViewState,
   type Row,
 } from "../diff/rows";
 import type {
+  Comment,
+  CommentSide,
   DiffLine,
   DiffSummary,
   FileStatus,
   FileSummary,
+  NewCommentInput,
   WorkingTreeMode,
 } from "../types";
+import { CommentCard, CommentComposer, type DraftStore } from "./Comments";
 
 /** Parallel `get_file_diff` calls; each recomputes the repo diff in Rust. */
 const MAX_CONCURRENT_LOADS = 3;
@@ -38,9 +46,23 @@ interface DiffViewProps {
   summary: DiffSummary;
   /** Bumping `nonce` scrolls the file's header into view. */
   scrollTarget: { path: string; nonce: number } | null;
+  /** File- and line-level comments (review-level ones are ignored here). */
+  comments: Comment[];
+  onCreateComment: (input: NewCommentInput) => Promise<void>;
+  onUpdateComment: (id: number, body: string) => Promise<void>;
+  onDeleteComment: (id: number) => Promise<void>;
 }
 
 type ExpandDirection = "top" | "bottom" | "all";
+
+/** A gutter-drag / shift-click line selection, confined to one hunk + side. */
+interface LineSelection {
+  fi: number;
+  hi: number;
+  side: CommentSide;
+  start: number;
+  end: number;
+}
 
 export function DiffView({
   repoPath,
@@ -49,16 +71,35 @@ export function DiffView({
   mode,
   summary,
   scrollTarget,
+  comments,
+  onCreateComment,
+  onUpdateComment,
+  onDeleteComment,
 }: DiffViewProps) {
   const [states, setStates] = useState<FileViewState[]>(() =>
     summary.files.map(initialFileState),
   );
+  const [selection, setSelection] = useState<LineSelection | null>(null);
+  const [composer, setComposer] = useState<ComposerLocation | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   // Dedupe set, kept on success: a scroll-render can re-fire the load effect
   // before React applies the loaded state, and the `diff === null` guard
   // alone would re-fetch. Entries are only removed to allow error retries.
   const requested = useRef(new Set<number>());
   const activeLoads = useRef(0);
+  // In-progress comment text; survives virtualized rows unmounting.
+  const drafts = useRef<DraftStore>(new Map());
+  // Live drag state + the fixed end of the selection; refs so the gutter
+  // handlers stay referentially stable for RowContent's memo.
+  const dragRef = useRef<{ fi: number; hi: number; side: CommentSide } | null>(
+    null,
+  );
+  const anchorRef = useRef<number | null>(null);
+  const selectionRef = useRef(selection);
+  selectionRef.current = selection;
+  const composerRef = useRef(composer);
+  composerRef.current = composer;
 
   const updateState = useCallback(
     (fi: number, update: (state: FileViewState) => FileViewState) => {
@@ -156,9 +197,140 @@ export function DiffView({
     [states, repoPath, head, mode, summary, updateState],
   );
 
+  // Gutter mousedown: start (or shift-extend) a selection.
+  const gutterDown = useCallback((fi: number, hi: number, line: DiffLine, shiftKey: boolean) => {
+    const side = lineSide(line);
+    const n = lineNumber(line);
+    const prev = selectionRef.current;
+    if (
+      shiftKey &&
+      prev !== null &&
+      prev.fi === fi &&
+      prev.hi === hi &&
+      prev.side === side
+    ) {
+      const anchor = anchorRef.current ?? prev.start;
+      const next = {
+        fi,
+        hi,
+        side,
+        start: Math.min(anchor, n),
+        end: Math.max(anchor, n),
+      };
+      setSelection(next);
+      setComposer({
+        level: "line",
+        fi,
+        side,
+        startLine: next.start,
+        endLine: next.end,
+      });
+      return;
+    }
+    anchorRef.current = n;
+    dragRef.current = { fi, hi, side };
+    setSelection({ fi, hi, side, start: n, end: n });
+    setComposer(null);
+  }, []);
+
+  // Extend an in-progress drag; ignores rows outside the anchor's hunk/side.
+  const rowEnter = useCallback((fi: number, hi: number, line: DiffLine) => {
+    const drag = dragRef.current;
+    if (drag === null || drag.fi !== fi || drag.hi !== hi) {
+      return;
+    }
+    const side = lineSide(line);
+    if (side !== drag.side) {
+      return;
+    }
+    const n = lineNumber(line);
+    const anchor = anchorRef.current ?? n;
+    setSelection({
+      fi,
+      hi,
+      side,
+      start: Math.min(anchor, n),
+      end: Math.max(anchor, n),
+    });
+  }, []);
+
+  // Releasing a gutter drag anywhere opens the composer for the selection.
+  useEffect(() => {
+    const onMouseUp = () => {
+      if (dragRef.current === null) {
+        return;
+      }
+      dragRef.current = null;
+      const sel = selectionRef.current;
+      if (sel !== null) {
+        setComposer({
+          level: "line",
+          fi: sel.fi,
+          side: sel.side,
+          startLine: sel.start,
+          endLine: sel.end,
+        });
+      }
+    };
+    window.addEventListener("mouseup", onMouseUp);
+    return () => window.removeEventListener("mouseup", onMouseUp);
+  }, []);
+
+  const addFileComment = useCallback(
+    (fi: number) => {
+      updateState(fi, (s) => (s.expanded ? s : { ...s, expanded: true }));
+      setSelection(null);
+      setComposer({ level: "file", fi });
+    },
+    [updateState],
+  );
+
+  const submitComposer = useCallback(
+    async (body: string) => {
+      const target = composerRef.current;
+      if (target === null) {
+        return;
+      }
+      const filePath = summary.files[target.fi].path;
+      if (target.level === "file") {
+        await onCreateComment({ level: "file", filePath, body });
+      } else {
+        await onCreateComment({
+          level: "line",
+          filePath,
+          side: target.side,
+          startLine: target.startLine,
+          endLine: target.endLine,
+          body,
+        });
+      }
+      setComposer(null);
+      setSelection(null);
+    },
+    [onCreateComment, summary],
+  );
+
+  const cancelComposer = useCallback(() => {
+    setComposer(null);
+    setSelection(null);
+  }, []);
+
+  const saveComment = useCallback(
+    (id: number, body: string) =>
+      onUpdateComment(id, body).then(() => setEditingId(null)),
+    [onUpdateComment],
+  );
+
+  const cancelEdit = useCallback(() => setEditingId(null), []);
+
+  const commentIndex = useMemo(
+    () => indexComments(summary.files, comments),
+    [summary.files, comments],
+  );
+
   const rows = useMemo(
-    () => buildRows(summary.files, states),
-    [summary.files, states],
+    () => buildRows(summary.files, states, commentIndex, composer),
+    [summary.files, states, commentIndex, composer],
   );
 
   const virtualizer = useVirtualizer({
@@ -226,9 +398,22 @@ export function DiffView({
               row={rows[item.index]}
               files={summary.files}
               states={states}
+              selection={selection}
+              composer={composer}
+              editingId={editingId}
+              drafts={drafts.current}
               onToggle={toggleFile}
               onLoad={forceLoadFile}
               onExpand={expandGap}
+              onGutterDown={gutterDown}
+              onRowEnter={rowEnter}
+              onAddFileComment={addFileComment}
+              onComposerSubmit={submitComposer}
+              onComposerCancel={cancelComposer}
+              onEditStart={setEditingId}
+              onEditCancel={cancelEdit}
+              onSaveComment={saveComment}
+              onDeleteComment={onDeleteComment}
             />
           </div>
         ))}
@@ -241,22 +426,50 @@ interface RowContentProps {
   row: Row;
   files: FileSummary[];
   states: FileViewState[];
+  selection: LineSelection | null;
+  composer: ComposerLocation | null;
+  editingId: number | null;
+  drafts: DraftStore;
   onToggle: (fi: number) => void;
   onLoad: (fi: number) => void;
   onExpand: (fi: number, gi: number, direction: ExpandDirection) => void;
+  onGutterDown: (fi: number, hi: number, line: DiffLine, shiftKey: boolean) => void;
+  onRowEnter: (fi: number, hi: number, line: DiffLine) => void;
+  onAddFileComment: (fi: number) => void;
+  onComposerSubmit: (body: string) => Promise<void>;
+  onComposerCancel: () => void;
+  onEditStart: (id: number) => void;
+  onEditCancel: () => void;
+  onSaveComment: (id: number, body: string) => Promise<void>;
+  onDeleteComment: (id: number) => Promise<void>;
 }
 
 /**
  * Memoized so scrolling — which only moves wrapper transforms — never
- * re-renders row subtrees; row objects are stable across scroll frames.
+ * re-renders row subtrees; row objects and every handler are stable across
+ * scroll frames. Interaction state (selection, composer, editing) does
+ * re-render the visible rows, which is fine — those are user-paced events.
  */
 const RowContent = memo(function RowContent({
   row,
   files,
   states,
+  selection,
+  composer,
+  editingId,
+  drafts,
   onToggle,
   onLoad,
   onExpand,
+  onGutterDown,
+  onRowEnter,
+  onAddFileComment,
+  onComposerSubmit,
+  onComposerCancel,
+  onEditStart,
+  onEditCancel,
+  onSaveComment,
+  onDeleteComment,
 }: RowContentProps) {
   switch (row.kind) {
     case "file":
@@ -265,6 +478,7 @@ const RowContent = memo(function RowContent({
           file={files[row.fi]}
           expanded={states[row.fi].expanded}
           onToggle={() => onToggle(row.fi)}
+          onAddComment={() => onAddFileComment(row.fi)}
         />
       );
     case "notice":
@@ -287,8 +501,56 @@ const RowContent = memo(function RowContent({
       return <div className="diff-file-empty">No content changes.</div>;
     case "hunk":
       return <div className="hunk-header">{row.header}</div>;
-    case "line":
-      return <LineRow line={row.line} />;
+    case "line": {
+      const selected =
+        selection !== null &&
+        row.hi !== undefined &&
+        selection.fi === row.fi &&
+        selection.hi === row.hi &&
+        lineSide(row.line) === selection.side &&
+        lineNumber(row.line) >= selection.start &&
+        lineNumber(row.line) <= selection.end;
+      return (
+        <LineRow
+          line={row.line}
+          fi={row.fi}
+          hi={row.hi}
+          selected={selected}
+          onGutterDown={onGutterDown}
+          onRowEnter={onRowEnter}
+        />
+      );
+    }
+    case "comment":
+      return (
+        <div className="inline-comment">
+          <CommentCard
+            comment={row.comment}
+            editing={editingId === row.comment.id}
+            drafts={drafts}
+            onEditStart={onEditStart}
+            onEditCancel={onEditCancel}
+            onSave={onSaveComment}
+            onDelete={onDeleteComment}
+          />
+        </div>
+      );
+    case "composer":
+      return (
+        <div className="inline-comment">
+          <CommentComposer
+            drafts={drafts}
+            draftKey="new"
+            placeholder={
+              composer?.level === "file"
+                ? `Comment on ${files[row.fi].path}…`
+                : "Comment on the selected lines…"
+            }
+            onSubmit={onComposerSubmit}
+            onCancel={onComposerCancel}
+          />
+        </div>
+      );
     case "expand":
       return (
         <ExpandRow
@@ -305,10 +567,12 @@ function FileHeaderRow({
   file,
   expanded,
   onToggle,
+  onAddComment,
 }: {
   file: FileSummary;
   expanded: boolean;
   onToggle: () => void;
+  onAddComment: () => void;
 }) {
   return (
     <div className="diff-file-header">
@@ -338,6 +602,14 @@ function FileHeaderRow({
         )}
         {file.path}
       </span>
+      <button
+        type="button"
+        className="add-comment-button"
+        title={`Comment on ${file.path}`}
+        onClick={onAddComment}
+      >
+        + Add comment
+      </button>
       {file.binary ? (
         <span className="file-counts file-binary">BIN</span>
       ) : (
@@ -376,11 +648,42 @@ function GuardNoticeRow({
   );
 }
 
-function LineRow({ line }: { line: DiffLine }) {
+function LineRow({
+  line,
+  fi,
+  hi,
+  selected,
+  onGutterDown,
+  onRowEnter,
+}: {
+  line: DiffLine;
+  fi: number;
+  /** Absent for expanded gap-context lines, which are not commentable. */
+  hi: number | undefined;
+  selected: boolean;
+  onGutterDown: (fi: number, hi: number, line: DiffLine, shiftKey: boolean) => void;
+  onRowEnter: (fi: number, hi: number, line: DiffLine) => void;
+}) {
+  const commentable = hi !== undefined;
+  const gutterProps = commentable
+    ? {
+        className: "lineno lineno-commentable",
+        onMouseDown: (e: React.MouseEvent) => {
+          if (e.button === 0) {
+            // Keep the drag from starting a text selection.
+            e.preventDefault();
+            onGutterDown(fi, hi, line, e.shiftKey);
+          }
+        },
+      }
+    : { className: "lineno" };
   return (
-    <div className={`diff-line diff-line-${line.kind}`}>
-      <span className="lineno">{line.oldLineno ?? ""}</span>
-      <span className="lineno">{line.newLineno ?? ""}</span>
+    <div
+      className={`diff-line diff-line-${line.kind}${selected ? " diff-line-selected" : ""}`}
+      onMouseEnter={commentable ? () => onRowEnter(fi, hi, line) : undefined}
+    >
+      <span {...gutterProps}>{line.oldLineno ?? ""}</span>
+      <span {...gutterProps}>{line.newLineno ?? ""}</span>
       <span className="line-sign" aria-hidden="true">
         {line.kind === "addition" ? "+" : line.kind === "deletion" ? "−" : ""}
       </span>

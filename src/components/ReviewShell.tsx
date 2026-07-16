@@ -1,14 +1,25 @@
-import { useEffect, useRef, useState } from "react";
-import { getDiffSummary } from "../ipc";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  createComment,
+  deleteComment,
+  getDiffSummary,
+  listComments,
+  openReview,
+  updateComment,
+} from "../ipc";
 import type {
   BranchList,
+  Comment,
   DiffSummary,
+  NewCommentInput,
   RepoInfo,
+  Review,
   WorkingTreeMode,
 } from "../types";
 import { DiffView } from "./DiffView";
 import { FileList } from "./FileList";
 import { ModeToggle } from "./ModeToggle";
+import { ReviewCommentsPanel } from "./ReviewCommentsPanel";
 
 interface ReviewShellProps {
   repo: RepoInfo;
@@ -51,6 +62,8 @@ export function ReviewShell({
   onSwitchRepo,
 }: ReviewShellProps) {
   const [view, setView] = useState<DiffViewState | null>(null);
+  const [review, setReview] = useState<Review | null>(null);
+  const [comments, setComments] = useState<Comment[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [scrollTarget, setScrollTarget] = useState<{
@@ -58,6 +71,9 @@ export function ReviewShell({
     nonce: number;
   } | null>(null);
   const generation = useRef(0);
+  // Pinned view params for comment creation; a ref so the DiffView callbacks
+  // stay stable across re-renders.
+  const current = useRef<{ review: Review; view: DiffViewState } | null>(null);
 
   useEffect(() => {
     if (!branch || !baseBranch) {
@@ -66,23 +82,34 @@ export function ReviewShell({
     let cancelled = false;
     setLoading(true);
     setError(null);
-    getDiffSummary(repo.path, baseBranch, branch, mode)
-      .then((summary) => {
-        if (!cancelled) {
-          generation.current += 1;
-          setView({
-            summary,
-            base: baseBranch,
-            head: branch,
-            mode,
-            generation: generation.current,
-          });
-          setScrollTarget(null);
-        }
-      })
+    (async () => {
+      const summary = await getDiffSummary(repo.path, baseBranch, branch, mode);
+      // Resume (or start) the branch's active review and pull its comments.
+      const activeReview = await openReview(repo.path, branch, baseBranch, mode);
+      const reviewComments = await listComments(activeReview.id);
+      if (cancelled) {
+        return;
+      }
+      generation.current += 1;
+      const nextView = {
+        summary,
+        base: baseBranch,
+        head: branch,
+        mode,
+        generation: generation.current,
+      };
+      current.current = { review: activeReview, view: nextView };
+      setView(nextView);
+      setReview(activeReview);
+      setComments(reviewComments);
+      setScrollTarget(null);
+    })()
       .catch((e: unknown) => {
         if (!cancelled) {
+          current.current = null;
           setView(null);
+          setReview(null);
+          setComments([]);
           setError(typeof e === "string" ? e : String(e));
         }
       })
@@ -95,6 +122,56 @@ export function ReviewShell({
       cancelled = true;
     };
   }, [repo.path, branch, baseBranch, mode, refreshKey]);
+
+  const handleCreate = useCallback(async (input: NewCommentInput) => {
+    const pinned = current.current;
+    if (pinned === null) {
+      throw "No active review";
+    }
+    const comment = await createComment(
+      pinned.review.repoPath,
+      pinned.view.base,
+      pinned.view.head,
+      pinned.view.mode,
+      { reviewId: pinned.review.id, ...input },
+    );
+    setComments((prev) => [...prev, comment]);
+  }, []);
+
+  const handleUpdate = useCallback(async (id: number, body: string) => {
+    const updated = await updateComment(id, body);
+    setComments((prev) => prev.map((c) => (c.id === id ? updated : c)));
+  }, []);
+
+  const handleDelete = useCallback(async (id: number) => {
+    await deleteComment(id);
+    setComments((prev) => prev.filter((c) => c.id !== id));
+  }, []);
+
+  const handleCreateReviewComment = useCallback(
+    (body: string) => handleCreate({ level: "review", body }),
+    [handleCreate],
+  );
+
+  const reviewComments = useMemo(
+    () => comments.filter((c) => c.level === "review"),
+    [comments],
+  );
+
+  const openCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const comment of comments) {
+      if (
+        comment.level === "review" ||
+        comment.filePath === null ||
+        comment.state !== "open"
+      ) {
+        continue;
+      }
+      counts.set(comment.filePath, (counts.get(comment.filePath) ?? 0) + 1);
+    }
+    return counts;
+  }, [comments]);
 
   return (
     <div className="review-shell">
@@ -153,7 +230,7 @@ export function ReviewShell({
           <div className="diff-empty">
             <p className="error">{error}</p>
           </div>
-        ) : view === null ? (
+        ) : view === null || review === null ? (
           <div className="diff-empty">
             <p>{loading ? "Computing diff…" : "Select branches to diff."}</p>
           </div>
@@ -169,6 +246,7 @@ export function ReviewShell({
             <aside className="file-sidebar">
               <FileList
                 summary={view.summary}
+                openCounts={openCounts}
                 onSelect={(path) =>
                   setScrollTarget((prev) => ({
                     path,
@@ -177,15 +255,27 @@ export function ReviewShell({
                 }
               />
             </aside>
-            <DiffView
-              key={view.generation}
-              repoPath={repo.path}
-              base={view.base}
-              head={view.head}
-              mode={view.mode}
-              summary={view.summary}
-              scrollTarget={scrollTarget}
-            />
+            <div className="diff-pane">
+              <ReviewCommentsPanel
+                comments={reviewComments}
+                onCreate={handleCreateReviewComment}
+                onUpdate={handleUpdate}
+                onDelete={handleDelete}
+              />
+              <DiffView
+                key={view.generation}
+                repoPath={repo.path}
+                base={view.base}
+                head={view.head}
+                mode={view.mode}
+                summary={view.summary}
+                scrollTarget={scrollTarget}
+                comments={comments}
+                onCreateComment={handleCreate}
+                onUpdateComment={handleUpdate}
+                onDeleteComment={handleDelete}
+              />
+            </div>
           </div>
         )}
       </main>
