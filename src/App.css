@@ -719,6 +719,11 @@ button.primary:hover {
   border-top: none;
 }
 
+/* Keyboard cursor (j/k): a quiet accent bar on the focused file header. */
+.diff-file-header-focused {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
 .file-toggle {
   flex: none;
   width: 1.4rem;

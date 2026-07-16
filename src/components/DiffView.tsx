@@ -105,6 +105,10 @@ export function DiffView({
   const [selection, setSelection] = useState<LineSelection | null>(null);
   const [composer, setComposer] = useState<ComposerLocation | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
+  // Keyboard cursor: the file whose header j/k landed on. A ref mirror so
+  // the window keydown handler always sees the latest position.
+  const [cursorFi, setCursorFi] = useState<number | null>(null);
+  const cursorFiRef = useRef<number | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   // Dedupe set, kept on success: a scroll-render can re-fire the load effect
   // before React applies the loaded state, and the `diff === null` guard
@@ -432,6 +436,94 @@ export function DiffView({
     }
   });
 
+  const scrollToFile = useCallback(
+    (fi: number) => {
+      const index = rows.findIndex(
+        (row) => row.kind === "file" && row.fi === fi,
+      );
+      if (index >= 0) {
+        virtualizer.scrollToIndex(index, { align: "start" });
+      }
+    },
+    [rows, virtualizer],
+  );
+
+  const moveCursor = useCallback(
+    (delta: number) => {
+      const count = summary.files.length;
+      if (count === 0) {
+        return;
+      }
+      const prev = cursorFiRef.current;
+      // From nowhere, j lands on the first file and k on the last.
+      const next =
+        prev === null
+          ? delta > 0
+            ? 0
+            : count - 1
+          : Math.min(Math.max(prev + delta, 0), count - 1);
+      cursorFiRef.current = next;
+      setCursorFi(next);
+      scrollToFile(next);
+    },
+    [summary.files.length, scrollToFile],
+  );
+
+  // `c` comments on the current line selection if there is one, else on the
+  // file the keyboard cursor sits on.
+  const composeAtCursor = useCallback(() => {
+    const sel = selectionRef.current;
+    if (sel !== null) {
+      setComposer({
+        level: "line",
+        fi: sel.fi,
+        side: sel.side,
+        startLine: sel.start,
+        endLine: sel.end,
+      });
+      return;
+    }
+    const fi = cursorFiRef.current;
+    if (fi !== null) {
+      addFileComment(fi);
+    }
+  }, [addFileComment]);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) {
+        return;
+      }
+      // Never hijack typing: composers, branch selects, future inputs.
+      const target = e.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.tagName === "TEXTAREA" ||
+          target.tagName === "INPUT" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      // The archive browser overlays the diff; don't scroll behind it.
+      if (document.querySelector(".archive-overlay") !== null) {
+        return;
+      }
+      if (e.key === "j") {
+        e.preventDefault();
+        moveCursor(1);
+      } else if (e.key === "k") {
+        e.preventDefault();
+        moveCursor(-1);
+      } else if (e.key === "c") {
+        e.preventDefault();
+        composeAtCursor();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [moveCursor, composeAtCursor]);
+
   useEffect(() => {
     if (scrollTarget === null) {
       return;
@@ -467,6 +559,7 @@ export function DiffView({
               files={summary.files}
               states={states}
               highlights={highlights}
+              cursorFi={cursorFi}
               selection={selection}
               composer={composer}
               editingId={editingId}
@@ -498,6 +591,7 @@ interface RowContentProps {
   files: FileSummary[];
   states: FileViewState[];
   highlights: ReadonlyMap<string, LineTokens[]>;
+  cursorFi: number | null;
   selection: LineSelection | null;
   composer: ComposerLocation | null;
   editingId: number | null;
@@ -529,6 +623,7 @@ const RowContent = memo(function RowContent({
   files,
   states,
   highlights,
+  cursorFi,
   selection,
   composer,
   editingId,
@@ -554,6 +649,7 @@ const RowContent = memo(function RowContent({
         <FileHeaderRow
           file={files[row.fi]}
           expanded={states[row.fi].expanded}
+          focused={cursorFi === row.fi}
           onToggle={() => onToggle(row.fi)}
           onAddComment={() => onAddFileComment(row.fi)}
         />
@@ -650,16 +746,21 @@ const RowContent = memo(function RowContent({
 function FileHeaderRow({
   file,
   expanded,
+  focused,
   onToggle,
   onAddComment,
 }: {
   file: FileSummary;
   expanded: boolean;
+  /** The keyboard cursor (j/k) sits on this file. */
+  focused: boolean;
   onToggle: () => void;
   onAddComment: () => void;
 }) {
   return (
-    <div className="diff-file-header">
+    <div
+      className={`diff-file-header${focused ? " diff-file-header-focused" : ""}`}
+    >
       <button
         type="button"
         className="file-toggle"
