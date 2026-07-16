@@ -96,10 +96,16 @@ export function DiffView({
     null,
   );
   const anchorRef = useRef<number | null>(null);
+  // Written wherever the state is set (not at render) so the window mouseup
+  // handler sees the latest selection even before React re-renders.
   const selectionRef = useRef(selection);
-  selectionRef.current = selection;
   const composerRef = useRef(composer);
   composerRef.current = composer;
+
+  const applySelection = useCallback((sel: LineSelection | null) => {
+    selectionRef.current = sel;
+    setSelection(sel);
+  }, []);
 
   const updateState = useCallback(
     (fi: number, update: (state: FileViewState) => FileViewState) => {
@@ -217,7 +223,7 @@ export function DiffView({
         start: Math.min(anchor, n),
         end: Math.max(anchor, n),
       };
-      setSelection(next);
+      applySelection(next);
       setComposer({
         level: "line",
         fi,
@@ -229,7 +235,7 @@ export function DiffView({
     }
     anchorRef.current = n;
     dragRef.current = { fi, hi, side };
-    setSelection({ fi, hi, side, start: n, end: n });
+    applySelection({ fi, hi, side, start: n, end: n });
     setComposer(null);
   }, []);
 
@@ -245,7 +251,7 @@ export function DiffView({
     }
     const n = lineNumber(line);
     const anchor = anchorRef.current ?? n;
-    setSelection({
+    applySelection({
       fi,
       hi,
       side,
@@ -279,7 +285,7 @@ export function DiffView({
   const addFileComment = useCallback(
     (fi: number) => {
       updateState(fi, (s) => (s.expanded ? s : { ...s, expanded: true }));
-      setSelection(null);
+      applySelection(null);
       setComposer({ level: "file", fi });
     },
     [updateState],
@@ -305,14 +311,14 @@ export function DiffView({
         });
       }
       setComposer(null);
-      setSelection(null);
+      applySelection(null);
     },
     [onCreateComment, summary],
   );
 
   const cancelComposer = useCallback(() => {
     setComposer(null);
-    setSelection(null);
+    applySelection(null);
   }, []);
 
   const saveComment = useCallback(
