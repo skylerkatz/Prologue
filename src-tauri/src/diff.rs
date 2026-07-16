@@ -88,6 +88,9 @@ pub struct FileDiff {
     pub status: FileStatus,
     pub binary: bool,
     pub hunks: Vec<Hunk>,
+    /// Total line count of the new side, bounding expand-context below the
+    /// last hunk; `None` for deleted or binary files (nothing to expand).
+    pub new_total_lines: Option<u32>,
 }
 
 /// Merge-base (three-dot) file summary: diff(merge-base(base, head), head),
@@ -219,13 +222,114 @@ pub fn get_file_diff(
         }
     }
 
+    let new_total_lines = if binary || status == FileStatus::Deleted {
+        None
+    } else {
+        new_side_content(&repo, &head, mode, &file_path)
+            .ok()
+            .map(|content| u32::try_from(text_of(&content).lines().count()).unwrap_or(u32::MAX))
+    };
+
     Ok(FileDiff {
         path: file_path,
         old_path,
         status,
         binary,
         hunks,
+        new_total_lines,
     })
+}
+
+/// Unchanged lines around hunks, fetched on expand-context clicks so they
+/// never cross IPC up front.
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextLines {
+    /// 1-based new-side line number of the first returned line.
+    pub start: u32,
+    pub lines: Vec<String>,
+    /// Total line count of the new-side file, so the frontend knows how far
+    /// the gap after the last hunk extends.
+    pub total_lines: u32,
+}
+
+/// Lines `start..=end` (1-based, clamped) of the file's new side — head tree,
+/// index, or working tree depending on `mode`. Old-side line numbers are
+/// derivable on the frontend: within a gap between hunks both sides advance
+/// together, offset by the surrounding hunk's old/new starts.
+#[tauri::command]
+pub fn get_context_lines(
+    repo_path: String,
+    head: String,
+    mode: DiffMode,
+    path: String,
+    start: u32,
+    end: u32,
+) -> Result<ContextLines, String> {
+    let repo = open_git_repo(&repo_path)?;
+    let content = new_side_content(&repo, &head, mode, &path)?;
+    if content.contains(&0) {
+        return Err(format!("Cannot expand context in a binary file: {path}"));
+    }
+
+    let text = text_of(&content);
+    // `str::lines` strips the `\n` and any `\r` before it, matching how
+    // `line_text` normalizes diff lines.
+    let all: Vec<&str> = text.lines().collect();
+    let total_lines = u32::try_from(all.len()).unwrap_or(u32::MAX);
+    let start = start.max(1);
+    let end = end.min(total_lines);
+    let lines = if start > end {
+        Vec::new()
+    } else {
+        all[(start - 1) as usize..end as usize]
+            .iter()
+            .map(|s| (*s).to_owned())
+            .collect()
+    };
+    Ok(ContextLines {
+        start,
+        lines,
+        total_lines,
+    })
+}
+
+/// The new-side file content for `mode`: branch tip blob, index blob, or
+/// working-tree file.
+fn new_side_content(
+    repo: &Repository,
+    head: &str,
+    mode: DiffMode,
+    path: &str,
+) -> Result<Vec<u8>, String> {
+    let not_found = || format!("File not found on the new side: {path}");
+    match mode {
+        DiffMode::Committed => {
+            let tree = resolve_commit(repo, head)?
+                .tree()
+                .map_err(git_err("Failed to load branch tree"))?;
+            let entry = tree.get_path(std::path::Path::new(path)).map_err(|_| not_found())?;
+            let blob = entry
+                .to_object(repo)
+                .and_then(|obj| obj.peel_to_blob())
+                .map_err(|_| not_found())?;
+            Ok(blob.content().to_vec())
+        }
+        DiffMode::Staged => {
+            let index = repo.index().map_err(git_err("Failed to read index"))?;
+            let entry = index
+                .get_path(std::path::Path::new(path), 0)
+                .ok_or_else(not_found)?;
+            let blob = repo.find_blob(entry.id).map_err(|_| not_found())?;
+            Ok(blob.content().to_vec())
+        }
+        DiffMode::All => {
+            let workdir = repo
+                .workdir()
+                .ok_or_else(|| "Repository has no working directory".to_owned())?;
+            std::fs::read(workdir.join(path)).map_err(|_| not_found())
+        }
+    }
 }
 
 /// Compute the three-dot diff for `mode`, with rename detection (matching
@@ -606,6 +710,7 @@ mod tests {
         assert_eq!(diff.path, "a.txt");
         assert_eq!(diff.status, FileStatus::Modified);
         assert!(!diff.binary);
+        assert_eq!(diff.new_total_lines, Some(4));
         assert_eq!(diff.hunks.len(), 1);
 
         let hunk = &diff.hunks[0];
@@ -646,6 +751,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(diff.status, FileStatus::Deleted);
+        assert_eq!(diff.new_total_lines, None);
         assert_eq!(diff.hunks.len(), 1);
         let line = &diff.hunks[0].lines[0];
         assert_eq!(line.kind, LineKind::Deletion);
@@ -683,6 +789,125 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.contains("No changes for file"), "{err}");
+    }
+
+    /// Fixture for context expansion: feature edits line 10 of a 20-line file,
+    /// leaving unchanged lines above and below the hunk.
+    fn context_fixture() -> FixtureRepo {
+        let fixture = FixtureRepo::new();
+        let lines: Vec<String> = (1..=20).map(|n| format!("line {n}")).collect();
+        fixture.write("big.txt", &(lines.join("\n") + "\n"));
+        fixture.stage(&["big.txt"]);
+        fixture.commit("initial");
+
+        fixture.create_branch("feature");
+        let mut changed = lines.clone();
+        changed[9] = "line 10 CHANGED".to_owned();
+        fixture.commit_file("big.txt", &(changed.join("\n") + "\n"), "edit line 10");
+        fixture
+    }
+
+    #[test]
+    fn context_lines_returns_the_requested_new_side_range() {
+        let fixture = context_fixture();
+        let ctx = get_context_lines(
+            fixture.path(),
+            "feature".into(),
+            DiffMode::Committed,
+            "big.txt".into(),
+            1,
+            6,
+        )
+        .unwrap();
+
+        assert_eq!(ctx.start, 1);
+        assert_eq!(ctx.total_lines, 20);
+        assert_eq!(ctx.lines.len(), 6);
+        assert_eq!(ctx.lines[0], "line 1");
+        assert_eq!(ctx.lines[5], "line 6");
+    }
+
+    #[test]
+    fn context_lines_clamps_past_the_end_of_the_file() {
+        let fixture = context_fixture();
+        let ctx = get_context_lines(
+            fixture.path(),
+            "feature".into(),
+            DiffMode::Committed,
+            "big.txt".into(),
+            18,
+            50,
+        )
+        .unwrap();
+
+        assert_eq!(ctx.start, 18);
+        assert_eq!(ctx.lines, vec!["line 18", "line 19", "line 20"]);
+    }
+
+    #[test]
+    fn context_lines_reads_the_branch_tip_not_the_working_tree_in_committed_mode() {
+        let fixture = context_fixture();
+        // Working-tree edit that committed mode must not see.
+        fixture.write("big.txt", "workdir only\n");
+
+        let committed = get_context_lines(
+            fixture.path(),
+            "feature".into(),
+            DiffMode::Committed,
+            "big.txt".into(),
+            1,
+            1,
+        )
+        .unwrap();
+        assert_eq!(committed.lines, vec!["line 1"]);
+        assert_eq!(committed.total_lines, 20);
+
+        let workdir = get_context_lines(
+            fixture.path(),
+            "feature".into(),
+            DiffMode::All,
+            "big.txt".into(),
+            1,
+            1,
+        )
+        .unwrap();
+        assert_eq!(workdir.lines, vec!["workdir only"]);
+        assert_eq!(workdir.total_lines, 1);
+    }
+
+    #[test]
+    fn context_lines_reads_the_index_in_staged_mode() {
+        let fixture = context_fixture();
+        fixture.write("big.txt", "staged content\n");
+        fixture.stage(&["big.txt"]);
+        fixture.write("big.txt", "unstaged after\n");
+
+        let ctx = get_context_lines(
+            fixture.path(),
+            "feature".into(),
+            DiffMode::Staged,
+            "big.txt".into(),
+            1,
+            5,
+        )
+        .unwrap();
+        assert_eq!(ctx.lines, vec!["staged content"]);
+        assert_eq!(ctx.total_lines, 1);
+    }
+
+    #[test]
+    fn context_lines_rejects_a_missing_path() {
+        let fixture = context_fixture();
+        let err = get_context_lines(
+            fixture.path(),
+            "feature".into(),
+            DiffMode::Committed,
+            "nope.txt".into(),
+            1,
+            5,
+        )
+        .unwrap_err();
+        assert!(err.contains("File not found"), "{err}");
     }
 
     #[test]

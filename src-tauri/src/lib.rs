@@ -12,7 +12,8 @@ pub fn run() {
             repo::open_repo,
             repo::list_branches,
             diff::get_diff_summary,
-            diff::get_file_diff
+            diff::get_file_diff,
+            diff::get_context_lines
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
