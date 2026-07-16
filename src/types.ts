@@ -73,6 +73,60 @@ export interface ContextLines {
   totalLines: number;
 }
 
+/** A review session: one active review per (repo, branch). */
+export interface Review {
+  id: number;
+  repoPath: string;
+  branch: string;
+  baseRef: string;
+  mode: WorkingTreeMode;
+  status: "active" | "archived";
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CommentLevel = "review" | "file" | "line";
+
+export type CommentSide = "old" | "new";
+
+export type CommentState = "open" | "resolved" | "dismissed";
+
+/** Verbatim code captured at comment time to re-locate the spot after edits. */
+export interface CodeAnchor {
+  hunkHeader: string;
+  contextBefore: string[];
+  lines: string[];
+  contextAfter: string[];
+}
+
+export interface Comment {
+  /** SQLite row id, displayed as C<id>. */
+  id: number;
+  reviewId: number;
+  level: CommentLevel;
+  filePath: string | null;
+  side: CommentSide | null;
+  startLine: number | null;
+  endLine: number | null;
+  codeAnchor: CodeAnchor | null;
+  /** Head commit SHA at comment time. */
+  commitSha: string;
+  state: CommentState;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Caller-provided fields of a new comment; anchor and SHA are captured in Rust. */
+export interface NewCommentInput {
+  level: CommentLevel;
+  filePath?: string;
+  side?: CommentSide;
+  startLine?: number;
+  endLine?: number;
+  body: string;
+}
+
 export const WORKING_TREE_MODES: ReadonlyArray<{
   value: WorkingTreeMode;
   label: string;

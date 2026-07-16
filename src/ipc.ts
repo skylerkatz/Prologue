@@ -1,10 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   BranchList,
+  Comment,
   ContextLines,
   DiffSummary,
   FileDiff,
+  NewCommentInput,
   RepoInfo,
+  Review,
   WorkingTreeMode,
 } from "./types";
 
@@ -35,6 +38,45 @@ export function getFileDiff(
   path: string,
 ): Promise<FileDiff> {
   return invoke("get_file_diff", { repoPath, base, head, mode, path });
+}
+
+/** Resume (or create) the active review for this repo + branch. */
+export function openReview(
+  repoPath: string,
+  branch: string,
+  baseRef: string,
+  mode: WorkingTreeMode,
+): Promise<Review> {
+  return invoke("open_review", { repoPath, branch, baseRef, mode });
+}
+
+export function listComments(reviewId: number): Promise<Comment[]> {
+  return invoke("list_comments", { reviewId });
+}
+
+/**
+ * Create a comment; base/head/mode let Rust capture the code anchor and
+ * commit SHA for line comments.
+ */
+export function createComment(
+  repoPath: string,
+  base: string,
+  head: string,
+  mode: WorkingTreeMode,
+  comment: NewCommentInput & { reviewId: number },
+): Promise<Comment> {
+  return invoke("create_comment", { repoPath, base, head, mode, comment });
+}
+
+export function updateComment(
+  commentId: number,
+  body: string,
+): Promise<Comment> {
+  return invoke("update_comment", { commentId, body });
+}
+
+export function deleteComment(commentId: number): Promise<void> {
+  return invoke("delete_comment", { commentId });
 }
 
 /** New-side lines `start..=end` (1-based, clamped) for expand-context. */
