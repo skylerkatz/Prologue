@@ -1,0 +1,19 @@
+.gitignore
+  s_ba32f2986040a5::t_5d4c5468210df2 26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "901c88855f36f05999acb58d8f76824912430f77",
+  "prompts": {},
+  "sessions": {
+    "s_ba32f2986040a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "78461b80-01f7-4132-bbca-096b37bf1e1c",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
