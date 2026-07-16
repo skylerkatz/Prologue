@@ -1,0 +1,19 @@
+solo.yml
+  s_08cf20b0ccce15::t_ed6ca6ae701dbf 11-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "371f30bd87e97d878a4256fa25c032b808d98c22",
+  "prompts": {},
+  "sessions": {
+    "s_08cf20b0ccce15": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "57b050a2-f228-4781-8170-8e06cc77775f",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
