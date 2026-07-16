@@ -12,9 +12,11 @@
   "app": {
     "windows": [
       {
-        "title": "diff-viewer",
-        "width": 800,
-        "height": 600
+        "title": "Diff Viewer",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 500
       }
     ],
     "security": {
