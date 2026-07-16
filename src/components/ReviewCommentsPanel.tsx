@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import type { Comment } from "../types";
+import type { Comment, CommentState } from "../types";
 import { CommentCard, CommentComposer, type DraftStore } from "./Comments";
 
 interface ReviewCommentsPanelProps {
@@ -8,6 +8,7 @@ interface ReviewCommentsPanelProps {
   onCreate: (body: string) => Promise<void>;
   onUpdate: (id: number, body: string) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
+  onSetState: (id: number, state: CommentState) => Promise<void>;
 }
 
 /** Overall review notes, pinned above the diff. */
@@ -16,6 +17,7 @@ export function ReviewCommentsPanel({
   onCreate,
   onUpdate,
   onDelete,
+  onSetState,
 }: ReviewCommentsPanelProps) {
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -50,6 +52,7 @@ export function ReviewCommentsPanel({
             onUpdate(id, body).then(() => setEditingId(null))
           }
           onDelete={onDelete}
+          onSetState={onSetState}
         />
       ))}
       {adding && (

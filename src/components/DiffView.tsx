@@ -17,8 +17,10 @@ import {
   type Row,
 } from "../diff/rows";
 import type {
+  AnchorStatus,
   Comment,
   CommentSide,
+  CommentState,
   DiffLine,
   DiffSummary,
   FileStatus,
@@ -48,9 +50,12 @@ interface DiffViewProps {
   scrollTarget: { path: string; nonce: number } | null;
   /** File- and line-level comments (review-level ones are ignored here). */
   comments: Comment[];
+  /** Re-anchor outcome per line comment; "changed" flags the comment card. */
+  anchorStatuses: ReadonlyMap<number, AnchorStatus>;
   onCreateComment: (input: NewCommentInput) => Promise<void>;
   onUpdateComment: (id: number, body: string) => Promise<void>;
   onDeleteComment: (id: number) => Promise<void>;
+  onSetCommentState: (id: number, state: CommentState) => Promise<void>;
 }
 
 type ExpandDirection = "top" | "bottom" | "all";
@@ -72,9 +77,11 @@ export function DiffView({
   summary,
   scrollTarget,
   comments,
+  anchorStatuses,
   onCreateComment,
   onUpdateComment,
   onDeleteComment,
+  onSetCommentState,
 }: DiffViewProps) {
   const [states, setStates] = useState<FileViewState[]>(() =>
     summary.files.map(initialFileState),
@@ -408,6 +415,7 @@ export function DiffView({
               composer={composer}
               editingId={editingId}
               drafts={drafts.current}
+              anchorStatuses={anchorStatuses}
               onToggle={toggleFile}
               onLoad={forceLoadFile}
               onExpand={expandGap}
@@ -420,6 +428,7 @@ export function DiffView({
               onEditCancel={cancelEdit}
               onSaveComment={saveComment}
               onDeleteComment={onDeleteComment}
+              onSetCommentState={onSetCommentState}
             />
           </div>
         ))}
@@ -436,6 +445,7 @@ interface RowContentProps {
   composer: ComposerLocation | null;
   editingId: number | null;
   drafts: DraftStore;
+  anchorStatuses: ReadonlyMap<number, AnchorStatus>;
   onToggle: (fi: number) => void;
   onLoad: (fi: number) => void;
   onExpand: (fi: number, gi: number, direction: ExpandDirection) => void;
@@ -448,6 +458,7 @@ interface RowContentProps {
   onEditCancel: () => void;
   onSaveComment: (id: number, body: string) => Promise<void>;
   onDeleteComment: (id: number) => Promise<void>;
+  onSetCommentState: (id: number, state: CommentState) => Promise<void>;
 }
 
 /**
@@ -464,6 +475,7 @@ const RowContent = memo(function RowContent({
   composer,
   editingId,
   drafts,
+  anchorStatuses,
   onToggle,
   onLoad,
   onExpand,
@@ -476,6 +488,7 @@ const RowContent = memo(function RowContent({
   onEditCancel,
   onSaveComment,
   onDeleteComment,
+  onSetCommentState,
 }: RowContentProps) {
   switch (row.kind) {
     case "file":
@@ -534,10 +547,12 @@ const RowContent = memo(function RowContent({
             comment={row.comment}
             editing={editingId === row.comment.id}
             drafts={drafts}
+            codeChanged={anchorStatuses.get(row.comment.id) === "changed"}
             onEditStart={onEditStart}
             onEditCancel={onEditCancel}
             onSave={onSaveComment}
             onDelete={onDeleteComment}
+            onSetState={onSetCommentState}
           />
         </div>
       );

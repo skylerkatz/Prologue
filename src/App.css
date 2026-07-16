@@ -831,3 +831,209 @@ button.primary:hover {
   padding: 0.75rem;
   color: var(--text-muted);
 }
+
+/* --- M5: comment lifecycle ------------------------------------------- */
+
+.comment-card-closed {
+  opacity: 0.65;
+}
+
+.comment-state {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  background: var(--bg-subtle);
+}
+
+.comment-state-resolved {
+  color: var(--added);
+  border-color: var(--added);
+}
+
+.comment-state-dismissed {
+  color: var(--text-muted);
+}
+
+.comment-flag {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  color: var(--renamed);
+  border: 1px solid var(--renamed);
+  white-space: nowrap;
+}
+
+.comment-body-toggle {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0.35rem 0 0;
+  font: inherit;
+  color: var(--text);
+  cursor: pointer;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.comment-body-collapsed {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-muted);
+}
+
+/* --- M5: orphaned bucket --------------------------------------------- */
+
+.orphaned-comments {
+  margin: 0.75rem;
+  border: 1px solid var(--renamed);
+  border-radius: 8px;
+  padding: 0.6rem 0.75rem;
+  background: var(--bg-subtle);
+}
+
+.orphaned-header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.4rem;
+}
+
+.orphaned-title {
+  font-weight: 600;
+  color: var(--renamed);
+  font-size: 0.9rem;
+}
+
+.orphaned-hint {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.orphaned-comment {
+  margin-top: 0.6rem;
+}
+
+.orphaned-origin {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+
+.orphaned-anchor {
+  margin: 0.25rem 0;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  overflow-x: auto;
+  max-height: 8.5rem;
+}
+
+/* --- M5: archived reviews browser ------------------------------------ */
+
+.archive-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 4rem 1rem 2rem;
+  z-index: 10;
+}
+
+.archive-panel {
+  width: min(720px, 100%);
+  max-height: 80vh;
+  overflow-y: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.75rem 1rem 1rem;
+}
+
+.archive-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.archive-title {
+  font-weight: 600;
+}
+
+.archive-readonly {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.archive-empty {
+  color: var(--text-muted);
+  padding: 1rem 0.25rem;
+  font-size: 0.9rem;
+}
+
+.archive-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+}
+
+.archive-row {
+  display: flex;
+  width: 100%;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.5rem 0.4rem;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  font: inherit;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.archive-row:hover {
+  background: var(--bg-subtle);
+}
+
+.archive-branch {
+  font-weight: 600;
+}
+
+.archive-base,
+.archive-count,
+.archive-date {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.archive-detail-meta {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin: 0.6rem 0;
+}
+
+.archive-comment {
+  margin-top: 0.6rem;
+}

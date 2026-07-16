@@ -1,11 +1,15 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  ArchivedReview,
   BranchList,
   Comment,
+  CommentState,
   ContextLines,
   DiffSummary,
   FileDiff,
   NewCommentInput,
+  OpenReviewResult,
+  ReanchorResult,
   RepoInfo,
   Review,
   WorkingTreeMode,
@@ -40,14 +44,49 @@ export function getFileDiff(
   return invoke("get_file_diff", { repoPath, base, head, mode, path });
 }
 
-/** Resume (or create) the active review for this repo + branch. */
+/**
+ * Resume (or create) the active review for this repo + branch. A merged
+ * branch gets its archived review back read-only instead of a new one.
+ */
 export function openReview(
   repoPath: string,
   branch: string,
   baseRef: string,
   mode: WorkingTreeMode,
-): Promise<Review> {
+): Promise<OpenReviewResult> {
   return invoke("open_review", { repoPath, branch, baseRef, mode });
+}
+
+export function updateCommentState(
+  commentId: number,
+  state: CommentState,
+): Promise<Comment> {
+  return invoke("update_comment_state", { commentId, state });
+}
+
+/**
+ * Re-locate the review's line comments in the current diff via their code
+ * anchors; moved line ranges are persisted server-side.
+ */
+export function reanchorComments(
+  repoPath: string,
+  base: string,
+  head: string,
+  mode: WorkingTreeMode,
+  reviewId: number,
+): Promise<ReanchorResult[]> {
+  return invoke("reanchor_comments", { repoPath, base, head, mode, reviewId });
+}
+
+/** Archive reviews whose branch is merged into its base or deleted. */
+export function archiveStaleReviews(repoPath: string): Promise<Review[]> {
+  return invoke("archive_stale_reviews", { repoPath });
+}
+
+export function listArchivedReviews(
+  repoPath: string,
+): Promise<ArchivedReview[]> {
+  return invoke("list_archived_reviews", { repoPath });
 }
 
 export function listComments(reviewId: number): Promise<Comment[]> {

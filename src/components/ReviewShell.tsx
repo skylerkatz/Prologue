@@ -1,24 +1,31 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  archiveStaleReviews,
   createComment,
   deleteComment,
   getDiffSummary,
   listComments,
   openReview,
+  reanchorComments,
   updateComment,
+  updateCommentState,
 } from "../ipc";
 import type {
+  AnchorStatus,
   BranchList,
   Comment,
+  CommentState,
   DiffSummary,
   NewCommentInput,
   RepoInfo,
   Review,
   WorkingTreeMode,
 } from "../types";
+import { ArchivedReviews } from "./ArchivedReviews";
 import { DiffView } from "./DiffView";
 import { FileList } from "./FileList";
 import { ModeToggle } from "./ModeToggle";
+import { OrphanedComments } from "./OrphanedComments";
 import { ReviewCommentsPanel } from "./ReviewCommentsPanel";
 
 interface ReviewShellProps {
@@ -63,7 +70,12 @@ export function ReviewShell({
 }: ReviewShellProps) {
   const [view, setView] = useState<DiffViewState | null>(null);
   const [review, setReview] = useState<Review | null>(null);
+  const [branchMerged, setBranchMerged] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
+  const [anchorStatuses, setAnchorStatuses] = useState<
+    ReadonlyMap<number, AnchorStatus>
+  >(new Map());
+  const [showArchive, setShowArchive] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [scrollTarget, setScrollTarget] = useState<{
@@ -84,9 +96,25 @@ export function ReviewShell({
     setError(null);
     (async () => {
       const summary = await getDiffSummary(repo.path, baseBranch, branch, mode);
-      // Resume (or start) the branch's active review and pull its comments.
-      const activeReview = await openReview(repo.path, branch, baseBranch, mode);
-      const reviewComments = await listComments(activeReview.id);
+      // Auto-archive reviews whose branch merged or vanished, then resume
+      // (or start) this branch's review.
+      await archiveStaleReviews(repo.path);
+      const opened = await openReview(repo.path, branch, baseBranch, mode);
+      let reviewComments: Comment[] = [];
+      let anchors: ReadonlyMap<number, AnchorStatus> = new Map();
+      if (opened.review !== null && opened.review.status === "active") {
+        // Re-locate line comments in the recomputed diff before reading
+        // them back (moves are persisted server-side).
+        const results = await reanchorComments(
+          repo.path,
+          baseBranch,
+          branch,
+          mode,
+          opened.review.id,
+        );
+        anchors = new Map(results.map((r) => [r.commentId, r.status]));
+        reviewComments = await listComments(opened.review.id);
+      }
       if (cancelled) {
         return;
       }
@@ -98,10 +126,16 @@ export function ReviewShell({
         mode,
         generation: generation.current,
       };
-      current.current = { review: activeReview, view: nextView };
+      // Comment creation stays possible only on an active review.
+      current.current =
+        opened.review !== null && opened.review.status === "active"
+          ? { review: opened.review, view: nextView }
+          : null;
       setView(nextView);
-      setReview(activeReview);
+      setReview(opened.review);
+      setBranchMerged(opened.branchMerged);
       setComments(reviewComments);
+      setAnchorStatuses(anchors);
       setScrollTarget(null);
     })()
       .catch((e: unknown) => {
@@ -109,7 +143,9 @@ export function ReviewShell({
           current.current = null;
           setView(null);
           setReview(null);
+          setBranchMerged(false);
           setComments([]);
+          setAnchorStatuses(new Map());
           setError(typeof e === "string" ? e : String(e));
         }
       })
@@ -148,6 +184,14 @@ export function ReviewShell({
     setComments((prev) => prev.filter((c) => c.id !== id));
   }, []);
 
+  const handleSetState = useCallback(
+    async (id: number, state: CommentState) => {
+      const updated = await updateCommentState(id, state);
+      setComments((prev) => prev.map((c) => (c.id === id ? updated : c)));
+    },
+    [],
+  );
+
   const handleCreateReviewComment = useCallback(
     (body: string) => handleCreate({ level: "review", body }),
     [handleCreate],
@@ -157,6 +201,26 @@ export function ReviewShell({
     () => comments.filter((c) => c.level === "review"),
     [comments],
   );
+
+  /**
+   * Comments whose place in the diff is gone: line comments the re-anchor
+   * pass orphaned, plus file/line comments on files that left the diff.
+   * They render in the orphaned bucket, never inline at a stale position.
+   */
+  const orphanedComments = useMemo(() => {
+    const paths = new Set(view?.summary.files.map((f) => f.path) ?? []);
+    return comments.filter(
+      (c) =>
+        c.level !== "review" &&
+        (anchorStatuses.get(c.id) === "orphaned" ||
+          (c.filePath !== null && !paths.has(c.filePath))),
+    );
+  }, [comments, anchorStatuses, view]);
+
+  const diffComments = useMemo(() => {
+    const orphaned = new Set(orphanedComments.map((c) => c.id));
+    return comments.filter((c) => !orphaned.has(c.id));
+  }, [comments, orphanedComments]);
 
   const openCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -218,6 +282,14 @@ export function ReviewShell({
         <button
           type="button"
           className="refresh-button"
+          title="Browse archived reviews (read-only)"
+          onClick={() => setShowArchive(true)}
+        >
+          Archived
+        </button>
+        <button
+          type="button"
+          className="refresh-button"
           title="Refresh branches and diff"
           onClick={onRefresh}
           disabled={loading}
@@ -230,11 +302,33 @@ export function ReviewShell({
           <div className="diff-empty">
             <p className="error">{error}</p>
           </div>
-        ) : view === null || review === null ? (
+        ) : view === null ? (
           <div className="diff-empty">
             <p>{loading ? "Computing diff…" : "Select branches to diff."}</p>
           </div>
-        ) : view.summary.files.length === 0 ? (
+        ) : branchMerged ? (
+          <div className="diff-empty">
+            <p>
+              <code>{branch}</code> is merged into <code>{baseBranch}</code>
+              {review !== null
+                ? " — its review is archived and read-only."
+                : "."}
+            </p>
+            {review !== null && (
+              <button
+                type="button"
+                className="refresh-button"
+                onClick={() => setShowArchive(true)}
+              >
+                View archived reviews
+              </button>
+            )}
+          </div>
+        ) : review === null ? (
+          <div className="diff-empty">
+            <p>No review for this branch.</p>
+          </div>
+        ) : view.summary.files.length === 0 && comments.length === 0 ? (
           <div className="diff-empty">
             <p>
               No changes between <code>{view.summary.baseRef}</code> and{" "}
@@ -261,6 +355,13 @@ export function ReviewShell({
                 onCreate={handleCreateReviewComment}
                 onUpdate={handleUpdate}
                 onDelete={handleDelete}
+                onSetState={handleSetState}
+              />
+              <OrphanedComments
+                comments={orphanedComments}
+                onUpdate={handleUpdate}
+                onDelete={handleDelete}
+                onSetState={handleSetState}
               />
               <DiffView
                 key={view.generation}
@@ -270,15 +371,23 @@ export function ReviewShell({
                 mode={view.mode}
                 summary={view.summary}
                 scrollTarget={scrollTarget}
-                comments={comments}
+                comments={diffComments}
+                anchorStatuses={anchorStatuses}
                 onCreateComment={handleCreate}
                 onUpdateComment={handleUpdate}
                 onDeleteComment={handleDelete}
+                onSetCommentState={handleSetState}
               />
             </div>
           </div>
         )}
       </main>
+      {showArchive && (
+        <ArchivedReviews
+          repoPath={repo.path}
+          onClose={() => setShowArchive(false)}
+        />
+      )}
     </div>
   );
 }

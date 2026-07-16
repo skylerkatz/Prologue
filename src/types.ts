@@ -117,6 +117,28 @@ export interface Comment {
   updatedAt: string;
 }
 
+/** What `open_review` produced; `review` is null for a merged branch that
+ * was never reviewed, and archived (read-only) when the branch is merged. */
+export interface OpenReviewResult {
+  review: Review | null;
+  branchMerged: boolean;
+}
+
+/** Where a line comment's anchor landed after a diff refresh. */
+export type AnchorStatus = "anchored" | "changed" | "orphaned";
+
+export interface ReanchorResult {
+  commentId: number;
+  status: AnchorStatus;
+  startLine: number | null;
+  endLine: number | null;
+}
+
+/** An archived review row for the read-only browser. */
+export interface ArchivedReview extends Review {
+  commentCount: number;
+}
+
 /** Caller-provided fields of a new comment; anchor and SHA are captured in Rust. */
 export interface NewCommentInput {
   level: CommentLevel;
