@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use crate::repo::open_git_repo;
 
 /// Which working-tree state is diffed against the merge base.
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum DiffMode {
     /// Branch tip only (default).
@@ -14,6 +14,26 @@ pub enum DiffMode {
     /// Working directory: committed + staged + unstaged, with untracked
     /// files as new files (`.gitignore` respected).
     All,
+}
+
+impl DiffMode {
+    /// Stable text form used in the reviews database.
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            DiffMode::Committed => "committed",
+            DiffMode::Staged => "staged",
+            DiffMode::All => "all",
+        }
+    }
+
+    pub(crate) fn parse(s: &str) -> Result<Self, String> {
+        match s {
+            "committed" => Ok(DiffMode::Committed),
+            "staged" => Ok(DiffMode::Staged),
+            "all" => Ok(DiffMode::All),
+            other => Err(format!("Unknown working-tree mode: {other}")),
+        }
+    }
 }
 
 #[derive(Serialize, Debug, Clone, Copy, PartialEq, Eq)]
@@ -376,7 +396,10 @@ fn build_diff<'r>(
     Ok((diff, merge_base))
 }
 
-fn resolve_commit<'r>(repo: &'r Repository, refname: &str) -> Result<git2::Commit<'r>, String> {
+pub(crate) fn resolve_commit<'r>(
+    repo: &'r Repository,
+    refname: &str,
+) -> Result<git2::Commit<'r>, String> {
     repo.revparse_single(refname)
         .and_then(|obj| obj.peel_to_commit())
         .map_err(|_| format!("Cannot resolve ref: {refname}"))

@@ -1,13 +1,27 @@
+mod db;
 mod diff;
 mod repo;
+mod review;
 #[cfg(test)]
 mod testutil;
+
+use std::sync::Mutex;
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_store::Builder::new().build());
+        .plugin(tauri_plugin_store::Builder::new().build())
+        .setup(|app| {
+            // Reviews and comments live in the app data dir — never inside
+            // the reviewed repository.
+            let dir = app.path().app_data_dir()?;
+            std::fs::create_dir_all(&dir)?;
+            let conn = db::open(&dir.join("reviews.db"))?;
+            app.manage(db::Db(Mutex::new(conn)));
+            Ok(())
+        });
 
     // Agent automation bridge (WebSocket on 127.0.0.1:9223+). Debug builds
     // with the `mcp-bridge` feature only; the plugin's default bind is
@@ -25,7 +39,12 @@ pub fn run() {
             repo::list_branches,
             diff::get_diff_summary,
             diff::get_file_diff,
-            diff::get_context_lines
+            diff::get_context_lines,
+            review::open_review,
+            review::list_comments,
+            review::create_comment,
+            review::update_comment,
+            review::delete_comment
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
