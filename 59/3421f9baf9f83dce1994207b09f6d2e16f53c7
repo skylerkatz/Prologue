@@ -1,0 +1,19 @@
+.nvmrc
+  s_08cf20b0ccce15::t_3814e51f430846 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "593421f9baf9f83dce1994207b09f6d2e16f53c7",
+  "prompts": {},
+  "sessions": {
+    "s_08cf20b0ccce15": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "57b050a2-f228-4781-8170-8e06cc77775f",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
