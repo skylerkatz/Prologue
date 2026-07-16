@@ -1,0 +1,44 @@
+src/highlight/grammars.ts
+  s_3306764834fbc1::t_afa7f3a3743d5a 1-48
+src/highlight/lang.ts
+  s_3306764834fbc1::t_f7b3e4cd4111fc 1-90
+src/components/DiffView.tsx
+  s_3306764834fbc1::t_f7676ff1bff80d 1-9,13-14
+  s_3306764834fbc1::t_ccd20f4476a922 99-104
+  s_3306764834fbc1::t_10c959235b273a 590-593,599
+  s_3306764834fbc1::t_d88399b2e05062 374-378,401-431
+  s_3306764834fbc1::t_070abd9484c701 469
+  s_3306764834fbc1::t_e87e53b2bc1250 739,748-749
+  s_3306764834fbc1::t_8e1392fa17dcd1 500
+  s_3306764834fbc1::t_b48d717dbd20a7 777-785
+  s_3306764834fbc1::t_c006c81cf2cf09 531
+  s_3306764834fbc1::t_29ef78d7dcbaef 432-434
+vite.config.ts
+  s_3306764834fbc1::t_a731baecedaec9 11-18
+package.json
+  s_3306764834fbc1::t_6eeae47bafd116 19-20
+src/highlight/shiki.ts
+  s_3306764834fbc1::t_a5874052214ae5 1-95
+src/diff/rows.ts
+  s_3306764834fbc1::t_69da4235bf2cb3 309
+  s_3306764834fbc1::t_95d815c5cd14aa 97-99
+  s_3306764834fbc1::t_97b3ddc84e68d7 297-298
+package-lock.json
+  s_3306764834fbc1::t_4b8bfbcba53213 17-18,1160-1259,1593-1610,1631-1642,1732-1771,1804-1825,1928-1973,2017-2126,2163-2179,2229-2238,2270-2293,2355-2373,2384-2407,2425-2434,2449-2516,2548-2575,2657-2666
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "074f2c574dee8baaf09a49737b169f32b8bfa1a4",
+  "prompts": {},
+  "sessions": {
+    "s_3306764834fbc1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7637e194-9eca-4e7b-98e9-fed2bf425ae5",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
