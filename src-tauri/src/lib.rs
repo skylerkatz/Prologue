@@ -4,6 +4,7 @@ mod diff;
 mod export;
 mod repo;
 mod review;
+mod watcher;
 #[cfg(test)]
 mod testutil;
 
@@ -23,6 +24,7 @@ pub fn run() {
             std::fs::create_dir_all(&dir)?;
             let conn = db::open(&dir.join("reviews.db"))?;
             app.manage(db::Db(Mutex::new(conn)));
+            app.manage(watcher::RepoWatcher::default());
             Ok(())
         });
 
@@ -52,7 +54,9 @@ pub fn run() {
             review::reanchor_comments,
             review::archive_stale_reviews,
             review::list_archived_reviews,
-            export::export_review
+            export::export_review,
+            watcher::start_watching,
+            watcher::stop_watching
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

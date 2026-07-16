@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { listBranches, openRepo } from "./ipc";
+import { listen } from "@tauri-apps/api/event";
+import { listBranches, openRepo, startWatching, stopWatching } from "./ipc";
 import { addRecentRepo, getRecentRepos, removeRecentRepo } from "./recents";
 import type { BranchList, RepoInfo, WorkingTreeMode } from "./types";
 import { ReviewShell } from "./components/ReviewShell";
@@ -37,6 +38,9 @@ function App() {
       setBaseBranch(branchList.defaultBase);
       setMode("committed");
       setRecents(await addRecentRepo(repo.path));
+      // Auto-refresh is an enhancement; if watching fails, the manual
+      // Refresh button still covers everything.
+      startWatching(repo.path).catch(() => {});
     } catch (e) {
       setError(typeof e === "string" ? e : String(e));
     }
@@ -71,6 +75,37 @@ function App() {
     setRefreshKey((key) => key + 1);
   }
 
+  // A ref so the repo-changed subscription below survives across renders
+  // without re-subscribing every time `refresh`'s closure is recreated.
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
+
+  // The Rust watcher emits `repo-changed` (debounced) on working-tree or
+  // .git activity; run the exact same path as the manual Refresh button.
+  const repoPath = openState?.repo.path ?? null;
+  useEffect(() => {
+    if (repoPath === null) {
+      return;
+    }
+    let disposed = false;
+    let unlisten: (() => void) | null = null;
+    void listen<string>("repo-changed", (event) => {
+      if (event.payload === repoPath) {
+        void refreshRef.current();
+      }
+    }).then((fn) => {
+      if (disposed) {
+        fn();
+      } else {
+        unlisten = fn;
+      }
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [repoPath]);
+
   if (!openState) {
     return (
       <WelcomePage
@@ -95,7 +130,10 @@ function App() {
       onBaseBranchChange={setBaseBranch}
       onModeChange={setMode}
       onRefresh={() => void refresh()}
-      onSwitchRepo={() => setOpenState(null)}
+      onSwitchRepo={() => {
+        stopWatching().catch(() => {});
+        setOpenState(null);
+      }}
     />
   );
 }

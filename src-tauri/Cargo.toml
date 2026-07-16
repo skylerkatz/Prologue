@@ -29,6 +29,7 @@ git2 = "0.20"
 # feature (see [features]) so release builds carry no WebSocket listener.
 tauri-plugin-mcp-bridge = { version = "0.12", optional = true }
 rusqlite = { version = "0.40.1", features = ["bundled"] }
+notify = "8.2.0"
 
 [features]
 # Enabled by `tauri dev --features mcp-bridge` (see solo.yml); never enabled

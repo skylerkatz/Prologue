@@ -141,6 +141,19 @@ export function exportReview(
   });
 }
 
+/**
+ * Watch the repo (working tree + .git) and emit a debounced `repo-changed`
+ * event on activity. One watch at a time; a new call re-targets it.
+ */
+export function startWatching(repoPath: string): Promise<void> {
+  return invoke("start_watching", { repoPath });
+}
+
+/** Drop the active repo watch (repo closed). */
+export function stopWatching(): Promise<void> {
+  return invoke("stop_watching");
+}
+
 /** New-side lines `start..=end` (1-based, clamped) for expand-context. */
 export function getContextLines(
   repoPath: string,
