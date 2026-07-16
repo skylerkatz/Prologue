@@ -1,0 +1,45 @@
+src/components/WelcomePage.tsx
+  s_bbae36569299dd::t_c86616e3175eff 1-56
+src/App.tsx
+  s_bbae36569299dd::t_d1853fd8ebcae3 1-7,10-14,16-57,59-68,72-82
+index.html
+  s_bbae36569299dd::t_1d055e6d5dc3dc 6
+solo.yml
+  s_08cf20b0ccce15::t_272172d7df8a43 4-7
+src/recents.ts
+  s_bbae36569299dd::t_ca8697df8391a6 1-39
+src/App.css
+  s_bbae36569299dd::t_ce06aec11a5a73 1-6,8-14,17-27,29-30,33,35-64,67,69-70,73-75,78-80,83-90,93-94,97-99,102-113,116-120,122-144,148-149,151-153,156-162,165-171,174-176,178,180-271
+src/components/ReviewShell.tsx
+  s_bbae36569299dd::t_afe18886c6842a 1-82
+src/ipc.ts
+  s_bbae36569299dd::t_709ac829b4a04f 1-13
+src/components/ModeToggle.tsx
+  s_bbae36569299dd::t_a98413e397f597 1-25
+src/types.ts
+  s_bbae36569299dd::t_1f9fc24bf1ea72 1-21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "3b500673300ff73e69d084b9c074d9493fcebbff",
+  "prompts": {},
+  "sessions": {
+    "s_08cf20b0ccce15": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "57b050a2-f228-4781-8170-8e06cc77775f",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    },
+    "s_bbae36569299dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0ed93194-96cc-4ded-8086-88dc79a43ade",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
