@@ -1,0 +1,63 @@
+package.json
+  s_bbae36569299dd::t_d831948f5f9064 1-26
+public/tauri.svg
+  s_bbae36569299dd::t_d831948f5f9064 1-6
+tsconfig.json
+  s_bbae36569299dd::t_d831948f5f9064 1-25
+src-tauri/capabilities/default.json
+  s_bbae36569299dd::t_d831948f5f9064 1-10
+src-tauri/src/lib.rs
+  s_bbae36569299dd::t_d831948f5f9064 1-14
+README.md
+  s_bbae36569299dd::t_d831948f5f9064 1-7
+src-tauri/Cargo.toml
+  s_bbae36569299dd::t_d831948f5f9064 1-25
+src/assets/react.svg
+  s_bbae36569299dd::t_d831948f5f9064 1
+src-tauri/build.rs
+  s_bbae36569299dd::t_d831948f5f9064 1-3
+src/App.tsx
+  s_bbae36569299dd::t_d831948f5f9064 1-51
+index.html
+  s_bbae36569299dd::t_d831948f5f9064 1-14
+.gitignore
+  s_bbae36569299dd::t_d831948f5f9064 1-24
+src/App.css
+  s_bbae36569299dd::t_d831948f5f9064 1-116
+src/vite-env.d.ts
+  s_bbae36569299dd::t_d831948f5f9064 1
+src/main.tsx
+  s_bbae36569299dd::t_d831948f5f9064 1-9
+src-tauri/.gitignore
+  s_bbae36569299dd::t_d831948f5f9064 1-7
+src-tauri/src/main.rs
+  s_bbae36569299dd::t_d831948f5f9064 1-6
+src-tauri/tauri.conf.json
+  s_bbae36569299dd::t_d831948f5f9064 1-35
+tsconfig.node.json
+  s_bbae36569299dd::t_d831948f5f9064 1-10
+vite.config.ts
+  s_bbae36569299dd::t_d831948f5f9064 1-32
+.vscode/extensions.json
+  s_bbae36569299dd::t_d831948f5f9064 1-3
+public/vite.svg
+  s_bbae36569299dd::t_d831948f5f9064 1
+package-lock.json
+  s_bbae36569299dd::t_87a03471472cc4 1-2062
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "503feec76ed0da549526c8b2382971167206d6e0",
+  "prompts": {},
+  "sessions": {
+    "s_bbae36569299dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0ed93194-96cc-4ded-8086-88dc79a43ade",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
