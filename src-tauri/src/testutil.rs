@@ -86,6 +86,38 @@ impl FixtureRepo {
             .unwrap();
     }
 
+    /// Merge `branch` into `into` with a true merge commit (both parents),
+    /// without touching HEAD or the working tree.
+    pub fn merge_into(&self, into: &str, branch: &str) -> Oid {
+        let into_commit = self
+            .repo
+            .revparse_single(into)
+            .and_then(|o| o.peel_to_commit())
+            .unwrap();
+        let branch_commit = self
+            .repo
+            .revparse_single(branch)
+            .and_then(|o| o.peel_to_commit())
+            .unwrap();
+        let tree = branch_commit.tree().unwrap();
+        let sig = Signature::now("Fixture", "fixture@example.com").unwrap();
+        self.repo
+            .commit(
+                Some(&format!("refs/heads/{into}")),
+                &sig,
+                &sig,
+                &format!("merge {branch} into {into}"),
+                &tree,
+                &[&into_commit, &branch_commit],
+            )
+            .unwrap()
+    }
+
+    pub fn delete_branch(&self, name: &str) {
+        let mut branch = self.repo.find_branch(name, git2::BranchType::Local).unwrap();
+        branch.delete().unwrap();
+    }
+
     /// Simulate a fetched remote-tracking branch pointing at `target`.
     pub fn add_remote_branch(&self, name: &str, target: &str) {
         let commit = self.repo.revparse_single(target).unwrap().id();

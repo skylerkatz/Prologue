@@ -1,3 +1,4 @@
+mod anchor;
 mod db;
 mod diff;
 mod repo;
@@ -44,7 +45,11 @@ pub fn run() {
             review::list_comments,
             review::create_comment,
             review::update_comment,
-            review::delete_comment
+            review::delete_comment,
+            review::update_comment_state,
+            review::reanchor_comments,
+            review::archive_stale_reviews,
+            review::list_archived_reviews
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

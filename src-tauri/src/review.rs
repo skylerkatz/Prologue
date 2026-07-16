@@ -1,6 +1,9 @@
+use git2::{BranchType, Repository};
 use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
+use crate::anchor::{self, AnchorStatus};
 use crate::db::{Db, NOW};
 use crate::diff::{self, DiffLine, DiffMode, FileDiff};
 use crate::repo::open_git_repo;
@@ -82,6 +85,14 @@ pub enum CommentState {
 }
 
 impl CommentState {
+    fn as_str(self) -> &'static str {
+        match self {
+            CommentState::Open => "open",
+            CommentState::Resolved => "resolved",
+            CommentState::Dismissed => "dismissed",
+        }
+    }
+
     fn parse(s: &str) -> Result<Self, String> {
         match s {
             "open" => Ok(CommentState::Open),
@@ -136,8 +147,22 @@ pub struct NewComment {
     pub body: String,
 }
 
+/// What `open_review` produced: the branch's review (absent when the branch
+/// is merged and was never reviewed), plus whether the branch is already
+/// merged into the base — in which case `review`, if present, is archived
+/// and read-only.
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenReviewResult {
+    pub review: Option<Review>,
+    pub branch_merged: bool,
+}
+
 /// Resume the active review for (repo, branch), creating one if none exists.
-/// The stored base ref and mode follow the caller's current choice.
+/// The stored base ref and mode follow the caller's current choice. A branch
+/// already merged into the base gets no new active review — its existing
+/// active review is archived and the latest archived one is returned
+/// read-only instead.
 #[tauri::command]
 pub fn open_review(
     db: tauri::State<'_, Db>,
@@ -145,9 +170,61 @@ pub fn open_review(
     branch: String,
     base_ref: String,
     mode: DiffMode,
-) -> Result<Review, String> {
+) -> Result<OpenReviewResult, String> {
+    let repo = open_git_repo(&repo_path)?;
     let conn = lock(&db)?;
-    open_review_impl(&conn, &repo_path, &branch, &base_ref, mode)
+    open_review_checked_impl(&conn, &repo, &repo_path, &branch, &base_ref, mode)
+}
+
+/// Set a comment's lifecycle state (open | resolved | dismissed). Resolved
+/// and dismissed comments stay in history; `updated_at` is untouched so
+/// "(edited)" keeps meaning body edits.
+#[tauri::command]
+pub fn update_comment_state(
+    db: tauri::State<'_, Db>,
+    comment_id: i64,
+    state: CommentState,
+) -> Result<Comment, String> {
+    let conn = lock(&db)?;
+    update_comment_state_impl(&conn, comment_id, state)
+}
+
+/// Re-locate every line comment of `review_id` in the current diff via its
+/// code anchor, persisting moved line ranges. Returns one status per line
+/// comment; review- and file-level comments have no anchor and are skipped.
+#[tauri::command]
+pub fn reanchor_comments(
+    db: tauri::State<'_, Db>,
+    repo_path: String,
+    base: String,
+    head: String,
+    mode: DiffMode,
+    review_id: i64,
+) -> Result<Vec<ReanchorResult>, String> {
+    let conn = lock(&db)?;
+    reanchor_comments_impl(&conn, &repo_path, &base, &head, mode, review_id)
+}
+
+/// Archive every active review of this repo whose branch was merged into
+/// its base or deleted. Returns the reviews archived by this call.
+#[tauri::command]
+pub fn archive_stale_reviews(
+    db: tauri::State<'_, Db>,
+    repo_path: String,
+) -> Result<Vec<Review>, String> {
+    let repo = open_git_repo(&repo_path)?;
+    let conn = lock(&db)?;
+    archive_stale_reviews_impl(&conn, &repo, &repo_path)
+}
+
+/// Archived reviews of this repo, newest first, for the read-only browser.
+#[tauri::command]
+pub fn list_archived_reviews(
+    db: tauri::State<'_, Db>,
+    repo_path: String,
+) -> Result<Vec<ArchivedReview>, String> {
+    let conn = lock(&db)?;
+    list_archived_reviews_impl(&conn, &repo_path)
 }
 
 #[tauri::command]
@@ -270,6 +347,156 @@ fn get_review(conn: &Connection, id: i64) -> Result<Review, String> {
     })
 }
 
+/// Why a branch's review should be auto-archived.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StaleReason {
+    Merged,
+    Deleted,
+}
+
+/// Whether `branch`'s review should auto-archive: the branch no longer
+/// exists (checked as local, then remote-tracking — reviews can target
+/// either), or its tip is a *strict* ancestor of the base. Equal tips do not
+/// count as merged, so a fresh branch with no commits keeps its review; a
+/// fast-forward merge is therefore only detected once the base moves on (or
+/// the branch is deleted). An unresolvable base means merged-ness cannot be
+/// determined — not stale.
+fn stale_reason(repo: &Repository, branch: &str, base_ref: &str) -> Option<StaleReason> {
+    let exists = repo.find_branch(branch, BranchType::Local).is_ok()
+        || repo.find_branch(branch, BranchType::Remote).is_ok();
+    if !exists {
+        return Some(StaleReason::Deleted);
+    }
+    let (Ok(branch_tip), Ok(base_tip)) = (
+        diff::resolve_commit(repo, branch),
+        diff::resolve_commit(repo, base_ref),
+    ) else {
+        return None;
+    };
+    let merged = branch_tip.id() != base_tip.id()
+        && repo
+            .graph_descendant_of(base_tip.id(), branch_tip.id())
+            .unwrap_or(false);
+    merged.then_some(StaleReason::Merged)
+}
+
+fn archive_review(conn: &Connection, id: i64) -> Result<(), String> {
+    conn.execute(
+        &format!("UPDATE reviews SET status = 'archived', updated_at = {NOW} WHERE id = ?1"),
+        [id],
+    )
+    .map_err(db_err)?;
+    Ok(())
+}
+
+pub(crate) fn open_review_checked_impl(
+    conn: &Connection,
+    repo: &Repository,
+    repo_path: &str,
+    branch: &str,
+    base_ref: &str,
+    mode: DiffMode,
+) -> Result<OpenReviewResult, String> {
+    if stale_reason(repo, branch, base_ref).is_none() {
+        let review = open_review_impl(conn, repo_path, branch, base_ref, mode)?;
+        return Ok(OpenReviewResult {
+            review: Some(review),
+            branch_merged: false,
+        });
+    }
+    // Merged (or somehow deleted) branch: close out any active review and
+    // surface the newest archived one read-only instead of creating a fresh
+    // active review that the next refresh would archive again.
+    let active: Option<i64> = conn
+        .query_row(
+            "SELECT id FROM reviews
+             WHERE repo_path = ?1 AND branch = ?2 AND status = 'active'",
+            [repo_path, branch],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(db_err)?;
+    if let Some(id) = active {
+        archive_review(conn, id)?;
+    }
+    let latest_archived: Option<i64> = conn
+        .query_row(
+            "SELECT id FROM reviews
+             WHERE repo_path = ?1 AND branch = ?2 AND status = 'archived'
+             ORDER BY id DESC LIMIT 1",
+            [repo_path, branch],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(db_err)?;
+    Ok(OpenReviewResult {
+        review: latest_archived.map(|id| get_review(conn, id)).transpose()?,
+        branch_merged: true,
+    })
+}
+
+pub(crate) fn archive_stale_reviews_impl(
+    conn: &Connection,
+    repo: &Repository,
+    repo_path: &str,
+) -> Result<Vec<Review>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, branch, base_ref FROM reviews
+             WHERE repo_path = ?1 AND status = 'active' ORDER BY id",
+        )
+        .map_err(db_err)?;
+    let active: Vec<(i64, String, String)> = stmt
+        .query_map([repo_path], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .map_err(db_err)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(db_err)?;
+
+    let mut archived = Vec::new();
+    for (id, branch, base_ref) in active {
+        if stale_reason(repo, &branch, &base_ref).is_some() {
+            archive_review(conn, id)?;
+            archived.push(get_review(conn, id)?);
+        }
+    }
+    Ok(archived)
+}
+
+/// An archived review plus its comment count, for the read-only browser.
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ArchivedReview {
+    #[serde(flatten)]
+    pub review: Review,
+    pub comment_count: i64,
+}
+
+pub(crate) fn list_archived_reviews_impl(
+    conn: &Connection,
+    repo_path: &str,
+) -> Result<Vec<ArchivedReview>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, (SELECT COUNT(*) FROM comments c WHERE c.review_id = reviews.id)
+             FROM reviews WHERE repo_path = ?1 AND status = 'archived'
+             ORDER BY updated_at DESC, id DESC",
+        )
+        .map_err(db_err)?;
+    let rows: Vec<(i64, i64)> = stmt
+        .query_map([repo_path], |r| Ok((r.get(0)?, r.get(1)?)))
+        .map_err(db_err)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(db_err)?;
+    rows.into_iter()
+        .map(|(id, comment_count)| {
+            Ok(ArchivedReview {
+                review: get_review(conn, id)?,
+                comment_count,
+            })
+        })
+        .collect()
+}
+
 pub(crate) fn list_comments_impl(conn: &Connection, review_id: i64) -> Result<Vec<Comment>, String> {
     let mut stmt = conn
         .prepare(
@@ -375,6 +602,33 @@ fn get_comment(conn: &Connection, id: i64) -> Result<Comment, String> {
     .and_then(comment_from_columns)
 }
 
+/// Archived reviews are read-only: every comment mutation checks its
+/// review's status first.
+fn ensure_review_active(conn: &Connection, review_id: i64) -> Result<(), String> {
+    let status: Option<String> = conn
+        .query_row("SELECT status FROM reviews WHERE id = ?1", [review_id], |r| r.get(0))
+        .optional()
+        .map_err(db_err)?;
+    match status.as_deref() {
+        Some("active") => Ok(()),
+        Some(_) => Err("This review is archived and read-only".to_owned()),
+        None => Err(format!("Review not found: {review_id}")),
+    }
+}
+
+fn ensure_comment_mutable(conn: &Connection, comment_id: i64) -> Result<(), String> {
+    let review_id: Option<i64> = conn
+        .query_row(
+            "SELECT review_id FROM comments WHERE id = ?1",
+            [comment_id],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(db_err)?;
+    let review_id = review_id.ok_or_else(|| format!("Comment not found: C{comment_id}"))?;
+    ensure_review_active(conn, review_id)
+}
+
 pub(crate) fn create_comment_impl(
     conn: &Connection,
     repo_path: &str,
@@ -386,6 +640,7 @@ pub(crate) fn create_comment_impl(
     if comment.body.trim().is_empty() {
         return Err("Comment text cannot be empty".to_owned());
     }
+    ensure_review_active(conn, comment.review_id)?;
     let (file_path, side, start_line, end_line, anchor) = match comment.level {
         CommentLevel::Review => (None, None, None, None, None),
         CommentLevel::File => {
@@ -451,6 +706,7 @@ pub(crate) fn update_comment_impl(
     if body.trim().is_empty() {
         return Err("Comment text cannot be empty".to_owned());
     }
+    ensure_comment_mutable(conn, comment_id)?;
     let changed = conn
         .execute(
             &format!("UPDATE comments SET body = ?1, updated_at = {NOW} WHERE id = ?2"),
@@ -464,6 +720,7 @@ pub(crate) fn update_comment_impl(
 }
 
 pub(crate) fn delete_comment_impl(conn: &Connection, comment_id: i64) -> Result<(), String> {
+    ensure_comment_mutable(conn, comment_id)?;
     let changed = conn
         .execute("DELETE FROM comments WHERE id = ?1", [comment_id])
         .map_err(db_err)?;
@@ -471,6 +728,114 @@ pub(crate) fn delete_comment_impl(conn: &Connection, comment_id: i64) -> Result<
         return Err(format!("Comment not found: C{comment_id}"));
     }
     Ok(())
+}
+
+pub(crate) fn update_comment_state_impl(
+    conn: &Connection,
+    comment_id: i64,
+    state: CommentState,
+) -> Result<Comment, String> {
+    ensure_comment_mutable(conn, comment_id)?;
+    // `updated_at` deliberately untouched: it tracks body edits ("(edited)"),
+    // not lifecycle changes.
+    conn.execute(
+        "UPDATE comments SET state = ?1 WHERE id = ?2",
+        (state.as_str(), comment_id),
+    )
+    .map_err(db_err)?;
+    get_comment(conn, comment_id)
+}
+
+/// One line comment's re-anchoring outcome. `start_line`/`end_line` are the
+/// comment's current (possibly just-moved) range; orphaned comments keep
+/// their last known range.
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ReanchorResult {
+    pub comment_id: i64,
+    pub status: AnchorStatus,
+    pub start_line: Option<u32>,
+    pub end_line: Option<u32>,
+}
+
+pub(crate) fn reanchor_comments_impl(
+    conn: &Connection,
+    repo_path: &str,
+    base: &str,
+    head: &str,
+    mode: DiffMode,
+    review_id: i64,
+) -> Result<Vec<ReanchorResult>, String> {
+    let comments = list_comments_impl(conn, review_id)?;
+    // One file-diff fetch per distinct commented file; None = the file has
+    // no changes in the current diff (all its line comments orphan).
+    let mut diffs: HashMap<String, Option<FileDiff>> = HashMap::new();
+
+    let mut results = Vec::new();
+    for comment in &comments {
+        let (Some(path), Some(side), Some(anchor), Some(prev_start)) = (
+            comment.file_path.as_deref(),
+            comment.side,
+            comment.code_anchor.as_ref(),
+            comment.start_line,
+        ) else {
+            continue; // review/file-level comments carry no anchor
+        };
+        let diff = match diffs.get(path) {
+            Some(cached) => cached,
+            None => {
+                let fetched = match diff::get_file_diff(
+                    repo_path.to_owned(),
+                    base.to_owned(),
+                    head.to_owned(),
+                    mode,
+                    path.to_owned(),
+                ) {
+                    Ok(d) => Some(d),
+                    // The file left the diff entirely; anything else is a
+                    // real failure worth surfacing.
+                    Err(e) if e.starts_with("No changes for file") => None,
+                    Err(e) => return Err(e),
+                };
+                diffs.entry(path.to_owned()).or_insert(fetched)
+            }
+        };
+
+        let relocation = diff
+            .as_ref()
+            .and_then(|d| anchor::relocate(d, side, anchor, prev_start));
+        let result = match relocation {
+            Some(r) => {
+                if (comment.start_line, comment.end_line) != (Some(r.start_line), Some(r.end_line))
+                {
+                    // Follow the code; `updated_at` untouched (not an edit).
+                    conn.execute(
+                        "UPDATE comments SET start_line = ?1, end_line = ?2 WHERE id = ?3",
+                        (r.start_line, r.end_line, comment.id),
+                    )
+                    .map_err(db_err)?;
+                }
+                ReanchorResult {
+                    comment_id: comment.id,
+                    status: if r.changed {
+                        AnchorStatus::Changed
+                    } else {
+                        AnchorStatus::Anchored
+                    },
+                    start_line: Some(r.start_line),
+                    end_line: Some(r.end_line),
+                }
+            }
+            None => ReanchorResult {
+                comment_id: comment.id,
+                status: AnchorStatus::Orphaned,
+                start_line: comment.start_line,
+                end_line: comment.end_line,
+            },
+        };
+        results.push(result);
+    }
+    Ok(results)
 }
 
 /// Build the code anchor for a line selection: the selected lines verbatim
@@ -777,6 +1142,345 @@ mod tests {
         assert!(list_comments_impl(&conn, review.id).unwrap().is_empty());
         assert!(delete_comment_impl(&conn, comment.id).is_err());
         assert!(update_comment_impl(&conn, comment.id, "gone").is_err());
+    }
+
+    #[test]
+    fn comment_state_transitions_persist_without_touching_updated_at() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = test_db(&dir);
+        let fixture = fixture();
+        let review =
+            open_review_impl(&conn, &fixture.path(), "feature", "main", DiffMode::Committed)
+                .unwrap();
+        let comment = create(&conn, &fixture, new_comment(review.id, CommentLevel::Review, "hm"));
+
+        let resolved = update_comment_state_impl(&conn, comment.id, CommentState::Resolved).unwrap();
+        assert_eq!(resolved.state, CommentState::Resolved);
+        assert_eq!(resolved.updated_at, comment.updated_at, "state is not an edit");
+
+        let reopened = update_comment_state_impl(&conn, comment.id, CommentState::Open).unwrap();
+        assert_eq!(reopened.state, CommentState::Open);
+
+        let dismissed =
+            update_comment_state_impl(&conn, comment.id, CommentState::Dismissed).unwrap();
+        assert_eq!(dismissed.state, CommentState::Dismissed);
+        // Closed comments stay in history.
+        assert_eq!(list_comments_impl(&conn, review.id).unwrap().len(), 1);
+
+        assert!(update_comment_state_impl(&conn, 999, CommentState::Resolved).is_err());
+    }
+
+    /// Edit code.txt on feature (as a new commit) and re-anchor the review's
+    /// comments against the refreshed committed diff.
+    fn reanchor_after_edit(
+        conn: &Connection,
+        fixture: &FixtureRepo,
+        review_id: i64,
+        new_lines: &[String],
+    ) -> Vec<ReanchorResult> {
+        fixture.commit_file("code.txt", &(new_lines.join("\n") + "\n"), "edit");
+        reanchor_comments_impl(
+            conn,
+            &fixture.path(),
+            "main",
+            "feature",
+            DiffMode::Committed,
+            review_id,
+        )
+        .unwrap()
+    }
+
+    fn feature_lines() -> Vec<String> {
+        // code.txt on feature: alpha 1-5, beta 6a/6b, alpha 7-10.
+        let mut lines: Vec<String> = (1..=10).map(|n| format!("alpha {n}")).collect();
+        lines.splice(5..6, ["beta 6a".to_owned(), "beta 6b".to_owned()]);
+        lines
+    }
+
+    #[test]
+    fn reanchor_follows_code_shifted_by_edits_above() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = test_db(&dir);
+        let fixture = fixture();
+        let review =
+            open_review_impl(&conn, &fixture.path(), "feature", "main", DiffMode::Committed)
+                .unwrap();
+        let comment = create(
+            &conn,
+            &fixture,
+            line_comment(review.id, "code.txt", CommentSide::New, 6, 7),
+        );
+
+        let mut lines = feature_lines();
+        lines.splice(0..0, ["intro one".to_owned(), "intro two".to_owned()]);
+        let results = reanchor_after_edit(&conn, &fixture, review.id, &lines);
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].comment_id, comment.id);
+        assert_eq!(results[0].status, AnchorStatus::Anchored);
+        assert_eq!((results[0].start_line, results[0].end_line), (Some(8), Some(9)));
+
+        // The move is persisted so placement survives reloads.
+        let stored = get_comment(&conn, comment.id).unwrap();
+        assert_eq!((stored.start_line, stored.end_line), (Some(8), Some(9)));
+        assert_eq!(stored.updated_at, comment.updated_at);
+    }
+
+    #[test]
+    fn reanchor_flags_changed_context_around_an_exact_match() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = test_db(&dir);
+        let fixture = fixture();
+        let review =
+            open_review_impl(&conn, &fixture.path(), "feature", "main", DiffMode::Committed)
+                .unwrap();
+        create(
+            &conn,
+            &fixture,
+            line_comment(review.id, "code.txt", CommentSide::New, 6, 7),
+        );
+
+        let mut lines = feature_lines();
+        lines[4] = "alpha 5 REWRITTEN".to_owned(); // context line just above
+        let results = reanchor_after_edit(&conn, &fixture, review.id, &lines);
+
+        assert_eq!(results[0].status, AnchorStatus::Changed);
+        assert_eq!((results[0].start_line, results[0].end_line), (Some(6), Some(7)));
+    }
+
+    #[test]
+    fn reanchor_fuzzy_matches_lightly_edited_anchor_lines() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = test_db(&dir);
+        let fixture = fixture();
+        let review =
+            open_review_impl(&conn, &fixture.path(), "feature", "main", DiffMode::Committed)
+                .unwrap();
+        create(
+            &conn,
+            &fixture,
+            line_comment(review.id, "code.txt", CommentSide::New, 6, 7),
+        );
+
+        let mut lines = feature_lines();
+        lines[5] = "beta 6a tweaked".to_owned();
+        let results = reanchor_after_edit(&conn, &fixture, review.id, &lines);
+
+        assert_eq!(results[0].status, AnchorStatus::Changed);
+        assert_eq!((results[0].start_line, results[0].end_line), (Some(6), Some(7)));
+    }
+
+    #[test]
+    fn reanchor_orphans_comments_whose_code_left_the_diff() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = test_db(&dir);
+        let fixture = fixture();
+        let review =
+            open_review_impl(&conn, &fixture.path(), "feature", "main", DiffMode::Committed)
+                .unwrap();
+        let comment = create(
+            &conn,
+            &fixture,
+            line_comment(review.id, "code.txt", CommentSide::New, 6, 7),
+        );
+
+        // Revert code.txt to main's content: the file leaves the diff.
+        let lines: Vec<String> = (1..=10).map(|n| format!("alpha {n}")).collect();
+        let results = reanchor_after_edit(&conn, &fixture, review.id, &lines);
+
+        assert_eq!(results[0].status, AnchorStatus::Orphaned);
+        // Last known position is kept, never nulled.
+        let stored = get_comment(&conn, comment.id).unwrap();
+        assert_eq!((stored.start_line, stored.end_line), (Some(6), Some(7)));
+    }
+
+    #[test]
+    fn reanchor_leaves_untouched_comments_anchored_in_place() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = test_db(&dir);
+        let fixture = fixture();
+        let review =
+            open_review_impl(&conn, &fixture.path(), "feature", "main", DiffMode::Committed)
+                .unwrap();
+        create(
+            &conn,
+            &fixture,
+            line_comment(review.id, "code.txt", CommentSide::New, 6, 7),
+        );
+        // Old-side comment on the deleted file.
+        create(
+            &conn,
+            &fixture,
+            line_comment(review.id, "d.txt", CommentSide::Old, 1, 2),
+        );
+        // Review-level comments are skipped entirely.
+        create(&conn, &fixture, new_comment(review.id, CommentLevel::Review, "overall"));
+
+        let results = reanchor_comments_impl(
+            &conn,
+            &fixture.path(),
+            "main",
+            "feature",
+            DiffMode::Committed,
+            review.id,
+        )
+        .unwrap();
+
+        assert_eq!(results.len(), 2);
+        assert!(results.iter().all(|r| r.status == AnchorStatus::Anchored));
+        assert_eq!((results[0].start_line, results[0].end_line), (Some(6), Some(7)));
+        assert_eq!((results[1].start_line, results[1].end_line), (Some(1), Some(2)));
+    }
+
+    #[test]
+    fn merging_the_branch_archives_its_review() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = test_db(&dir);
+        let fixture = fixture();
+        let review =
+            open_review_impl(&conn, &fixture.path(), "feature", "main", DiffMode::Committed)
+                .unwrap();
+
+        // Not merged yet: nothing to archive.
+        let none = archive_stale_reviews_impl(&conn, &fixture.repo, &fixture.path()).unwrap();
+        assert!(none.is_empty());
+
+        fixture.merge_into("main", "feature");
+        let archived = archive_stale_reviews_impl(&conn, &fixture.repo, &fixture.path()).unwrap();
+        assert_eq!(archived.len(), 1);
+        assert_eq!(archived[0].id, review.id);
+        assert_eq!(archived[0].status, "archived");
+
+        // Idempotent: the next scan finds nothing active.
+        let again = archive_stale_reviews_impl(&conn, &fixture.repo, &fixture.path()).unwrap();
+        assert!(again.is_empty());
+    }
+
+    #[test]
+    fn deleting_the_branch_archives_its_review() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = test_db(&dir);
+        let fixture = fixture();
+        // A side branch that is reviewed, then deleted (HEAD stays on feature).
+        fixture.repo
+            .branch("doomed", &fixture.repo.head().unwrap().peel_to_commit().unwrap(), false)
+            .unwrap();
+        let review =
+            open_review_impl(&conn, &fixture.path(), "doomed", "main", DiffMode::Committed)
+                .unwrap();
+
+        fixture.delete_branch("doomed");
+        let archived = archive_stale_reviews_impl(&conn, &fixture.repo, &fixture.path()).unwrap();
+        assert_eq!(archived.len(), 1);
+        assert_eq!(archived[0].id, review.id);
+    }
+
+    #[test]
+    fn fresh_and_remote_branches_are_not_stale() {
+        let fixture = fixture();
+        // Equal tips (fresh branch off its base) must not read as merged.
+        fixture.repo
+            .branch("fresh", &fixture.repo.head().unwrap().peel_to_commit().unwrap(), false)
+            .unwrap();
+        assert_eq!(stale_reason(&fixture.repo, "fresh", "feature"), None);
+        // Remote-tracking branch names resolve through the remote lookup.
+        fixture.add_remote_branch("feature", "feature");
+        assert_eq!(stale_reason(&fixture.repo, "origin/feature", "main"), None);
+        // A branch that never existed is stale.
+        assert_eq!(
+            stale_reason(&fixture.repo, "never-existed", "main"),
+            Some(StaleReason::Deleted)
+        );
+    }
+
+    #[test]
+    fn open_review_on_a_merged_branch_returns_the_archived_review_read_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = test_db(&dir);
+        let fixture = fixture();
+        let review = open_review_checked_impl(
+            &conn,
+            &fixture.repo,
+            &fixture.path(),
+            "feature",
+            "main",
+            DiffMode::Committed,
+        )
+        .unwrap();
+        assert!(!review.branch_merged);
+        let review = review.review.unwrap();
+        assert_eq!(review.status, "active");
+
+        fixture.merge_into("main", "feature");
+        let opened = open_review_checked_impl(
+            &conn,
+            &fixture.repo,
+            &fixture.path(),
+            "feature",
+            "main",
+            DiffMode::Committed,
+        )
+        .unwrap();
+        assert!(opened.branch_merged);
+        let archived = opened.review.unwrap();
+        assert_eq!(archived.id, review.id);
+        assert_eq!(archived.status, "archived");
+
+        // Re-opening never spawns a fresh active review for a merged branch.
+        let reopened = open_review_checked_impl(
+            &conn,
+            &fixture.repo,
+            &fixture.path(),
+            "feature",
+            "main",
+            DiffMode::Committed,
+        )
+        .unwrap();
+        assert_eq!(reopened.review.unwrap().id, review.id);
+        let total: i64 = conn
+            .query_row("SELECT COUNT(*) FROM reviews", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(total, 1);
+    }
+
+    #[test]
+    fn archived_reviews_are_listed_and_read_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = test_db(&dir);
+        let fixture = fixture();
+        let review =
+            open_review_impl(&conn, &fixture.path(), "feature", "main", DiffMode::Committed)
+                .unwrap();
+        let comment = create(&conn, &fixture, new_comment(review.id, CommentLevel::Review, "hm"));
+        create(&conn, &fixture, line_comment(review.id, "code.txt", CommentSide::New, 6, 7));
+
+        assert!(list_archived_reviews_impl(&conn, &fixture.path()).unwrap().is_empty());
+        archive_review(&conn, review.id).unwrap();
+
+        let listed = list_archived_reviews_impl(&conn, &fixture.path()).unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].review.id, review.id);
+        assert_eq!(listed[0].comment_count, 2);
+        // Archived comments stay readable...
+        assert_eq!(list_comments_impl(&conn, review.id).unwrap().len(), 2);
+        // ...but every mutation is refused.
+        let err = update_comment_impl(&conn, comment.id, "rewrite").unwrap_err();
+        assert!(err.contains("read-only"), "{err}");
+        let err = delete_comment_impl(&conn, comment.id).unwrap_err();
+        assert!(err.contains("read-only"), "{err}");
+        let err =
+            update_comment_state_impl(&conn, comment.id, CommentState::Resolved).unwrap_err();
+        assert!(err.contains("read-only"), "{err}");
+        let err = create_comment_impl(
+            &conn,
+            &fixture.path(),
+            "main",
+            "feature",
+            DiffMode::Committed,
+            new_comment(review.id, CommentLevel::Review, "late"),
+        )
+        .unwrap_err();
+        assert!(err.contains("read-only"), "{err}");
     }
 
     #[test]
