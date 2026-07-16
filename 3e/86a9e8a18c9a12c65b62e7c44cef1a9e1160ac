@@ -1,0 +1,29 @@
+src-tauri/src/lib.rs
+  s_9731889da3e9a2::t_c408a510899d2f 15-16
+src-tauri/src/diff.rs
+  s_9731889da3e9a2::t_8485e7ac26fe40 225-232,239
+  s_9731889da3e9a2::t_69f8daa864ba1c 275-278
+  s_9731889da3e9a2::t_e982485e090ccf 91-93
+  s_9731889da3e9a2::t_c6c978d53007a4 713
+  s_9731889da3e9a2::t_7e3babef32cddb 241,243-274,279-293,297-334
+  s_9731889da3e9a2::t_3d517b188b20b9 754
+  s_9731889da3e9a2::t_0b31de037bb2c4 794-912
+  s_9731889da3e9a2::t_5108d63e4855ef 240
+  s_9731889da3e9a2::t_14bec0d10f527b 242
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "3e86a9e8a18c9a12c65b62e7c44cef1a9e1160ac",
+  "prompts": {},
+  "sessions": {
+    "s_9731889da3e9a2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8699cef0-752e-4a27-8e16-9006aa6dee3b",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
