@@ -1,0 +1,17 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "app": {
+    "withGlobalTauri": true,
+    "security": {
+      "capabilities": [
+        "default",
+        {
+          "identifier": "mcp-bridge",
+          "description": "Dev-only: lets the injected MCP bridge script report IPC events and script results back to the plugin. Merged in via `tauri dev --config`; never part of release builds.",
+          "windows": ["main"],
+          "permissions": ["mcp-bridge:default"]
+        }
+      ]
+    }
+  }
+}
