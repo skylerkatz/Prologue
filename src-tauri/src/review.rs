@@ -34,7 +34,7 @@ pub enum CommentLevel {
 }
 
 impl CommentLevel {
-    fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             CommentLevel::Review => "review",
             CommentLevel::File => "file",
@@ -60,7 +60,7 @@ pub enum CommentSide {
 }
 
 impl CommentSide {
-    fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             CommentSide::Old => "old",
             CommentSide::New => "new",

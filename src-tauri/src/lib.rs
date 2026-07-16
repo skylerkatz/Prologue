@@ -1,6 +1,7 @@
 mod anchor;
 mod db;
 mod diff;
+mod export;
 mod repo;
 mod review;
 #[cfg(test)]
@@ -49,7 +50,8 @@ pub fn run() {
             review::update_comment_state,
             review::reanchor_comments,
             review::archive_stale_reviews,
-            review::list_archived_reviews
+            review::list_archived_reviews,
+            export::export_review
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
