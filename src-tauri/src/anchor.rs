@@ -189,6 +189,7 @@ mod tests {
             old_lineno: Some(old),
             new_lineno: Some(new),
             content: content.to_owned(),
+            intraline: None,
         }
     }
 
@@ -198,6 +199,7 @@ mod tests {
             old_lineno: None,
             new_lineno: Some(new),
             content: content.to_owned(),
+            intraline: None,
         }
     }
 
@@ -328,6 +330,7 @@ mod tests {
             old_lineno: Some(old),
             new_lineno: None,
             content: content.to_owned(),
+            intraline: None,
         };
         let diff = file_diff(vec![hunk(vec![
             ctx(9, 9, "keep"),

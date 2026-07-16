@@ -35,11 +35,21 @@ export interface DiffSummary {
 
 export type LineKind = "context" | "addition" | "deletion";
 
+/** A changed span within a line, in UTF-16 code units (`end` exclusive) —
+ * directly usable as JavaScript string indices. */
+export interface IntralineRange {
+  start: number;
+  end: number;
+}
+
 export interface DiffLine {
   kind: LineKind;
   oldLineno: number | null;
   newLineno: number | null;
   content: string;
+  /** Word-level changed spans, present only on paired deletion/addition
+   * lines (computed in Rust; omitted otherwise). */
+  intraline?: IntralineRange[];
 }
 
 export interface Hunk {

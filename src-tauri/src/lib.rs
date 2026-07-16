@@ -2,6 +2,7 @@ mod anchor;
 mod db;
 mod diff;
 mod export;
+mod intraline;
 mod repo;
 mod review;
 mod watcher;

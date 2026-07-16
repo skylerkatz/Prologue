@@ -10,6 +10,7 @@ import {
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { getContextLines, getFileDiff } from "../ipc";
 import { guardReason, type GuardReason } from "../diff/guards";
+import { segmentLine } from "../diff/segments";
 import { detectLang } from "../highlight/lang";
 import { tokenizeLines, type LineTokens } from "../highlight/shiki";
 import {
@@ -876,13 +877,15 @@ function LineRow({
         {line.kind === "addition" ? "+" : line.kind === "deletion" ? "−" : ""}
       </span>
       <span className="line-content">
-        {tokens === undefined
-          ? line.content
-          : tokens.map((token, i) => (
-              <span key={i} style={token.htmlStyle as CSSProperties}>
-                {token.content}
-              </span>
-            ))}
+        {segmentLine(line, tokens).map((seg, i) => (
+          <span
+            key={i}
+            className={seg.changed ? "intraline-changed" : undefined}
+            style={seg.style as CSSProperties}
+          >
+            {seg.text}
+          </span>
+        ))}
       </span>
     </div>
   );

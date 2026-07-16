@@ -829,6 +829,18 @@ button.primary:hover {
   color: var(--removed);
 }
 
+/* Word-level changed spans inside modified line pairs; the gutter colors
+   double as the stronger per-word emphasis, GitHub-style. */
+.diff-line-addition .intraline-changed {
+  background: var(--diff-add-gutter);
+  border-radius: 2px;
+}
+
+.diff-line-deletion .intraline-changed {
+  background: var(--diff-del-gutter);
+  border-radius: 2px;
+}
+
 .expand-row {
   display: flex;
   align-items: center;

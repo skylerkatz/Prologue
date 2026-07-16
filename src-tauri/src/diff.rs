@@ -87,6 +87,11 @@ pub struct DiffLine {
     pub old_lineno: Option<u32>,
     pub new_lineno: Option<u32>,
     pub content: String,
+    /// Word-level changed spans (UTF-16 units) when this line pairs with a
+    /// counterpart in its hunk; omitted from JSON when absent, so the shape
+    /// stays backward-compatible.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub intraline: Option<Vec<crate::intraline::IntralineRange>>,
 }
 
 #[derive(Serialize, Debug)]
@@ -229,8 +234,10 @@ pub fn get_file_diff(
                     old_lineno: line.old_lineno(),
                     new_lineno: line.new_lineno(),
                     content: line_text(line.content()),
+                    intraline: None,
                 });
             }
+            crate::intraline::apply_intraline(&mut lines);
             hunks.push(Hunk {
                 header,
                 old_start,
