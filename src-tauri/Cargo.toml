@@ -27,6 +27,7 @@ git2 = "0.20"
 # Dev-only agent automation bridge; compiled in only via the `mcp-bridge`
 # feature (see [features]) so release builds carry no WebSocket listener.
 tauri-plugin-mcp-bridge = { version = "0.12", optional = true }
+rusqlite = { version = "0.40.1", features = ["bundled"] }
 
 [features]
 # Enabled by `tauri dev --features mcp-bridge` (see solo.yml); never enabled
