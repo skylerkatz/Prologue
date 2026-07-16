@@ -14,3 +14,12 @@ processes:
   TypeScript Check:
     command: npx tsc --noEmit --watch
     auto_start: false
+  Rust Checks:
+    command: bash -lc "cd src-tauri && cargo test && cargo clippy --all-targets -- -D warnings"
+    auto_start: false
+  Frontend Build:
+    command: npm run build
+    auto_start: false
+  Screenshot App:
+    command: bash -c "sleep 3 && mkdir -p .solo-artifacts && screencapture -x .solo-artifacts/app.png && echo saved to .solo-artifacts/app.png"
+    auto_start: false
