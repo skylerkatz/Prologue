@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   BranchList,
+  ContextLines,
   DiffSummary,
   FileDiff,
   RepoInfo,
@@ -34,4 +35,16 @@ export function getFileDiff(
   path: string,
 ): Promise<FileDiff> {
   return invoke("get_file_diff", { repoPath, base, head, mode, path });
+}
+
+/** New-side lines `start..=end` (1-based, clamped) for expand-context. */
+export function getContextLines(
+  repoPath: string,
+  head: string,
+  mode: WorkingTreeMode,
+  path: string,
+  start: number,
+  end: number,
+): Promise<ContextLines> {
+  return invoke("get_context_lines", { repoPath, head, mode, path, start, end });
 }

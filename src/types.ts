@@ -57,6 +57,20 @@ export interface FileDiff {
   status: FileStatus;
   binary: boolean;
   hunks: Hunk[];
+  /**
+   * Total line count of the new side, bounding expand-context below the last
+   * hunk; null for deleted or binary files (nothing to expand).
+   */
+  newTotalLines: number | null;
+}
+
+/** Unchanged new-side lines fetched for an expand-context click. */
+export interface ContextLines {
+  /** 1-based new-side line number of the first returned line. */
+  start: number;
+  lines: string[];
+  /** Total line count of the new-side file. */
+  totalLines: number;
 }
 
 export const WORKING_TREE_MODES: ReadonlyArray<{
