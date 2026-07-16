@@ -1,0 +1,37 @@
+src-tauri/src/review.rs
+  s_59cd5ee6e8162a::t_4b80472ceeaa68 600,609
+  s_59cd5ee6e8162a::t_41509a3ed3a328 1024,1526-1590
+  s_59cd5ee6e8162a::t_38e3f46b4064e8 719-758
+  s_59cd5ee6e8162a::t_e1333c9a4a2b38 1023,1255-1401
+  s_59cd5ee6e8162a::t_a6d831af7dd15e 1012,1017-1022
+  s_59cd5ee6e8162a::t_2e1ce9dae89c0a 132-136
+  s_59cd5ee6e8162a::t_dfe4c8bd637c00 797-809
+  s_59cd5ee6e8162a::t_58db86162fbd32 152-157
+  s_59cd5ee6e8162a::t_b13dbd2c30feac 515
+  s_59cd5ee6e8162a::t_b5b8a6563797b8 578
+  s_59cd5ee6e8162a::t_69458bdd39e8ed 659-661
+  s_59cd5ee6e8162a::t_46ed031611000b 1040
+  s_59cd5ee6e8162a::t_2055c3fbf3cc41 541,561
+  s_59cd5ee6e8162a::t_5abfd0cc7a35c5 1025
+src-tauri/src/export.rs
+  s_59cd5ee6e8162a::t_d161f98f5e9849 445
+src-tauri/src/db.rs
+  s_59cd5ee6e8162a::t_926dbbf72cffe1 142-223
+  s_59cd5ee6e8162a::t_994410181a1c16 45-48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "ab10ee9a93825eccfc1711b3168a85b25593af0e",
+  "prompts": {},
+  "sessions": {
+    "s_59cd5ee6e8162a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f7f9958b-466b-4706-8710-9a61d1cd4c43",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
