@@ -1,0 +1,40 @@
+src/App.css
+  s_1588a710df61ff::t_e4bb6578735b2e 433-628
+  s_1588a710df61ff::t_34d989b4af29aa 710-726
+  s_1588a710df61ff::t_858b2443d5dc28 727
+src/components/Comments.tsx
+  s_1588a710df61ff::t_27447b3c6d0284 1-228
+src/components/ReviewCommentsPanel.tsx
+  s_1588a710df61ff::t_7dfa388edd5d61 1-66
+src/components/ReviewShell.tsx
+  s_1588a710df61ff::t_26044e26167cdd 1-9,12,14,16,22,65-66,74-76,85-106,109,111-112,126-175,233,249,258-278
+src/components/DiffView.tsx
+  s_1588a710df61ff::t_3a3bbfd38e7a0b 10,12-13,15,20-21,26,29,49-53,58-66,74-77,82-84,91-102,200-330,332-333,401-404,408-416,429-432,436-444,449-451,457-460,464-472,481,504-553,570,575,605-612,651-679,681-686
+src/components/FileList.tsx
+  s_1588a710df61ff::t_37f0708f96f78c 72
+  s_1588a710df61ff::t_8e3d4f6ffebc43 12-13,19,23,51-58
+  s_1588a710df61ff::t_75b9043e5cd4eb 87-92
+src/diff/rows.ts
+  s_1588a710df61ff::t_2ca05c670c6f84 97-100,112-118,126,134-135
+  s_1588a710df61ff::t_02885653f17332 243-244,249-250,259-265,288-289,297-307
+  s_1588a710df61ff::t_7dfa99e862faba 1-7
+  s_1588a710df61ff::t_efd24cc6cf56cc 158-162,170-234
+  s_1588a710df61ff::t_3d810ca155467b 119-125
+  s_1588a710df61ff::t_0696cb3c26adda 235
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "f608cc4c1019a68f82e1ad10d0fb412534c3e282",
+  "prompts": {},
+  "sessions": {
+    "s_1588a710df61ff": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e3d14ef2-522d-434d-89ff-66ded7c3d1ef",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
