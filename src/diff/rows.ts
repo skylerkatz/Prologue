@@ -4,6 +4,7 @@ import type {
   DiffLine,
   FileDiff,
   FileSummary,
+  RepliesByRoot,
 } from "../types";
 import { guardReason, type GuardReason } from "./guards";
 
@@ -111,9 +112,9 @@ export type Row =
     };
 
 /**
- * Where the single open comment composer sits: after a file's header, or
- * below the selection's last line. Review-level composing lives outside the
- * virtualized list.
+ * Where the single open comment composer sits: after a file's header, below
+ * the selection's last line, or under a thread root's last reply.
+ * Review-level composing lives outside the virtualized list.
  */
 export type ComposerLocation =
   | { level: "file"; fi: number }
@@ -123,7 +124,8 @@ export type ComposerLocation =
       side: CommentSide;
       startLine: number;
       endLine: number;
-    };
+    }
+  | { level: "reply"; fi: number; rootId: number };
 
 const ROW_HEIGHTS: Record<Exclude<Row["kind"], "skeleton">, number> = {
   file: 42,
@@ -201,7 +203,13 @@ export function indexComments(
   const byPath = new Map(files.map((file, fi) => [file.path, fi]));
   const index = new Map<number, FileComments>();
   for (const comment of comments) {
-    if (comment.level === "review" || comment.filePath === null) {
+    // Replies never place themselves: they render under their thread root
+    // (buildRows appends them from the replies map).
+    if (
+      comment.parentId !== null ||
+      comment.level === "review" ||
+      comment.filePath === null
+    ) {
       continue;
     }
     const fi = byPath.get(comment.filePath);
@@ -241,16 +249,33 @@ function skeletonHeight(file: FileSummary): number {
 
 /**
  * Flatten the whole diff — every file — into one list of virtualizable rows.
- * Only rows the virtualizer asks for are ever rendered. Comment and composer
- * rows join the same list, so the DOM stays bounded however many exist.
+ * Only rows the virtualizer asks for are ever rendered. Comment, reply, and
+ * composer rows join the same list, so the DOM stays bounded however many
+ * exist.
  */
 export function buildRows(
   files: FileSummary[],
   states: FileViewState[],
   comments: Map<number, FileComments>,
+  replies: RepliesByRoot,
   composer: ComposerLocation | null,
 ): Row[] {
   const rows: Row[] = [];
+  // A thread root followed by its replies and (if open here) the reply
+  // composer. Resolved/dismissed roots collapse the whole thread: replies
+  // contribute no rows until the root is reopened.
+  const pushThread = (fi: number, comment: Comment) => {
+    rows.push({ kind: "comment", fi, comment });
+    if (comment.state !== "open") {
+      return;
+    }
+    for (const reply of replies.get(comment.id) ?? []) {
+      rows.push({ kind: "comment", fi, comment: reply });
+    }
+    if (composer?.level === "reply" && composer.rootId === comment.id) {
+      rows.push({ kind: "composer", fi });
+    }
+  };
   files.forEach((file, fi) => {
     rows.push({ kind: "file", fi });
     const state = states[fi];
@@ -259,7 +284,7 @@ export function buildRows(
     }
     const fileComments = comments.get(fi);
     for (const comment of fileComments?.file ?? []) {
-      rows.push({ kind: "comment", fi, comment });
+      pushThread(fi, comment);
     }
     if (composer?.level === "file" && composer.fi === fi) {
       rows.push({ kind: "composer", fi });
@@ -298,7 +323,7 @@ export function buildRows(
         rows.push({ kind: "line", fi, line, hi, li });
         const key = lineCommentKey(lineSide(line), lineNumber(line));
         for (const comment of fileComments?.line.get(key) ?? []) {
-          rows.push({ kind: "comment", fi, comment });
+          pushThread(fi, comment);
         }
         if (
           lineComposer !== null &&

@@ -1,11 +1,14 @@
 import { useRef, useState } from "react";
-import type { Comment, CommentState } from "../types";
-import { CommentCard, CommentComposer, type DraftStore } from "./Comments";
+import type { Comment, CommentState, RepliesByRoot } from "../types";
+import { CommentComposer, CommentThread, type DraftStore } from "./Comments";
 
 interface ReviewCommentsPanelProps {
-  /** Review-level comments only. */
+  /** Review-level thread roots only. */
   comments: Comment[];
+  /** Replies grouped by root, shared across the whole review. */
+  repliesByRoot: RepliesByRoot;
   onCreate: (body: string) => Promise<void>;
+  onCreateReply: (rootId: number, body: string) => Promise<void>;
   onUpdate: (id: number, body: string) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
   onSetState: (id: number, state: CommentState) => Promise<void>;
@@ -14,13 +17,16 @@ interface ReviewCommentsPanelProps {
 /** Overall review notes, pinned above the diff. */
 export function ReviewCommentsPanel({
   comments,
+  repliesByRoot,
   onCreate,
+  onCreateReply,
   onUpdate,
   onDelete,
   onSetState,
 }: ReviewCommentsPanelProps) {
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [replyingTo, setReplyingTo] = useState<number | null>(null);
   const drafts = useRef<DraftStore>(new Map());
 
   return (
@@ -41,11 +47,18 @@ export function ReviewCommentsPanel({
         )}
       </header>
       {comments.map((comment) => (
-        <CommentCard
+        <CommentThread
           key={comment.id}
-          comment={comment}
-          editing={editingId === comment.id}
+          root={comment}
+          replies={repliesByRoot.get(comment.id) ?? []}
+          editingId={editingId}
           drafts={drafts.current}
+          replyingTo={replyingTo}
+          onReplyStart={setReplyingTo}
+          onReplyCancel={() => setReplyingTo(null)}
+          onCreateReply={(rootId, body) =>
+            onCreateReply(rootId, body).then(() => setReplyingTo(null))
+          }
           onEditStart={setEditingId}
           onEditCancel={() => setEditingId(null)}
           onSave={(id, body) =>

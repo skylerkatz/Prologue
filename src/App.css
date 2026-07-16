@@ -1112,3 +1112,30 @@ button.primary:hover {
 .archive-comment {
   margin-top: 0.6rem;
 }
+
+/* --- Comment replies (flat threads) ----------------------------------- */
+
+/* Replies indent under their root wherever the thread renders — as
+   virtualized rows (.inline-comment wrappers) or inside .comment-thread. */
+.comment-card-reply,
+.inline-comment .comment-card-reply,
+.reply-composer .comment-composer,
+.inline-comment.reply-composer .comment-composer {
+  margin-left: 2rem;
+  max-width: 52rem;
+}
+
+.comment-card-reply {
+  background: var(--bg-subtle);
+}
+
+.comment-reply-tag {
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.comment-hidden-replies {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-style: italic;
+}

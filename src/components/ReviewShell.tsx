@@ -10,16 +10,17 @@ import {
   updateComment,
   updateCommentState,
 } from "../ipc";
-import type {
-  AnchorStatus,
-  BranchList,
-  Comment,
-  CommentState,
-  DiffSummary,
-  NewCommentInput,
-  RepoInfo,
-  Review,
-  WorkingTreeMode,
+import {
+  groupReplies,
+  type AnchorStatus,
+  type BranchList,
+  type Comment,
+  type CommentState,
+  type DiffSummary,
+  type NewCommentInput,
+  type RepoInfo,
+  type Review,
+  type WorkingTreeMode,
 } from "../types";
 import { ArchivedReviews } from "./ArchivedReviews";
 import { DiffView } from "./DiffView";
@@ -182,8 +183,16 @@ export function ReviewShell({
 
   const handleDelete = useCallback(async (id: number) => {
     await deleteComment(id);
-    setComments((prev) => prev.filter((c) => c.id !== id));
+    // Deleting a thread root cascades its replies server-side; drop them
+    // from local state the same way.
+    setComments((prev) => prev.filter((c) => c.id !== id && c.parentId !== id));
   }, []);
+
+  const handleCreateReply = useCallback(
+    (rootId: number, body: string) =>
+      handleCreate({ level: "review", parentId: rootId, body }),
+    [handleCreate],
+  );
 
   const handleSetState = useCallback(
     async (id: number, state: CommentState) => {
@@ -198,20 +207,27 @@ export function ReviewShell({
     [handleCreate],
   );
 
+  /** Replies grouped under their thread root; threads render as a unit
+   * wherever the root lands (inline, review panel, or orphaned bucket). */
+  const repliesByRoot = useMemo(() => groupReplies(comments), [comments]);
+
   const reviewComments = useMemo(
-    () => comments.filter((c) => c.level === "review"),
+    () => comments.filter((c) => c.level === "review" && c.parentId === null),
     [comments],
   );
 
   /**
-   * Comments whose place in the diff is gone: line comments the re-anchor
-   * pass orphaned, plus file/line comments on files that left the diff.
-   * They render in the orphaned bucket, never inline at a stale position.
+   * Thread roots whose place in the diff is gone: line comments the
+   * re-anchor pass orphaned, plus file/line comments on files that left the
+   * diff. They render in the orphaned bucket, never inline at a stale
+   * position. Replies always follow their root, so they are never orphaned
+   * on their own.
    */
   const orphanedComments = useMemo(() => {
     const paths = new Set(view?.summary.files.map((f) => f.path) ?? []);
     return comments.filter(
       (c) =>
+        c.parentId === null &&
         c.level !== "review" &&
         (anchorStatuses.get(c.id) === "orphaned" ||
           (c.filePath !== null && !paths.has(c.filePath))),
@@ -223,8 +239,10 @@ export function ReviewShell({
     return comments.filter((c) => !orphaned.has(c.id));
   }, [comments, orphanedComments]);
 
+  /** Open THREADS: lifecycle lives on roots, so replies never count. */
   const openCount = useMemo(
-    () => comments.filter((c) => c.state === "open").length,
+    () =>
+      comments.filter((c) => c.state === "open" && c.parentId === null).length,
     [comments],
   );
 
@@ -244,6 +262,8 @@ export function ReviewShell({
   const openCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const comment of comments) {
+      // Replies carry no file path (parentId set ⇒ filePath null), so this
+      // already counts thread roots only.
       if (
         comment.level === "review" ||
         comment.filePath === null ||
@@ -372,13 +392,17 @@ export function ReviewShell({
             <div className="diff-pane">
               <ReviewCommentsPanel
                 comments={reviewComments}
+                repliesByRoot={repliesByRoot}
                 onCreate={handleCreateReviewComment}
+                onCreateReply={handleCreateReply}
                 onUpdate={handleUpdate}
                 onDelete={handleDelete}
                 onSetState={handleSetState}
               />
               <OrphanedComments
                 comments={orphanedComments}
+                repliesByRoot={repliesByRoot}
+                onCreateReply={handleCreateReply}
                 onUpdate={handleUpdate}
                 onDelete={handleDelete}
                 onSetState={handleSetState}
@@ -392,6 +416,7 @@ export function ReviewShell({
                 summary={view.summary}
                 scrollTarget={scrollTarget}
                 comments={diffComments}
+                replies={repliesByRoot}
                 anchorStatuses={anchorStatuses}
                 onCreateComment={handleCreate}
                 onUpdateComment={handleUpdate}

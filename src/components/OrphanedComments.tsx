@@ -1,10 +1,13 @@
 import { useRef, useState } from "react";
-import type { Comment, CommentState } from "../types";
-import { CommentCard, type DraftStore } from "./Comments";
+import type { Comment, CommentState, RepliesByRoot } from "../types";
+import { CommentThread, type DraftStore } from "./Comments";
 
 interface OrphanedCommentsProps {
-  /** Comments whose anchor (or file) is gone from the current diff. */
+  /** Thread roots whose anchor (or file) is gone from the current diff. */
   comments: Comment[];
+  /** Replies grouped by root; orphaned threads keep theirs. */
+  repliesByRoot: RepliesByRoot;
+  onCreateReply: (rootId: number, body: string) => Promise<void>;
   onUpdate: (id: number, body: string) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
   onSetState: (id: number, state: CommentState) => Promise<void>;
@@ -13,15 +16,19 @@ interface OrphanedCommentsProps {
 /**
  * The orphaned bucket: comments whose code can no longer be located in the
  * diff. They are shown here — with their last known location and captured
- * code — instead of being silently dropped or misplaced inline.
+ * code — instead of being silently dropped or misplaced inline. Whole
+ * threads orphan together: replies stay under their root.
  */
 export function OrphanedComments({
   comments,
+  repliesByRoot,
+  onCreateReply,
   onUpdate,
   onDelete,
   onSetState,
 }: OrphanedCommentsProps) {
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [replyingTo, setReplyingTo] = useState<number | null>(null);
   const drafts = useRef<DraftStore>(new Map());
 
   if (comments.length === 0) {
@@ -57,10 +64,17 @@ export function OrphanedComments({
               {comment.codeAnchor.lines.join("\n")}
             </pre>
           )}
-          <CommentCard
-            comment={comment}
-            editing={editingId === comment.id}
+          <CommentThread
+            root={comment}
+            replies={repliesByRoot.get(comment.id) ?? []}
+            editingId={editingId}
             drafts={drafts.current}
+            replyingTo={replyingTo}
+            onReplyStart={setReplyingTo}
+            onReplyCancel={() => setReplyingTo(null)}
+            onCreateReply={(rootId, body) =>
+              onCreateReply(rootId, body).then(() => setReplyingTo(null))
+            }
             onEditStart={setEditingId}
             onEditCancel={() => setEditingId(null)}
             onSave={(id, body) =>

@@ -37,9 +37,15 @@ import type {
   FileStatus,
   FileSummary,
   NewCommentInput,
+  RepliesByRoot,
   WorkingTreeMode,
 } from "../types";
-import { CommentCard, CommentComposer, type DraftStore } from "./Comments";
+import {
+  CommentCard,
+  CommentComposer,
+  replyDraftKey,
+  type DraftStore,
+} from "./Comments";
 
 /** Parallel `get_file_diff` calls; each recomputes the repo diff in Rust. */
 const MAX_CONCURRENT_LOADS = 3;
@@ -61,6 +67,8 @@ interface DiffViewProps {
   scrollTarget: { path: string; nonce: number } | null;
   /** File- and line-level comments (review-level ones are ignored here). */
   comments: Comment[];
+  /** Replies grouped under their thread root, for every thread. */
+  replies: RepliesByRoot;
   /** Re-anchor outcome per line comment; "changed" flags the comment card. */
   anchorStatuses: ReadonlyMap<number, AnchorStatus>;
   onCreateComment: (input: NewCommentInput) => Promise<void>;
@@ -88,6 +96,7 @@ export function DiffView({
   summary,
   scrollTarget,
   comments,
+  replies,
   anchorStatuses,
   onCreateComment,
   onUpdateComment,
@@ -319,19 +328,36 @@ export function DiffView({
     [updateState],
   );
 
+  // Open the reply composer under a thread root's last reply.
+  const startReply = useCallback(
+    (fi: number, rootId: number) => {
+      applySelection(null);
+      setComposer({ level: "reply", fi, rootId });
+    },
+    [applySelection],
+  );
+
   const submitComposer = useCallback(
     async (body: string) => {
       const target = composerRef.current;
       if (target === null) {
         return;
       }
-      const filePath = summary.files[target.fi].path;
-      if (target.level === "file") {
+      if (target.level === "reply") {
+        const root = comments.find((c) => c.id === target.rootId);
+        if (root === undefined) {
+          throw `Comment not found: C${target.rootId}`;
+        }
+        // Rust resolves the parent to the thread root and ignores the
+        // positional fields; the level is passed through for shape only.
+        await onCreateComment({ level: root.level, parentId: root.id, body });
+      } else if (target.level === "file") {
+        const filePath = summary.files[target.fi].path;
         await onCreateComment({ level: "file", filePath, body });
       } else {
         await onCreateComment({
           level: "line",
-          filePath,
+          filePath: summary.files[target.fi].path,
           side: target.side,
           startLine: target.startLine,
           endLine: target.endLine,
@@ -341,7 +367,7 @@ export function DiffView({
       setComposer(null);
       applySelection(null);
     },
-    [onCreateComment, summary],
+    [onCreateComment, summary, comments],
   );
 
   const cancelComposer = useCallback(() => {
@@ -363,8 +389,8 @@ export function DiffView({
   );
 
   const rows = useMemo(
-    () => buildRows(summary.files, states, commentIndex, composer),
-    [summary.files, states, commentIndex, composer],
+    () => buildRows(summary.files, states, commentIndex, replies, composer),
+    [summary.files, states, commentIndex, replies, composer],
   );
 
   const virtualizer = useVirtualizer({
@@ -565,6 +591,7 @@ export function DiffView({
               composer={composer}
               editingId={editingId}
               drafts={drafts.current}
+              replies={replies}
               anchorStatuses={anchorStatuses}
               onToggle={toggleFile}
               onLoad={forceLoadFile}
@@ -572,6 +599,7 @@ export function DiffView({
               onGutterDown={gutterDown}
               onRowEnter={rowEnter}
               onAddFileComment={addFileComment}
+              onStartReply={startReply}
               onComposerSubmit={submitComposer}
               onComposerCancel={cancelComposer}
               onEditStart={setEditingId}
@@ -597,6 +625,7 @@ interface RowContentProps {
   composer: ComposerLocation | null;
   editingId: number | null;
   drafts: DraftStore;
+  replies: RepliesByRoot;
   anchorStatuses: ReadonlyMap<number, AnchorStatus>;
   onToggle: (fi: number) => void;
   onLoad: (fi: number) => void;
@@ -604,6 +633,7 @@ interface RowContentProps {
   onGutterDown: (fi: number, hi: number, line: DiffLine, shiftKey: boolean) => void;
   onRowEnter: (fi: number, hi: number, line: DiffLine) => void;
   onAddFileComment: (fi: number) => void;
+  onStartReply: (fi: number, rootId: number) => void;
   onComposerSubmit: (body: string) => Promise<void>;
   onComposerCancel: () => void;
   onEditStart: (id: number) => void;
@@ -629,6 +659,7 @@ const RowContent = memo(function RowContent({
   composer,
   editingId,
   drafts,
+  replies,
   anchorStatuses,
   onToggle,
   onLoad,
@@ -636,6 +667,7 @@ const RowContent = memo(function RowContent({
   onGutterDown,
   onRowEnter,
   onAddFileComment,
+  onStartReply,
   onComposerSubmit,
   onComposerCancel,
   onEditStart,
@@ -700,7 +732,8 @@ const RowContent = memo(function RowContent({
         />
       );
     }
-    case "comment":
+    case "comment": {
+      const isReply = row.comment.parentId !== null;
       return (
         <div className="inline-comment">
           <CommentCard
@@ -708,25 +741,42 @@ const RowContent = memo(function RowContent({
             editing={editingId === row.comment.id}
             drafts={drafts}
             codeChanged={anchorStatuses.get(row.comment.id) === "changed"}
+            replyCount={isReply ? 0 : (replies.get(row.comment.id)?.length ?? 0)}
             onEditStart={onEditStart}
             onEditCancel={onEditCancel}
             onSave={onSaveComment}
             onDelete={onDeleteComment}
-            onSetState={onSetCommentState}
+            // Lifecycle lives on thread roots; replies expose none.
+            onSetState={isReply ? undefined : onSetCommentState}
+            onReply={
+              !isReply && row.comment.state === "open"
+                ? () => onStartReply(row.fi, row.comment.id)
+                : undefined
+            }
           />
         </div>
       );
+    }
     case "composer":
       return (
-        <div className="inline-comment">
+        <div
+          className={`inline-comment${composer?.level === "reply" ? " reply-composer" : ""}`}
+        >
           <CommentComposer
             drafts={drafts}
-            draftKey="new"
-            placeholder={
-              composer?.level === "file"
-                ? `Comment on ${files[row.fi].path}…`
-                : "Comment on the selected lines…"
+            draftKey={
+              composer?.level === "reply"
+                ? replyDraftKey(composer.rootId)
+                : "new"
             }
+            placeholder={
+              composer?.level === "reply"
+                ? `Reply to C${composer.rootId}…`
+                : composer?.level === "file"
+                  ? `Comment on ${files[row.fi].path}…`
+                  : "Comment on the selected lines…"
+            }
+            submitLabel={composer?.level === "reply" ? "Reply" : undefined}
             onSubmit={onComposerSubmit}
             onCancel={onComposerCancel}
           />

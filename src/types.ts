@@ -123,6 +123,13 @@ export interface Comment {
   commitSha: string;
   state: CommentState;
   body: string;
+  /**
+   * Thread root this comment replies to; null for roots. Threads are one
+   * level deep. Replies inherit the root's file/side/lines context (their
+   * own stay null) and have no lifecycle of their own — the root's state
+   * governs the whole thread.
+   */
+  parentId: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -156,7 +163,29 @@ export interface NewCommentInput {
   side?: CommentSide;
   startLine?: number;
   endLine?: number;
+  /** Reply to this comment's thread; Rust resolves it to the thread root
+   * and ignores the positional fields above. */
+  parentId?: number;
   body: string;
+}
+
+/** Replies grouped under their thread root, in chronological (id) order. */
+export type RepliesByRoot = ReadonlyMap<number, Comment[]>;
+
+export function groupReplies(comments: Comment[]): RepliesByRoot {
+  const map = new Map<number, Comment[]>();
+  for (const comment of comments) {
+    if (comment.parentId === null) {
+      continue;
+    }
+    const bucket = map.get(comment.parentId);
+    if (bucket === undefined) {
+      map.set(comment.parentId, [comment]);
+    } else {
+      bucket.push(comment);
+    }
+  }
+  return map;
 }
 
 /** Clipboard export flavors; formatting happens in Rust. */

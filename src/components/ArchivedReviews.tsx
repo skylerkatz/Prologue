@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { listArchivedReviews, listComments } from "../ipc";
-import type { ArchivedReview, Comment } from "../types";
-import { CommentCard, type DraftStore } from "./Comments";
+import { groupReplies, type ArchivedReview, type Comment } from "../types";
+import { CommentThread, type DraftStore } from "./Comments";
 
 interface ArchivedReviewsProps {
   repoPath: string;
@@ -47,6 +47,17 @@ export function ArchivedReviews({ repoPath, onClose }: ArchivedReviewsProps) {
       .then(setComments)
       .catch((e: unknown) => setError(typeof e === "string" ? e : String(e)));
   };
+
+  // Archived threads render whole: roots in order, replies nested (the
+  // read-only browser shows full history regardless of thread state).
+  const roots = useMemo(
+    () => comments?.filter((c) => c.parentId === null) ?? null,
+    [comments],
+  );
+  const repliesByRoot = useMemo(
+    () => groupReplies(comments ?? []),
+    [comments],
+  );
 
   const noop = () => Promise.resolve();
 
@@ -110,12 +121,12 @@ export function ArchivedReviews({ repoPath, onClose }: ArchivedReviewsProps) {
               <strong>{selected.branch}</strong> ← {selected.baseRef} ·{" "}
               {selected.mode} · archived {formatDate(selected.updatedAt)}
             </p>
-            {comments === null ? (
+            {roots === null ? (
               <p className="archive-empty">Loading comments…</p>
-            ) : comments.length === 0 ? (
+            ) : roots.length === 0 ? (
               <p className="archive-empty">This review has no comments.</p>
             ) : (
-              comments.map((comment) => (
+              roots.map((comment) => (
                 <div key={comment.id} className="archive-comment">
                   {comment.filePath !== null && (
                     <div className="orphaned-origin">
@@ -127,9 +138,10 @@ export function ArchivedReviews({ repoPath, onClose }: ArchivedReviewsProps) {
                       {comment.codeAnchor.lines.join("\n")}
                     </pre>
                   )}
-                  <CommentCard
-                    comment={comment}
-                    editing={false}
+                  <CommentThread
+                    root={comment}
+                    replies={repliesByRoot.get(comment.id) ?? []}
+                    editingId={null}
                     drafts={drafts.current}
                     readOnly
                     onEditStart={() => {}}

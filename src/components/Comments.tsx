@@ -109,6 +109,8 @@ interface CommentCardProps {
   codeChanged?: boolean;
   /** Hide every mutating control (archived reviews are read-only). */
   readOnly?: boolean;
+  /** How many replies this thread root has; deleting it cascades them. */
+  replyCount?: number;
   onEditStart: (id: number) => void;
   onEditCancel: () => void;
   /** Resolve to close the editor; reject to keep it open with the error. */
@@ -116,6 +118,8 @@ interface CommentCardProps {
   onDelete: (id: number) => Promise<void>;
   /** Lifecycle transitions: resolve / dismiss / reopen. */
   onSetState?: (id: number, state: CommentState) => Promise<void>;
+  /** Open a reply composer for this thread (open roots only). */
+  onReply?: () => void;
 }
 
 export function CommentCard({
@@ -124,11 +128,13 @@ export function CommentCard({
   drafts,
   codeChanged = false,
   readOnly = false,
+  replyCount = 0,
   onEditStart,
   onEditCancel,
   onSave,
   onDelete,
   onSetState,
+  onReply,
 }: CommentCardProps) {
   // Two-step delete instead of confirm(): native dialogs would block the
   // webview (and any automation driving it).
@@ -163,14 +169,18 @@ export function CommentCard({
       .catch(fail);
   };
 
+  const isReply = comment.parentId !== null;
   const location = describeLocation(comment);
   return (
     <article
-      className={`comment-card${closed ? " comment-card-closed" : ""}`}
-      aria-label={`Comment C${comment.id}`}
+      className={`comment-card${closed ? " comment-card-closed" : ""}${isReply ? " comment-card-reply" : ""}`}
+      aria-label={isReply ? `Reply C${comment.id}` : `Comment C${comment.id}`}
     >
       <header className="comment-header">
-        <span className="comment-id">C{comment.id}</span>
+        <span className="comment-id">
+          C{comment.id}
+          {isReply && <span className="comment-reply-tag"> (reply)</span>}
+        </span>
         {closed && (
           <span className={`comment-state comment-state-${comment.state}`}>
             {STATE_BADGES[comment.state as Exclude<CommentState, "open">]}
@@ -191,6 +201,14 @@ export function CommentCard({
           {formatTime(comment.createdAt)}
           {comment.updatedAt !== comment.createdAt && " (edited)"}
         </span>
+        {closed && replyCount > 0 && (
+          <span
+            className="comment-hidden-replies"
+            title="The whole thread is collapsed — reopen to see its replies."
+          >
+            {replyCount} {replyCount === 1 ? "reply" : "replies"} hidden
+          </span>
+        )}
         <span className="comment-header-spacer" />
         {!readOnly && !editing && !confirmingDelete && (
           <>
@@ -205,6 +223,16 @@ export function CommentCard({
               </button>
             ) : (
               <>
+                {onReply !== undefined && (
+                  <button
+                    type="button"
+                    className="comment-action"
+                    title="Reply to this thread"
+                    onClick={onReply}
+                  >
+                    Reply
+                  </button>
+                )}
                 {onSetState !== undefined && (
                   <>
                     <button
@@ -256,7 +284,13 @@ export function CommentCard({
               disabled={busy}
               onClick={remove}
             >
-              {busy ? "Deleting…" : "Really delete?"}
+              {busy
+                ? "Deleting…"
+                : replyCount > 0
+                  ? `Really delete? Its ${
+                      replyCount === 1 ? "reply" : `${replyCount} replies`
+                    } will be deleted too`
+                  : "Really delete?"}
             </button>
             <button
               type="button"
@@ -292,6 +326,107 @@ export function CommentCard({
         <p className="comment-body">{comment.body}</p>
       )}
     </article>
+  );
+}
+
+export const replyDraftKey = (rootId: number): string => `reply:${rootId}`;
+
+interface CommentThreadProps {
+  root: Comment;
+  /** The thread's replies in chronological order. */
+  replies: Comment[];
+  editingId: number | null;
+  drafts: DraftStore;
+  codeChanged?: boolean;
+  readOnly?: boolean;
+  /** Root id whose reply composer is open; state lives with the caller. */
+  replyingTo?: number | null;
+  onReplyStart?: (rootId: number) => void;
+  onReplyCancel?: () => void;
+  /** Resolve to close the reply composer; reject to keep it open. */
+  onCreateReply?: (rootId: number, body: string) => Promise<void>;
+  onEditStart: (id: number) => void;
+  onEditCancel: () => void;
+  onSave: (id: number, body: string) => Promise<void>;
+  onDelete: (id: number) => Promise<void>;
+  onSetState?: (id: number, state: CommentState) => Promise<void>;
+}
+
+/**
+ * A root comment with its flat reply thread, for the non-virtualized panels
+ * (review comments, orphaned bucket, archive browser). The diff view builds
+ * the same structure out of virtualized rows instead.
+ *
+ * Lifecycle is thread-level: resolving/dismissing the root collapses the
+ * whole thread (replies included). The read-only archive browser always
+ * shows full history.
+ */
+export function CommentThread({
+  root,
+  replies,
+  editingId,
+  drafts,
+  codeChanged = false,
+  readOnly = false,
+  replyingTo = null,
+  onReplyStart,
+  onReplyCancel,
+  onCreateReply,
+  onEditStart,
+  onEditCancel,
+  onSave,
+  onDelete,
+  onSetState,
+}: CommentThreadProps) {
+  const open = root.state === "open";
+  const showReplies = open || readOnly;
+  return (
+    <div className="comment-thread">
+      <CommentCard
+        comment={root}
+        editing={editingId === root.id}
+        drafts={drafts}
+        codeChanged={codeChanged}
+        readOnly={readOnly}
+        replyCount={replies.length}
+        onEditStart={onEditStart}
+        onEditCancel={onEditCancel}
+        onSave={onSave}
+        onDelete={onDelete}
+        onSetState={onSetState}
+        onReply={
+          !readOnly && open && onReplyStart !== undefined
+            ? () => onReplyStart(root.id)
+            : undefined
+        }
+      />
+      {showReplies &&
+        replies.map((reply) => (
+          <CommentCard
+            key={reply.id}
+            comment={reply}
+            editing={editingId === reply.id}
+            drafts={drafts}
+            readOnly={readOnly}
+            onEditStart={onEditStart}
+            onEditCancel={onEditCancel}
+            onSave={onSave}
+            onDelete={onDelete}
+          />
+        ))}
+      {!readOnly && replyingTo === root.id && onCreateReply !== undefined && (
+        <div className="reply-composer">
+          <CommentComposer
+            drafts={drafts}
+            draftKey={replyDraftKey(root.id)}
+            placeholder={`Reply to C${root.id}…`}
+            submitLabel="Reply"
+            onSubmit={(body) => onCreateReply(root.id, body)}
+            onCancel={() => onReplyCancel?.()}
+          />
+        </div>
+      )}
+    </div>
   );
 }
 
