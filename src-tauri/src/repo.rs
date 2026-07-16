@@ -1,3 +1,4 @@
+use git2::{BranchType, Repository};
 use serde::Serialize;
 use std::path::Path;
 
@@ -15,45 +16,90 @@ pub struct BranchList {
     pub default_base: String,
 }
 
-/// Validate that `path` points to a local git repository and return its identity.
-#[tauri::command]
-pub fn open_repo(path: String) -> Result<RepoInfo, String> {
-    let repo_path = Path::new(&path);
+/// Open the repository at exactly `path` (no upward discovery), with
+/// user-facing error messages.
+pub(crate) fn open_git_repo(path: &str) -> Result<Repository, String> {
+    let repo_path = Path::new(path);
     if !repo_path.is_dir() {
         return Err(format!("Not a directory: {path}"));
     }
-    // `.git` is a directory in a normal clone and a file in worktrees/submodules.
-    if !repo_path.join(".git").exists() {
-        return Err(format!("Not a git repository: {path}"));
-    }
-    let name = repo_path
+    Repository::open(repo_path).map_err(|_| format!("Not a git repository: {path}"))
+}
+
+/// Validate that `path` points to a local git repository and return its identity.
+#[tauri::command]
+pub fn open_repo(path: String) -> Result<RepoInfo, String> {
+    open_git_repo(&path)?;
+    let name = Path::new(&path)
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| path.clone());
     Ok(RepoInfo { path, name })
 }
 
-/// M1 placeholder: returns canned branch data. M2 replaces the body with git2
-/// (local + remote-tracking branches, remote-preferred default base) behind
-/// the same command signature.
+/// List local and remote-tracking branches, the checked-out branch, and the
+/// auto-detected default base ref.
 #[tauri::command]
 pub fn list_branches(repo_path: String) -> Result<BranchList, String> {
-    open_repo(repo_path)?;
+    let repo = open_git_repo(&repo_path)?;
+    let mut local = Vec::new();
+    let mut remote = Vec::new();
+    let iter = repo
+        .branches(None)
+        .map_err(|e| format!("Failed to list branches: {}", e.message()))?;
+    for entry in iter {
+        let (branch, kind) = entry.map_err(|e| format!("Failed to read branch: {}", e.message()))?;
+        let Some(name) = branch.name().ok().flatten().map(str::to_owned) else {
+            continue;
+        };
+        match kind {
+            BranchType::Local => local.push(name),
+            // `origin/HEAD` is a symbolic pointer, not a reviewable branch.
+            BranchType::Remote if !name.ends_with("/HEAD") => remote.push(name),
+            BranchType::Remote => {}
+        }
+    }
+    local.sort();
+    remote.sort();
+
+    let current = repo
+        .head()
+        .ok()
+        .and_then(|h| h.shorthand().map(str::to_owned))
+        .unwrap_or_else(|| "HEAD".to_owned());
+    let default_base = detect_default_base(&local, &remote, &current);
+
+    let mut branches = local;
+    branches.extend(remote);
     Ok(BranchList {
-        branches: vec![
-            "main".into(),
-            "origin/main".into(),
-            "feature/example-branch".into(),
-            "fix/placeholder".into(),
-        ],
-        current: "feature/example-branch".into(),
-        default_base: "origin/main".into(),
+        branches,
+        current,
+        default_base,
     })
+}
+
+/// Remote-tracking branches are preferred over locals — a local `main` is
+/// often behind what the remote would diff against.
+fn detect_default_base(local: &[String], remote: &[String], current: &str) -> String {
+    const PREFERRED: [&str; 3] = ["main", "master", "production"];
+    for name in PREFERRED {
+        let remote_name = format!("origin/{name}");
+        if remote.contains(&remote_name) {
+            return remote_name;
+        }
+    }
+    for name in PREFERRED {
+        if local.iter().any(|b| b == name) {
+            return name.to_owned();
+        }
+    }
+    current.to_owned()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testutil::FixtureRepo;
 
     fn this_repo() -> String {
         // CARGO_MANIFEST_DIR is src-tauri; the git repo root is its parent.
@@ -73,7 +119,8 @@ mod tests {
 
     #[test]
     fn open_repo_rejects_a_non_git_directory() {
-        let err = open_repo(std::env::temp_dir().to_string_lossy().into_owned()).unwrap_err();
+        let dir = tempfile::tempdir().unwrap();
+        let err = open_repo(dir.path().to_string_lossy().into_owned()).unwrap_err();
         assert!(err.starts_with("Not a git repository"), "{err}");
     }
 
@@ -84,11 +131,67 @@ mod tests {
     }
 
     #[test]
-    fn list_branches_returns_placeholder_data_for_a_valid_repo() {
-        let list = list_branches(this_repo()).unwrap();
-        assert!(!list.branches.is_empty());
-        assert!(list.branches.contains(&list.current));
-        assert!(list.branches.contains(&list.default_base));
+    fn list_branches_returns_local_and_remote_tracking_branches() {
+        let fixture = FixtureRepo::new();
+        fixture.commit_file("a.txt", "one\n", "initial");
+        fixture.create_branch("feature/x");
+        fixture.add_remote_branch("main", "main");
+
+        let list = list_branches(fixture.path()).unwrap();
+        assert_eq!(list.branches, vec!["feature/x", "main", "origin/main"]);
+        assert_eq!(list.current, "feature/x");
+        assert_eq!(list.default_base, "origin/main");
+    }
+
+    #[test]
+    fn default_base_prefers_origin_main_over_other_remotes() {
+        let fixture = FixtureRepo::new();
+        fixture.commit_file("a.txt", "one\n", "initial");
+        fixture.add_remote_branch("production", "main");
+        fixture.add_remote_branch("master", "main");
+        fixture.add_remote_branch("main", "main");
+
+        let list = list_branches(fixture.path()).unwrap();
+        assert_eq!(list.default_base, "origin/main");
+    }
+
+    #[test]
+    fn default_base_falls_back_through_remote_candidates() {
+        let fixture = FixtureRepo::with_initial_head("master");
+        fixture.commit_file("a.txt", "one\n", "initial");
+        fixture.add_remote_branch("production", "master");
+        fixture.add_remote_branch("master", "master");
+
+        let list = list_branches(fixture.path()).unwrap();
+        assert_eq!(list.default_base, "origin/master");
+    }
+
+    #[test]
+    fn default_base_uses_local_main_when_no_remotes_exist() {
+        let fixture = FixtureRepo::new();
+        fixture.commit_file("a.txt", "one\n", "initial");
+        fixture.create_branch("feature/x");
+
+        let list = list_branches(fixture.path()).unwrap();
+        assert_eq!(list.default_base, "main");
+    }
+
+    #[test]
+    fn default_base_uses_local_master_when_main_is_absent() {
+        let fixture = FixtureRepo::with_initial_head("master");
+        fixture.commit_file("a.txt", "one\n", "initial");
+
+        let list = list_branches(fixture.path()).unwrap();
+        assert_eq!(list.default_base, "master");
+    }
+
+    #[test]
+    fn default_base_falls_back_to_current_branch() {
+        let fixture = FixtureRepo::with_initial_head("trunk");
+        fixture.commit_file("a.txt", "one\n", "initial");
+
+        let list = list_branches(fixture.path()).unwrap();
+        assert_eq!(list.default_base, "trunk");
     }
 
     #[test]
