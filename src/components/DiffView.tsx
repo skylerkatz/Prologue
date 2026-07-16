@@ -1,7 +1,17 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { getContextLines, getFileDiff } from "../ipc";
 import { guardReason, type GuardReason } from "../diff/guards";
+import { detectLang } from "../highlight/lang";
+import { tokenizeLines, type LineTokens } from "../highlight/shiki";
 import {
   buildRows,
   computeGaps,
@@ -86,6 +96,12 @@ export function DiffView({
   const [states, setStates] = useState<FileViewState[]>(() =>
     summary.files.map(initialFileState),
   );
+  // Syntax tokens per visible hunk, keyed `${fi}:${hi}`; rows render plain
+  // until their hunk's entry appears, so highlighting never gates paint.
+  const [highlights, setHighlights] = useState<
+    ReadonlyMap<string, LineTokens[]>
+  >(new Map());
+  const highlightRequested = useRef(new Set<string>());
   const [selection, setSelection] = useState<LineSelection | null>(null);
   const [composer, setComposer] = useState<ComposerLocation | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -355,6 +371,11 @@ export function DiffView({
   });
   const items = virtualizer.getVirtualItems();
 
+  const langs = useMemo(
+    () => summary.files.map((file) => detectLang(file.path)),
+    [summary.files],
+  );
+
   // Lazily fetch hunks for expanded files whose rows are in the viewport.
   // Runs after every render; the guards keep it a cheap no-op once loaded.
   useEffect(() => {
@@ -374,6 +395,40 @@ export function DiffView({
         continue;
       }
       loadFile(row.fi);
+    }
+  });
+
+  // Lazily tokenize hunks whose lines are in the viewport. Same cadence as
+  // the fetch effect above; the requested-set makes re-runs cheap no-ops.
+  useEffect(() => {
+    for (const item of items) {
+      const row = rows[item.index];
+      if ((row.kind !== "line" && row.kind !== "hunk") || row.hi === undefined) {
+        continue;
+      }
+      const lang = langs[row.fi];
+      if (lang === null) {
+        continue;
+      }
+      const key = `${row.fi}:${row.hi}`;
+      if (highlightRequested.current.has(key)) {
+        continue;
+      }
+      const diff = states[row.fi].diff;
+      if (diff === null) {
+        continue;
+      }
+      highlightRequested.current.add(key);
+      const contents = diff.hunks[row.hi].lines.map((line) => line.content);
+      tokenizeLines(contents, lang)
+        .then((tokens) => {
+          if (tokens !== null) {
+            setHighlights((prev) => new Map(prev).set(key, tokens));
+          }
+        })
+        .catch(() => {
+          // Tokenization failures keep the plain-text rendering.
+        });
     }
   });
 
@@ -411,6 +466,7 @@ export function DiffView({
               row={rows[item.index]}
               files={summary.files}
               states={states}
+              highlights={highlights}
               selection={selection}
               composer={composer}
               editingId={editingId}
@@ -441,6 +497,7 @@ interface RowContentProps {
   row: Row;
   files: FileSummary[];
   states: FileViewState[];
+  highlights: ReadonlyMap<string, LineTokens[]>;
   selection: LineSelection | null;
   composer: ComposerLocation | null;
   editingId: number | null;
@@ -471,6 +528,7 @@ const RowContent = memo(function RowContent({
   row,
   files,
   states,
+  highlights,
   selection,
   composer,
   editingId,
@@ -529,11 +587,16 @@ const RowContent = memo(function RowContent({
         lineSide(row.line) === selection.side &&
         lineNumber(row.line) >= selection.start &&
         lineNumber(row.line) <= selection.end;
+      const tokens =
+        row.hi !== undefined && row.li !== undefined
+          ? highlights.get(`${row.fi}:${row.hi}`)?.[row.li]
+          : undefined;
       return (
         <LineRow
           line={row.line}
           fi={row.fi}
           hi={row.hi}
+          tokens={tokens}
           selected={selected}
           onGutterDown={onGutterDown}
           onRowEnter={onRowEnter}
@@ -673,6 +736,7 @@ function LineRow({
   line,
   fi,
   hi,
+  tokens,
   selected,
   onGutterDown,
   onRowEnter,
@@ -681,6 +745,8 @@ function LineRow({
   fi: number;
   /** Absent for expanded gap-context lines, which are not commentable. */
   hi: number | undefined;
+  /** Syntax tokens for this line; absent until its hunk is tokenized. */
+  tokens: LineTokens | undefined;
   selected: boolean;
   onGutterDown: (fi: number, hi: number, line: DiffLine, shiftKey: boolean) => void;
   onRowEnter: (fi: number, hi: number, line: DiffLine) => void;
@@ -708,7 +774,15 @@ function LineRow({
       <span className="line-sign" aria-hidden="true">
         {line.kind === "addition" ? "+" : line.kind === "deletion" ? "−" : ""}
       </span>
-      <span className="line-content">{line.content}</span>
+      <span className="line-content">
+        {tokens === undefined
+          ? line.content
+          : tokens.map((token, i) => (
+              <span key={i} style={token.htmlStyle as CSSProperties}>
+                {token.content}
+              </span>
+            ))}
+      </span>
     </div>
   );
 }

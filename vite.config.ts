@@ -8,6 +8,14 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(async () => ({
   plugins: [react()],
 
+  build: {
+    // The oversized chunks are Shiki's lazily-imported grammar/wasm data
+    // (ruby ~780 kB, oniguruma wasm ~620 kB) — never part of first paint,
+    // fetched on demand per language. The default 500 kB warning is aimed
+    // at code on the critical path, which these are not.
+    chunkSizeWarningLimit: 800,
+  },
+
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors

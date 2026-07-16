@@ -94,8 +94,9 @@ export type Row =
   | { kind: "error"; fi: number; message: string }
   | { kind: "empty"; fi: number }
   | { kind: "hunk"; fi: number; hi: number; header: string }
-  /** `hi` is set for hunk lines; expanded gap-context lines carry none. */
-  | { kind: "line"; fi: number; line: DiffLine; hi?: number }
+  /** `hi`/`li` (hunk index, line index within the hunk) are set for hunk
+   * lines; expanded gap-context lines carry neither. */
+  | { kind: "line"; fi: number; line: DiffLine; hi?: number; li?: number }
   | { kind: "comment"; fi: number; comment: Comment }
   | { kind: "composer"; fi: number }
   | {
@@ -293,8 +294,8 @@ export function buildRows(
         pushGapRows(rows, fi, hi, gaps[hi], state, diff.hunks.length);
       }
       rows.push({ kind: "hunk", fi, hi, header: hunk.header });
-      for (const line of hunk.lines) {
-        rows.push({ kind: "line", fi, line, hi });
+      hunk.lines.forEach((line, li) => {
+        rows.push({ kind: "line", fi, line, hi, li });
         const key = lineCommentKey(lineSide(line), lineNumber(line));
         for (const comment of fileComments?.line.get(key) ?? []) {
           rows.push({ kind: "comment", fi, comment });
@@ -305,7 +306,7 @@ export function buildRows(
         ) {
           rows.push({ kind: "composer", fi });
         }
-      }
+      });
     });
     if (gaps.length > 0) {
       const gi = diff.hunks.length;
