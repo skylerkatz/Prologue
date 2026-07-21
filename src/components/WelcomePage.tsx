@@ -1,3 +1,5 @@
+import logo from "../assets/prologue-logo.svg";
+
 interface WelcomePageProps {
   recents: string[];
   error: string | null;
@@ -15,8 +17,11 @@ export function WelcomePage({
 }: WelcomePageProps) {
   return (
     <main className="welcome">
+      <img className="welcome-logo" src={logo} width={72} height={72} alt="" />
       <h1>Prologue</h1>
-      <p className="tagline">Review local branches like a GitHub PR.</p>
+      <p className="tagline">
+        Review local branches with your agent — before the PR.
+      </p>
       <button type="button" className="primary" onClick={onPickRepo}>
         Open Repository…
       </button>

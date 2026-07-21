@@ -161,17 +161,26 @@ code {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.75rem;
-  padding: 2rem;
+  gap: 12px;
+  padding: 32px;
+  background: var(--bg-app);
+}
+
+.welcome-logo {
+  border-radius: 16px;
+  margin-bottom: 4px;
 }
 
 .welcome h1 {
   margin: 0;
-  font-size: 1.75rem;
+  font-family: var(--font-serif);
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--text-strong);
 }
 
 .tagline {
-  margin: 0 0 1rem;
+  margin: 0 0 12px;
   color: var(--text-muted);
 }
 
@@ -195,17 +204,19 @@ button.primary:hover {
 }
 
 .recents {
-  margin-top: 1.5rem;
-  width: min(30rem, 100%);
+  margin-top: 24px;
+  width: min(480px, 100%);
 }
 
+/* Uppercase mono micro-header, like the sidebar's. */
 .recents h2 {
-  font-size: 0.8rem;
+  font-family: var(--font-mono);
+  font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   color: var(--text-muted);
-  margin: 0 0 0.5rem;
+  margin: 0 0 8px;
 }
 
 .recents ul {
@@ -215,6 +226,7 @@ button.primary:hover {
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
+  background: var(--bg-card);
 }
 
 .recents li {
@@ -232,10 +244,10 @@ button.primary:hover {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 0.1rem;
+  gap: 2px;
   background: none;
   border: none;
-  padding: 0.5rem 0.75rem;
+  padding: 9px 13px;
   text-align: left;
   cursor: pointer;
 }
@@ -245,12 +257,15 @@ button.primary:hover {
 }
 
 .recent-name {
+  font-family: var(--font-mono);
+  font-size: 13px;
   font-weight: 600;
 }
 
 .recent-dir {
+  font-family: var(--font-mono);
+  font-size: 12px;
   color: var(--text-muted);
-  font-size: 0.85rem;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -260,9 +275,9 @@ button.primary:hover {
 .recent-remove {
   background: none;
   border: none;
-  padding: 0 0.75rem;
+  padding: 0 13px;
   color: var(--text-muted);
-  font-size: 1.1rem;
+  font-size: 15px;
   cursor: pointer;
 }
 
