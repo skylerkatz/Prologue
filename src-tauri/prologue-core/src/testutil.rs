@@ -10,6 +10,12 @@ pub struct FixtureRepo {
     pub repo: Repository,
 }
 
+impl Default for FixtureRepo {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FixtureRepo {
     pub fn new() -> Self {
         Self::with_initial_head("main")

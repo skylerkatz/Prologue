@@ -9,8 +9,10 @@ pub mod export;
 pub mod intraline;
 pub mod repo;
 pub mod review;
-#[cfg(test)]
-mod testutil;
+// Test-only git fixtures; the `testutil` feature lets sibling crates (the
+// CLI) use them from their dev-dependencies. Never enabled in normal builds.
+#[cfg(any(test, feature = "testutil"))]
+pub mod testutil;
 
 // Callers hold the database connection themselves (the app wraps it in
 // Tauri-managed state); re-export rusqlite so they name the same version

@@ -48,7 +48,12 @@ struct ExportData<'a> {
 
 /// Render the review's open comments as clipboard-ready text. Line ranges,
 /// orphan status, and the header SHAs are all resolved against the diff as
-/// it stands right now — the same computation the UI displays.
+/// it stands right now — the same computation the UI displays. With
+/// `persist` the relocated ranges are also written back (as a refresh
+/// would); without it nothing is written and the output is still identical,
+/// because the computed ranges are applied to the in-memory comments either
+/// way.
+#[allow(clippy::too_many_arguments)]
 pub fn export_review_impl(
     conn: &Connection,
     repo_path: &str,
@@ -57,10 +62,12 @@ pub fn export_review_impl(
     mode: DiffMode,
     review_id: i64,
     format: ExportFormat,
+    persist: bool,
 ) -> Result<String, String> {
     // Re-locate line comments first so exported ranges and orphan status
-    // match the diff being exported (persisting moves, as a refresh would).
-    let reanchored = review::reanchor_comments_impl(conn, repo_path, base, head, mode, review_id)?;
+    // match the diff being exported.
+    let reanchored =
+        review::reanchor_comments_impl(conn, repo_path, base, head, mode, review_id, persist)?;
     let orphaned_anchors: HashSet<i64> = reanchored
         .iter()
         .filter(|r| r.status == AnchorStatus::Orphaned)
@@ -70,7 +77,20 @@ pub fn export_review_impl(
         diff::get_diff_summary(repo_path.to_owned(), base.to_owned(), head.to_owned(), mode)?;
     let diff_paths: HashSet<&str> = summary.files.iter().map(|f| f.path.as_str()).collect();
 
-    let comments = review::list_comments_impl(conn, review_id)?;
+    let mut comments = review::list_comments_impl(conn, review_id)?;
+    // Render from the computed ranges, not the stored ones — a no-op when
+    // they were just persisted, the whole point when they were not.
+    let relocated: HashMap<i64, (Option<u32>, Option<u32>)> = reanchored
+        .iter()
+        .map(|r| (r.comment_id, (r.start_line, r.end_line)))
+        .collect();
+    for comment in &mut comments {
+        if let Some(&(start, end)) = relocated.get(&comment.id) {
+            comment.start_line = start;
+            comment.end_line = end;
+        }
+    }
+    let comments = comments;
     // Replies grouped under their root, already in chronological (id) order.
     let mut replies_by_root: HashMap<i64, Vec<&Comment>> = HashMap::new();
     for c in &comments {
@@ -501,6 +521,7 @@ mod tests {
             DiffMode::Committed,
             review_id,
             format,
+            true,
         )
     }
 
@@ -838,6 +859,7 @@ why delete this file?
             DiffMode::All,
             review.id,
             ExportFormat::Markdown,
+            true,
         )
         .unwrap();
         assert!(
@@ -848,5 +870,72 @@ why delete this file?
             "{out}"
         );
         assert!(out.contains(&format!("- Head SHA: {}", sha(&fixture, "feature"))), "{out}");
+    }
+
+    #[test]
+    fn readonly_export_matches_persisting_export_and_writes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = test_db(&dir);
+        let fixture = fixture();
+        let (review_id, _, _) = seeded_review(&conn, &fixture);
+
+        // Shift the commented code down so the export's reanchor pass has a
+        // real move to compute.
+        let mut lines: Vec<String> = (1..=10).map(|n| format!("alpha {n}")).collect();
+        lines[5] = "beta 6a\nbeta 6b".to_owned();
+        lines.splice(0..0, ["intro one".to_owned(), "intro two".to_owned()]);
+        fixture.commit_file("code.txt", &(lines.join("\n") + "\n"), "shift");
+
+        let stored_before: Vec<(Option<u32>, Option<u32>)> =
+            crate::review::list_comments_impl(&conn, review_id)
+                .unwrap()
+                .iter()
+                .map(|c| (c.start_line, c.end_line))
+                .collect();
+
+        for format in [
+            ExportFormat::Markdown,
+            ExportFormat::Json,
+            ExportFormat::PromptMarkdown,
+            ExportFormat::PromptJson,
+        ] {
+            let readonly = export_review_impl(
+                &conn,
+                &fixture.path(),
+                "main",
+                "feature",
+                DiffMode::Committed,
+                review_id,
+                format,
+                false,
+            )
+            .unwrap();
+
+            // Nothing was written back.
+            let stored_after: Vec<(Option<u32>, Option<u32>)> =
+                crate::review::list_comments_impl(&conn, review_id)
+                    .unwrap()
+                    .iter()
+                    .map(|c| (c.start_line, c.end_line))
+                    .collect();
+            assert_eq!(stored_before, stored_after);
+
+            // Byte-identical to the persisting export the app performs.
+            let persisting = export(&conn, &fixture, review_id, format).unwrap();
+            assert_eq!(readonly, persisting);
+
+            // Undo the persisting export's writes for the next iteration.
+            for (comment, &(start, end)) in crate::review::list_comments_impl(&conn, review_id)
+                .unwrap()
+                .iter()
+                .zip(&stored_before)
+            {
+                conn.execute(
+                    "UPDATE comments SET start_line = ?1, end_line = ?2 WHERE id = ?3",
+                    (start, end, comment.id),
+                )
+                .unwrap();
+            }
+        }
     }
 }

@@ -400,6 +400,51 @@ pub fn list_archived_reviews_impl(
         .collect()
 }
 
+/// All reviews, active first (then most recently updated), optionally
+/// filtered to one repo and optionally including archived ones. Read-only.
+pub fn list_reviews_impl(
+    conn: &Connection,
+    repo_path: Option<&str>,
+    include_archived: bool,
+) -> Result<Vec<Review>, String> {
+    let mut sql = String::from("SELECT id FROM reviews WHERE 1=1");
+    if repo_path.is_some() {
+        sql.push_str(" AND repo_path = ?1");
+    }
+    if !include_archived {
+        sql.push_str(" AND status = 'active'");
+    }
+    sql.push_str(
+        " ORDER BY CASE status WHEN 'active' THEN 0 ELSE 1 END, updated_at DESC, id DESC",
+    );
+    let mut stmt = conn.prepare(&sql).map_err(db_err)?;
+    let ids: Vec<i64> = stmt
+        .query_map(rusqlite::params_from_iter(repo_path), |r| r.get(0))
+        .map_err(db_err)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(db_err)?;
+    ids.into_iter().map(|id| get_review(conn, id)).collect()
+}
+
+/// The active review for (repo, branch), if any. Read-only — unlike
+/// `open_review_impl` this never creates or touches a row.
+pub fn find_active_review_impl(
+    conn: &Connection,
+    repo_path: &str,
+    branch: &str,
+) -> Result<Option<Review>, String> {
+    let id: Option<i64> = conn
+        .query_row(
+            "SELECT id FROM reviews
+             WHERE repo_path = ?1 AND branch = ?2 AND status = 'active'",
+            [repo_path, branch],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(db_err)?;
+    id.map(|id| get_review(conn, id)).transpose()
+}
+
 pub fn list_comments_impl(conn: &Connection, review_id: i64) -> Result<Vec<Comment>, String> {
     let mut stmt = conn
         .prepare(
@@ -721,6 +766,8 @@ pub struct ReanchorResult {
     pub end_line: Option<u32>,
 }
 
+/// When `persist` is false the relocation is computed but not written back —
+/// read-only callers (the CLI) get identical results without touching rows.
 pub fn reanchor_comments_impl(
     conn: &Connection,
     repo_path: &str,
@@ -728,6 +775,7 @@ pub fn reanchor_comments_impl(
     head: &str,
     mode: DiffMode,
     review_id: i64,
+    persist: bool,
 ) -> Result<Vec<ReanchorResult>, String> {
     let comments = list_comments_impl(conn, review_id)?;
     // One file-diff fetch per distinct commented file; None = the file has
@@ -769,7 +817,9 @@ pub fn reanchor_comments_impl(
             .and_then(|d| anchor::relocate(d, side, anchor, prev_start));
         let result = match relocation {
             Some(r) => {
-                if (comment.start_line, comment.end_line) != (Some(r.start_line), Some(r.end_line))
+                if persist
+                    && (comment.start_line, comment.end_line)
+                        != (Some(r.start_line), Some(r.end_line))
                 {
                     // Follow the code; `updated_at` untouched (not an edit).
                     conn.execute(
@@ -1307,6 +1357,7 @@ mod tests {
             "feature",
             DiffMode::Committed,
             review_id,
+            true,
         )
         .unwrap()
     }
@@ -1509,6 +1560,7 @@ mod tests {
             "feature",
             DiffMode::Committed,
             review.id,
+            true,
         )
         .unwrap();
 
@@ -1694,5 +1746,99 @@ mod tests {
         assert_eq!(comments[0].code_anchor.as_ref().unwrap().lines, vec![
             "beta 6a", "beta 6b"
         ]);
+    }
+
+    #[test]
+    fn reanchor_without_persist_computes_moves_but_writes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = test_db(&dir);
+        let fixture = fixture();
+        let review =
+            open_review_impl(&conn, &fixture.path(), "feature", "main", DiffMode::Committed)
+                .unwrap();
+        create(&conn, &fixture, line_comment(review.id, "code.txt", CommentSide::New, 6, 7));
+
+        // Insert two lines above the commented ones so the anchor moves.
+        let mut lines = feature_lines();
+        lines.splice(0..0, ["intro one".to_owned(), "intro two".to_owned()]);
+        fixture.commit_file("code.txt", &(lines.join("\n") + "\n"), "edit");
+
+        let results = reanchor_comments_impl(
+            &conn,
+            &fixture.path(),
+            "main",
+            "feature",
+            DiffMode::Committed,
+            review.id,
+            false,
+        )
+        .unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!((results[0].start_line, results[0].end_line), (Some(8), Some(9)));
+
+        // The computed move was NOT written back.
+        let stored = list_comments_impl(&conn, review.id).unwrap();
+        assert_eq!((stored[0].start_line, stored[0].end_line), (Some(6), Some(7)));
+
+        // The same call with persist writes exactly the ranges it computed.
+        let persisted = reanchor_comments_impl(
+            &conn,
+            &fixture.path(),
+            "main",
+            "feature",
+            DiffMode::Committed,
+            review.id,
+            true,
+        )
+        .unwrap();
+        assert_eq!((persisted[0].start_line, persisted[0].end_line), (Some(8), Some(9)));
+        let stored = list_comments_impl(&conn, review.id).unwrap();
+        assert_eq!((stored[0].start_line, stored[0].end_line), (Some(8), Some(9)));
+    }
+
+    #[test]
+    fn list_reviews_puts_active_first_and_honors_filters() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = test_db(&dir);
+        let a = open_review_impl(&conn, "/repo-a", "feature", "main", DiffMode::Committed).unwrap();
+        let b = open_review_impl(&conn, "/repo-b", "fix", "main", DiffMode::Committed).unwrap();
+        let old = open_review_impl(&conn, "/repo-a", "done", "main", DiffMode::Committed).unwrap();
+        archive_review(&conn, old.id).unwrap();
+
+        // Default: active only, across repos.
+        let active = list_reviews_impl(&conn, None, false).unwrap();
+        let ids: Vec<i64> = active.iter().map(|r| r.id).collect();
+        assert_eq!(ids.len(), 2);
+        assert!(ids.contains(&a.id) && ids.contains(&b.id));
+
+        // Archived included: active rows come first.
+        let all = list_reviews_impl(&conn, None, true).unwrap();
+        assert_eq!(all.len(), 3);
+        assert!(all[..2].iter().all(|r| r.status == "active"));
+        assert_eq!(all[2].id, old.id);
+
+        // Repo filter applies to both shapes.
+        let repo_a = list_reviews_impl(&conn, Some("/repo-a"), true).unwrap();
+        let repo_a_ids: Vec<i64> = repo_a.iter().map(|r| r.id).collect();
+        assert_eq!(repo_a_ids, vec![a.id, old.id]);
+    }
+
+    #[test]
+    fn find_active_review_reads_without_creating() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = test_db(&dir);
+        assert_eq!(find_active_review_impl(&conn, "/repo", "feature").unwrap().map(|r| r.id), None);
+        // The miss above must not have created anything.
+        let count: i64 =
+            conn.query_row("SELECT COUNT(*) FROM reviews", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 0);
+
+        let review = open_review_impl(&conn, "/repo", "feature", "main", DiffMode::Committed).unwrap();
+        let found = find_active_review_impl(&conn, "/repo", "feature").unwrap().unwrap();
+        assert_eq!(found.id, review.id);
+
+        // Archived reviews are not "active".
+        archive_review(&conn, review.id).unwrap();
+        assert!(find_active_review_impl(&conn, "/repo", "feature").unwrap().is_none());
     }
 }

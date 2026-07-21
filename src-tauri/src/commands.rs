@@ -146,7 +146,7 @@ pub fn reanchor_comments(
     review_id: i64,
 ) -> Result<Vec<ReanchorResult>, String> {
     let conn = lock(&db)?;
-    review::reanchor_comments_impl(&conn, &repo_path, &base, &head, mode, review_id)
+    review::reanchor_comments_impl(&conn, &repo_path, &base, &head, mode, review_id, true)
 }
 
 /// Archive every active review of this repo whose branch was merged into
@@ -185,5 +185,5 @@ pub fn export_review(
     format: ExportFormat,
 ) -> Result<String, String> {
     let conn = lock(&db)?;
-    export::export_review_impl(&conn, &repo_path, &base, &head, mode, review_id, format)
+    export::export_review_impl(&conn, &repo_path, &base, &head, mode, review_id, format, true)
 }

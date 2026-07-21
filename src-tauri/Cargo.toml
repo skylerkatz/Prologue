@@ -1,8 +1,8 @@
 [workspace]
-members = ["prologue-core"]
+members = ["prologue-core", "prologue"]
 # Unqualified `cargo test` / `cargo clippy` from src-tauri (e.g. the Solo
-# "Rust Checks" process) must cover both crates, not just the root package.
-default-members = [".", "prologue-core"]
+# "Rust Checks" process) must cover every crate, not just the root package.
+default-members = [".", "prologue-core", "prologue"]
 
 [package]
 name = "diff-viewer"

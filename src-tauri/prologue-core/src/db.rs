@@ -48,6 +48,11 @@ const MIGRATIONS: &[&str] = &[
     "ALTER TABLE comments ADD COLUMN parent_id INTEGER REFERENCES comments(id) ON DELETE CASCADE;",
 ];
 
+/// The newest schema version this build knows how to read and migrate to.
+/// External binaries compare it against a database's recorded version before
+/// opening (never operate on a schema newer than the binary).
+pub const SCHEMA_VERSION: i64 = MIGRATIONS.len() as i64;
+
 /// Open (creating if needed) the reviews database at `path` and bring its
 /// schema up to date.
 pub fn open(path: &Path) -> Result<Connection, String> {
