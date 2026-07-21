@@ -443,6 +443,7 @@ export function ReviewShell({
             <aside className="file-sidebar">
               <FileList
                 summary={view.summary}
+                repoPath={repo.path}
                 openCounts={openCounts}
                 onSelect={(path) =>
                   setScrollTarget((prev) => ({

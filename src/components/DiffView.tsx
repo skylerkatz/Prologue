@@ -46,6 +46,7 @@ import {
   replyDraftKey,
   type DraftStore,
 } from "./Comments";
+import { useCopyPath } from "./useCopyPath";
 
 /** Parallel `get_file_diff` calls; each recomputes the repo diff in Rust. */
 const MAX_CONCURRENT_LOADS = 3;
@@ -394,6 +395,13 @@ export function DiffView({
 
   const cancelEdit = useCallback(() => setEditingId(null), []);
 
+  // Double-click on a file card's name copies its absolute path.
+  const { copied, copyPath } = useCopyPath();
+  const copyFilePath = useCallback(
+    (fi: number) => copyPath(`${repoPath}/${summary.files[fi].path}`),
+    [copyPath, repoPath, summary.files],
+  );
+
   const commentIndex = useMemo(
     () => indexComments(summary.files, comments),
     [summary.files, comments],
@@ -614,6 +622,7 @@ export function DiffView({
               anchorStatuses={anchorStatuses}
               onToggle={toggleFile}
               onLoad={forceLoadFile}
+              onCopyPath={copyFilePath}
               onExpand={expandGap}
               onGutterDown={gutterDown}
               onRowEnter={rowEnter}
@@ -630,6 +639,11 @@ export function DiffView({
           </div>
         ))}
       </div>
+      {copied && (
+        <div className="copy-toast" role="status">
+          Copied file path to clipboard
+        </div>
+      )}
     </div>
   );
 }
@@ -648,6 +662,7 @@ interface RowContentProps {
   anchorStatuses: ReadonlyMap<number, AnchorStatus>;
   onToggle: (fi: number) => void;
   onLoad: (fi: number) => void;
+  onCopyPath: (fi: number) => void;
   onExpand: (fi: number, gi: number, direction: ExpandDirection) => void;
   onGutterDown: (fi: number, hi: number, line: DiffLine, shiftKey: boolean) => void;
   onRowEnter: (fi: number, hi: number, line: DiffLine) => void;
@@ -682,6 +697,7 @@ const RowContent = memo(function RowContent({
   anchorStatuses,
   onToggle,
   onLoad,
+  onCopyPath,
   onExpand,
   onGutterDown,
   onRowEnter,
@@ -704,6 +720,7 @@ const RowContent = memo(function RowContent({
           focused={cursorFi === row.fi}
           onToggle={() => onToggle(row.fi)}
           onAddComment={() => onAddFileComment(row.fi)}
+          onCopyPath={() => onCopyPath(row.fi)}
         />
       );
     case "notice":
@@ -832,6 +849,7 @@ function FileHeaderRow({
   focused,
   onToggle,
   onAddComment,
+  onCopyPath,
 }: {
   file: FileSummary;
   expanded: boolean;
@@ -839,6 +857,8 @@ function FileHeaderRow({
   focused: boolean;
   onToggle: () => void;
   onAddComment: () => void;
+  /** Double-click on the file name copies its absolute path. */
+  onCopyPath: () => void;
 }) {
   return (
     <div
@@ -859,7 +879,11 @@ function FileHeaderRow({
       >
         {STATUS_LABELS[file.status]}
       </span>
-      <span className="file-path" title={file.path}>
+      <span
+        className="file-path"
+        title={`${file.path}\nDouble-click to copy the full path`}
+        onDoubleClick={onCopyPath}
+      >
         {file.oldPath !== null && (
           <>
             <span className="file-old-path">{file.oldPath}</span>

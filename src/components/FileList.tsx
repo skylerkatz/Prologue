@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { DiffSummary, FileStatus, FileSummary } from "../types";
+import { useCopyPath } from "./useCopyPath";
 
 const STATUS_LABELS: Record<FileStatus, string> = {
   added: "A",
@@ -10,6 +11,8 @@ const STATUS_LABELS: Record<FileStatus, string> = {
 
 interface FileListProps {
   summary: DiffSummary;
+  /** Repo root, for building the absolute path a double-click copies. */
+  repoPath: string;
   /** Open (unresolved) comment count per file path; absent means zero. */
   openCounts: ReadonlyMap<string, number>;
   onSelect: (path: string) => void;
@@ -20,11 +23,13 @@ function FileRow({
   openCount,
   selected,
   onSelect,
+  onCopyPath,
 }: {
   file: FileSummary;
   openCount: number;
   selected: boolean;
   onSelect: (path: string) => void;
+  onCopyPath: () => void;
 }) {
   return (
     <li>
@@ -42,7 +47,11 @@ function FileRow({
         </span>
         {/* Paths truncate from the LEFT: rtl direction + <bdi> keeps the
             filename end visible without reordering the text itself. */}
-        <span className="file-path" title={file.path}>
+        <span
+          className="file-path"
+          title={`${file.path}\nDouble-click to copy the full path`}
+          onDoubleClick={onCopyPath}
+        >
           <bdi>
             {file.oldPath !== null && (
               <>
@@ -76,9 +85,15 @@ function FileRow({
   );
 }
 
-export function FileList({ summary, openCounts, onSelect }: FileListProps) {
+export function FileList({
+  summary,
+  repoPath,
+  openCounts,
+  onSelect,
+}: FileListProps) {
   // Purely visual: the ribbon bookmark on the row last clicked.
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const { copied, copyPath } = useCopyPath();
   return (
     <div className="file-list">
       <div className="file-list-header">
@@ -102,9 +117,15 @@ export function FileList({ summary, openCounts, onSelect }: FileListProps) {
               setSelectedPath(path);
               onSelect(path);
             }}
+            onCopyPath={() => copyPath(`${repoPath}/${file.path}`)}
           />
         ))}
       </ul>
+      {copied && (
+        <div className="copy-toast" role="status">
+          Copied file path to clipboard
+        </div>
+      )}
     </div>
   );
 }
