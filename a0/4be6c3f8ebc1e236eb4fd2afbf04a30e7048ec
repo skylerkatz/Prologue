@@ -1,0 +1,33 @@
+src-tauri/icons/android/mipmap-anydpi-v26/ic_launcher.xml
+  s_9a087d3e8fc19b::t_9205761ee15a0e 1-5
+src-tauri/icons/android/values/ic_launcher_background.xml
+  s_9a087d3e8fc19b::t_9205761ee15a0e 1-4
+src/App.css
+  s_9a087d3e8fc19b::t_6de45cffa3d340 276-277
+  s_9a087d3e8fc19b::t_fec0935bf9330a 113-154,158-159
+src/components/TitleBar.tsx
+  s_9a087d3e8fc19b::t_fd321d480ba132 1-25
+src/assets/prologue-logo.svg
+  s_9a087d3e8fc19b::t_9775d65bd8b899 1-20
+src/App.tsx
+  s_9a087d3e8fc19b::t_8ff304eb3dd85b 8
+  s_9a087d3e8fc19b::t_2c629205ba68e3 123-153
+src-tauri/tauri.conf.json
+  s_9a087d3e8fc19b::t_7fbe16d3245d76 19-21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "a04be6c3f8ebc1e236eb4fd2afbf04a30e7048ec",
+  "prompts": {},
+  "sessions": {
+    "s_9a087d3e8fc19b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cf9c8021-12f9-4311-af3d-3de7b8806557",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
