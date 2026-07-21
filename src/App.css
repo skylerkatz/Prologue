@@ -296,8 +296,10 @@ button.primary:hover {
 
 .toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
+  row-gap: 8px;
   padding: 10px 16px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-app);
@@ -338,7 +340,7 @@ button.primary:hover {
   border: 1px solid var(--border-strong);
   border-radius: 6px;
   padding: 4px 8px;
-  max-width: 16rem;
+  max-width: 256px;
 }
 
 .arrow {
