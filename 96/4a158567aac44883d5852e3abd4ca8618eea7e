@@ -1,0 +1,22 @@
+src/App.css
+  s_9a087d3e8fc19b::t_dad9d506e8fc7b 1254,1257-1260
+src/components/OrphanedComments.tsx
+  s_9a087d3e8fc19b::t_da620883ab4f69 65-81,83-101,103
+  s_9a087d3e8fc19b::t_4f043a234b1dd6 32-33,42-52,56-61,63-64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "964a158567aac44883d5852e3abd4ca8618eea7e",
+  "prompts": {},
+  "sessions": {
+    "s_9a087d3e8fc19b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cf9c8021-12f9-4311-af3d-3de7b8806557",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
