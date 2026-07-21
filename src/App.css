@@ -110,10 +110,53 @@ code {
   padding: 0.05em 0.35em;
 }
 
+/* App frame: teal title bar above the active screen */
+
+.app-shell {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.titlebar {
+  flex: none;
+  height: 44px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-titlebar);
+}
+
+/* Children stay inert so the whole bar drags the window. */
+.titlebar * {
+  pointer-events: none;
+}
+
+.titlebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.titlebar-wordmark {
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text-on-dark);
+}
+
+.titlebar-branch {
+  font-size: 13.5px;
+  color: var(--text-on-dark);
+  opacity: 0.62;
+}
+
 /* Welcome page */
 
 .welcome {
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -230,7 +273,8 @@ button.primary:hover {
 /* Review shell */
 
 .review-shell {
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }

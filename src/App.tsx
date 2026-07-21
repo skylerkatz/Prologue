@@ -5,6 +5,7 @@ import { listBranches, openRepo, startWatching, stopWatching } from "./ipc";
 import { addRecentRepo, getRecentRepos, removeRecentRepo } from "./recents";
 import type { BranchList, RepoInfo, WorkingTreeMode } from "./types";
 import { ReviewShell } from "./components/ReviewShell";
+import { TitleBar } from "./components/TitleBar";
 import { WelcomePage } from "./components/WelcomePage";
 import "./App.css";
 
@@ -118,37 +119,38 @@ function App() {
     };
   }, [repoPath]);
 
-  if (!openState) {
-    return (
-      <WelcomePage
-        recents={recents}
-        error={error}
-        onPickRepo={() => void pickRepo()}
-        onOpenRecent={(path) => void openRepoAt(path)}
-        onRemoveRecent={(path) => void removeRecent(path)}
-      />
-    );
-  }
-
   return (
-    <ReviewShell
-      repo={openState.repo}
-      branchList={openState.branchList}
-      branch={branch}
-      baseBranch={baseBranch}
-      mode={mode}
-      hideWhitespace={hideWhitespace}
-      refreshKey={refreshKey}
-      onBranchChange={setBranch}
-      onBaseBranchChange={setBaseBranch}
-      onModeChange={setMode}
-      onHideWhitespaceChange={changeHideWhitespace}
-      onRefresh={() => void refresh()}
-      onSwitchRepo={() => {
-        stopWatching().catch(() => {});
-        setOpenState(null);
-      }}
-    />
+    <div className="app-shell">
+      <TitleBar branch={openState ? branch : null} />
+      {!openState ? (
+        <WelcomePage
+          recents={recents}
+          error={error}
+          onPickRepo={() => void pickRepo()}
+          onOpenRecent={(path) => void openRepoAt(path)}
+          onRemoveRecent={(path) => void removeRecent(path)}
+        />
+      ) : (
+        <ReviewShell
+          repo={openState.repo}
+          branchList={openState.branchList}
+          branch={branch}
+          baseBranch={baseBranch}
+          mode={mode}
+          hideWhitespace={hideWhitespace}
+          refreshKey={refreshKey}
+          onBranchChange={setBranch}
+          onBaseBranchChange={setBaseBranch}
+          onModeChange={setMode}
+          onHideWhitespaceChange={changeHideWhitespace}
+          onRefresh={() => void refresh()}
+          onSwitchRepo={() => {
+            stopWatching().catch(() => {});
+            setOpenState(null);
+          }}
+        />
+      )}
+    </div>
   );
 }
 
