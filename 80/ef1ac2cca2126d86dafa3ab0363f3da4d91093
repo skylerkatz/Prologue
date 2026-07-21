@@ -1,0 +1,22 @@
+src/App.css
+  s_9a087d3e8fc19b::t_906637d606943d 285-286,288,291,293-296,298-300,305,311,316,320-323,325,337-338,341,344,348-352,354-356,365-368,371-376,380,382-383,386-388
+  s_9a087d3e8fc19b::t_5e15903defa64a 745,748-749,754-755
+  s_9a087d3e8fc19b::t_0835de5079ea1e 180,189
+  s_9a087d3e8fc19b::t_7ee593cbde5476 756-757
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "80ef1ac2cca2126d86dafa3ab0363f3da4d91093",
+  "prompts": {},
+  "sessions": {
+    "s_9a087d3e8fc19b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cf9c8021-12f9-4311-af3d-3de7b8806557",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
