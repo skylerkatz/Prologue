@@ -99,23 +99,20 @@ mod tests {
     use super::*;
     use crate::testutil::FixtureRepo;
 
-    fn this_repo() -> String {
-        // CARGO_MANIFEST_DIR is src-tauri/prologue-core; the git repo root
-        // is two levels up.
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .to_string_lossy()
-            .into_owned()
-    }
-
     #[test]
     fn open_repo_accepts_a_git_repository() {
-        let info = open_repo(this_repo()).unwrap();
-        assert_eq!(info.name, "diff-viewer");
-        assert_eq!(info.path, this_repo());
+        // A fixture repo, not this checkout: the project may be checked out
+        // under any directory name (e.g. a git worktree).
+        let fixture = FixtureRepo::new();
+        fixture.commit_file("a.txt", "hello\n", "init");
+        let info = open_repo(fixture.path()).unwrap();
+        let expected_name = Path::new(&fixture.path())
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(info.name, expected_name);
+        assert_eq!(info.path, fixture.path());
     }
 
     #[test]
