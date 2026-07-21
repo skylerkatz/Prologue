@@ -177,11 +177,11 @@ export function CommentCard({
       aria-label={isReply ? `Reply C${comment.id}` : `Comment C${comment.id}`}
     >
       <header className="comment-header">
-        <span className="comment-id">
-          C{comment.id}
-          {isReply && <span className="comment-reply-tag"> (reply)</span>}
-        </span>
-        {comment.author !== "reviewer" && (
+        {/* Teal avatar circle carrying the mono comment ID. */}
+        <span className="comment-id">C{comment.id}</span>
+        {comment.author === "reviewer" ? (
+          <span className="comment-you">You</span>
+        ) : (
           <span
             className="comment-author"
             title={`Written by ${comment.author} (externally, via the prologue CLI)`}
@@ -189,13 +189,18 @@ export function CommentCard({
             {comment.author}
           </span>
         )}
+        {isReply && <span className="comment-reply-tag">(reply)</span>}
+        {location !== null && (
+          <span className="comment-location">{location}</span>
+        )}
+        <span className="comment-time">
+          {formatTime(comment.createdAt)}
+          {comment.updatedAt !== comment.createdAt && " (edited)"}
+        </span>
         {closed && (
           <span className={`comment-state comment-state-${comment.state}`}>
             {STATE_BADGES[comment.state as Exclude<CommentState, "open">]}
           </span>
-        )}
-        {location !== null && (
-          <span className="comment-location">{location}</span>
         )}
         {codeChanged && (
           <span
@@ -205,10 +210,6 @@ export function CommentCard({
             ⚠ code changed since commented
           </span>
         )}
-        <span className="comment-time">
-          {formatTime(comment.createdAt)}
-          {comment.updatedAt !== comment.createdAt && " (edited)"}
-        </span>
         {closed && replyCount > 0 && (
           <span
             className="comment-hidden-replies"
@@ -238,7 +239,7 @@ export function CommentCard({
                     title="Reply to this thread"
                     onClick={onReply}
                   >
-                    Reply
+                    ↳ Reply
                   </button>
                 )}
                 {onSetState !== undefined && (

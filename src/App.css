@@ -693,49 +693,79 @@ button.primary:hover {
   background: var(--accent-strong);
 }
 
+/* White card, 3px orange left rail on thread roots. */
 .comment-card {
   margin: 0.5rem 0;
   border: 1px solid var(--border);
+  border-left: 3px solid var(--comment-accent-border);
   border-radius: 8px;
-  background: var(--bg);
-  max-width: 54rem;
+  background: var(--bg-card);
+  max-width: 864px;
 }
 
 .comment-header {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.35rem 0.6rem;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-subtle);
-  border-radius: 8px 8px 0 0;
-  font-size: 0.8rem;
+  gap: 8px;
+  padding: 8px 12px 0;
+  font-size: 12px;
   color: var(--text-muted);
 }
 
+/* Teal avatar circle with the mono comment ID. */
 .comment-id {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--teal-800);
+  color: var(--text-on-dark);
   font-family: var(--font-mono);
+  font-size: 11px;
   font-weight: 700;
-  color: var(--accent);
+}
+
+.comment-card-reply .comment-id {
+  width: 22px;
+  height: 22px;
+  font-size: 9px;
+}
+
+.comment-you {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-strong);
+}
+
+.comment-location,
+.comment-time {
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 .comment-header-spacer {
   flex: 1;
 }
 
+/* Ghost text actions, right-aligned in the header. */
 .comment-action {
   background: none;
   border: none;
-  padding: 0.1rem 0.3rem;
-  border-radius: 4px;
-  font-size: 0.8rem;
+  padding: 2px 9px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
   color: var(--text-muted);
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .comment-action:hover:not(:disabled) {
-  color: var(--accent);
-  background: var(--hunk-bg);
+  color: var(--accent-strong);
+  background: var(--orange-50);
 }
 
 .comment-action-danger,
@@ -745,7 +775,9 @@ button.primary:hover {
 
 .comment-body {
   margin: 0;
-  padding: 0.5rem 0.6rem;
+  padding: 6px 12px 12px;
+  font-size: 13.5px;
+  line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
   user-select: text;
@@ -754,18 +786,19 @@ button.primary:hover {
 }
 
 .comment-composer {
-  padding: 0.4rem 0.6rem 0.5rem;
+  padding: 8px 10px 10px;
 }
 
 .composer-text {
   width: 100%;
   resize: vertical;
   font: inherit;
-  color: inherit;
-  background: var(--bg);
-  border: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg-card);
+  border: 1px solid var(--border-strong);
   border-radius: 6px;
-  padding: 0.4rem 0.5rem;
+  padding: 7px 9px;
 }
 
 .composer-text:focus {
@@ -774,16 +807,16 @@ button.primary:hover {
 }
 
 .composer-error {
-  margin: 0.3rem 0 0;
+  margin: 4px 0 0;
   color: var(--danger);
-  font-size: 0.8rem;
+  font-size: 12px;
 }
 
 .composer-actions {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  margin-top: 0.4rem;
+  gap: 8px;
+  margin-top: 7px;
 }
 
 .composer-submit {
@@ -807,17 +840,22 @@ button.primary:hover {
 }
 
 .composer-cancel {
-  background: none;
+  background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 0.25rem 0.8rem;
-  font-size: 0.85rem;
+  padding: 2px 9px;
+  font-size: 12px;
+  font-weight: 500;
   cursor: pointer;
+}
+
+.composer-cancel:hover {
+  border-color: var(--accent);
 }
 
 .composer-hint {
   margin-left: auto;
-  font-size: 0.75rem;
+  font-size: 11.5px;
   color: var(--text-muted);
 }
 
@@ -831,8 +869,8 @@ button.primary:hover {
   margin: 0.5rem 0;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--bg);
-  max-width: 54rem;
+  background: var(--bg-card);
+  max-width: 864px;
 }
 
 /* Virtualized diff view — each file reads as a bordered white card.
@@ -1112,17 +1150,19 @@ button.primary:hover {
 /* --- M5: comment lifecycle ------------------------------------------- */
 
 .comment-card-closed {
-  opacity: 0.65;
+  opacity: 0.7;
 }
 
+/* Lifecycle pills: small outlined chips on white. */
 .comment-state {
-  font-size: 0.72rem;
+  font-size: 11px;
   font-weight: 600;
-  padding: 0.05rem 0.45rem;
+  padding: 1px 8px;
   border-radius: 999px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   color: var(--text-muted);
-  background: var(--bg-subtle);
+  background: var(--bg-card);
+  white-space: nowrap;
 }
 
 .comment-state-resolved {
@@ -1132,13 +1172,13 @@ button.primary:hover {
 
 /* External authors (anything but the in-app reviewer) get a badge. */
 .comment-author {
-  font-size: 0.72rem;
+  font-size: 11px;
   font-weight: 600;
-  padding: 0.05rem 0.45rem;
+  padding: 1px 8px;
   border-radius: 999px;
   border: 1px solid var(--accent);
-  color: var(--accent);
-  background: var(--bg-subtle);
+  color: var(--accent-strong);
+  background: var(--bg-card);
 }
 
 .comment-state-dismissed {
@@ -1146,12 +1186,13 @@ button.primary:hover {
 }
 
 .comment-flag {
-  font-size: 0.72rem;
+  font-size: 11px;
   font-weight: 600;
-  padding: 0.05rem 0.45rem;
+  padding: 1px 8px;
   border-radius: 999px;
   color: var(--renamed);
   border: 1px solid var(--renamed);
+  background: var(--bg-card);
   white-space: nowrap;
 }
 
@@ -1328,18 +1369,21 @@ button.primary:hover {
 
 /* --- Comment replies (flat threads) ----------------------------------- */
 
-/* Replies indent under their root wherever the thread renders — as
-   virtualized rows (.inline-comment wrappers) or inside .comment-thread. */
+/* Replies indent once (24px) under their root wherever the thread renders —
+   as virtualized rows (.inline-comment wrappers) or inside .comment-thread —
+   and never nest deeper. */
 .comment-card-reply,
 .inline-comment .comment-card-reply,
 .reply-composer .comment-composer,
 .inline-comment.reply-composer .comment-composer {
-  margin-left: 2rem;
-  max-width: 52rem;
+  margin-left: 24px;
+  max-width: 840px;
 }
 
+/* Subtle background, no orange rail on replies. */
 .comment-card-reply {
   background: var(--bg-subtle);
+  border-left: 1px solid var(--border);
 }
 
 .comment-reply-tag {
@@ -1348,7 +1392,7 @@ button.primary:hover {
 }
 
 .comment-hidden-replies {
-  font-size: 0.72rem;
+  font-size: 11px;
   color: var(--text-muted);
   font-style: italic;
 }
