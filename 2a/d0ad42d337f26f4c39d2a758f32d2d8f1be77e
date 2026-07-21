@@ -1,0 +1,37 @@
+src-tauri/src/lib.rs
+  s_e64fdb69f33152::t_23897ab5976631 22-24
+src/App.css
+  s_e64fdb69f33152::t_3955011e5f8b8a 931-941
+src/components/ReviewShell.tsx
+  s_e64fdb69f33152::t_4fdd2e3491f14b 2
+  s_e64fdb69f33152::t_0061a2ca00fddf 165-208
+src-tauri/Cargo.toml
+  s_e64fdb69f33152::t_e360d0d67aebf8 44-46
+src/types.ts
+  s_e64fdb69f33152::t_f4807653e1e223 133-138
+src-tauri/src/watcher.rs
+  s_e64fdb69f33152::t_074a1d68a34818 6,13-15
+  s_e64fdb69f33152::t_af813b59f0b326 223-254
+  s_e64fdb69f33152::t_0670502559ae47 80-128
+  s_e64fdb69f33152::t_e5977412df5056 16
+src/components/Comments.tsx
+  s_e64fdb69f33152::t_3287b9f8ee6a46 184-191
+src-tauri/Cargo.lock
+  s_e64fdb69f33152::t_f0f126e019d20e 708
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "2ad0ad42d337f26f4c39d2a758f32d2d8f1be77e",
+  "prompts": {},
+  "sessions": {
+    "s_e64fdb69f33152": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "69b5473f-0f55-4375-bb62-ecd6e35f22af",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
