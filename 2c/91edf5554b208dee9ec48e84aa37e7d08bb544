@@ -1,0 +1,21 @@
+src/App.css
+  s_8a20260ce23881::t_7cc842635f9b3d 1112-1115
+  s_8a20260ce23881::t_ded9970afaec33 1108-1111
+  s_8a20260ce23881::t_1d878e2aae9ab1 1059-1062
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "2c91edf5554b208dee9ec48e84aa37e7d08bb544",
+  "prompts": {},
+  "sessions": {
+    "s_8a20260ce23881": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d47c36e6-f6b3-4a34-80bb-575fac21ae5b",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
