@@ -1,0 +1,66 @@
+src/App.tsx
+  s_8af48f9d8192ed::t_76b4c5e4c52664 71-75
+  s_8af48f9d8192ed::t_9ac008b24b97c4 140,145
+  s_8af48f9d8192ed::t_6e0081e6d3ae6d 16-18
+  s_8af48f9d8192ed::t_5b2ca6299af91c 25-28
+src/components/WhitespaceToggle.tsx
+  s_8af48f9d8192ed::t_d46ede5e5bce7c 1-22
+src-tauri/prologue-core/src/diff.rs
+  s_8af48f9d8192ed::t_adadfebc5b6fa3 182,186
+  s_8af48f9d8192ed::t_7636bdb6fc2d57 650
+  s_8af48f9d8192ed::t_eb46fbdb457091 790
+  s_8af48f9d8192ed::t_23d85badfa0b42 813
+  s_8af48f9d8192ed::t_3ccc671e17d317 370
+  s_8af48f9d8192ed::t_8d503e9b451bcf 383-385
+  s_8af48f9d8192ed::t_4ba2575e92c25c 958-1004
+  s_8af48f9d8192ed::t_818d57463ac7d6 831
+  s_8af48f9d8192ed::t_9522919c43a8ca 1013
+  s_8af48f9d8192ed::t_0f50a739228895 518
+  s_8af48f9d8192ed::t_7123c8e9f8c7f9 746
+  s_8af48f9d8192ed::t_84ef7cba2c0ef6 123-124,130,133
+  s_8af48f9d8192ed::t_9b9e4592694f9e 957
+src/components/DiffView.tsx
+  s_8af48f9d8192ed::t_5912ce0a996987 65-67
+  s_8af48f9d8192ed::t_b4ec157426e1da 165-172
+  s_8af48f9d8192ed::t_f3ca68db640305 99
+  s_8af48f9d8192ed::t_ab78b69948df10 192
+src/ipc.ts
+  s_8af48f9d8192ed::t_ef970958358b1b 34,36-42,50,53-60
+src-tauri/src/commands.rs
+  s_8af48f9d8192ed::t_b2a4adc218810a 52,55
+  s_8af48f9d8192ed::t_db9c17ef9b0e07 39,41
+src-tauri/prologue-core/src/review.rs
+  s_8af48f9d8192ed::t_073b2afc62c366 824-825,831
+  s_8af48f9d8192ed::t_c3e9007a32b939 639-640,646
+src-tauri/prologue/src/show.rs
+  s_8af48f9d8192ed::t_33f96edded6b3f 108
+  s_8af48f9d8192ed::t_ff827bc5df3968 220
+src-tauri/prologue-core/src/export.rs
+  s_8af48f9d8192ed::t_af90c6e89877e0 77-79
+src/components/ReviewShell.tsx
+  s_8af48f9d8192ed::t_9154a996d7bc9a 177
+  s_8af48f9d8192ed::t_1438c9d45af3f3 41,46
+  s_8af48f9d8192ed::t_e763eae4a4773a 380-383
+  s_8af48f9d8192ed::t_ec0ba2ab63e5b3 33
+  s_8af48f9d8192ed::t_1358a1a60d0fe4 479
+  s_8af48f9d8192ed::t_6c0e8a46868165 60-61
+  s_8af48f9d8192ed::t_1cfb3c28a7f004 143
+  s_8af48f9d8192ed::t_d1da54396cdddf 108-114
+  s_8af48f9d8192ed::t_231037786c25e8 72,77
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "bf199523570e9e6c29e0039b98b3a821961f7b8c",
+  "prompts": {},
+  "sessions": {
+    "s_8af48f9d8192ed": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8dc8a7d7-d663-4ca3-9ec6-40da2807b03e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
