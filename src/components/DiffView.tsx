@@ -400,8 +400,16 @@ export function DiffView({
   );
 
   const rows = useMemo(
-    () => buildRows(summary.files, states, commentIndex, replies, composer),
-    [summary.files, states, commentIndex, replies, composer],
+    () =>
+      buildRows(
+        summary.files,
+        states,
+        commentIndex,
+        replies,
+        composer,
+        ignoreWhitespace,
+      ),
+    [summary.files, states, commentIndex, replies, composer, ignoreWhitespace],
   );
 
   const virtualizer = useVirtualizer({
@@ -715,7 +723,20 @@ const RowContent = memo(function RowContent({
     case "error":
       return <div className="diff-file-error">{row.message}</div>;
     case "empty":
-      return <div className="diff-file-empty">No content changes.</div>;
+      return (
+        <div className="diff-file-empty">
+          {row.whitespaceHidden
+            ? "Only whitespace changes hidden."
+            : "No content changes."}
+        </div>
+      );
+    case "hiddenComments":
+      return (
+        <div className="diff-hidden-comments">
+          {row.count} {row.count === 1 ? "comment" : "comments"} on hidden
+          lines — show whitespace to view.
+        </div>
+      );
     case "hunk":
       return <div className="hunk-header">{row.header}</div>;
     case "line": {

@@ -907,6 +907,13 @@ button.primary:hover {
   color: var(--text-muted);
 }
 
+.diff-hidden-comments {
+  padding: 0.5rem 0.75rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
 /* --- M5: comment lifecycle ------------------------------------------- */
 
 .comment-card-closed {

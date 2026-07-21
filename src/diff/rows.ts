@@ -93,7 +93,11 @@ export type Row =
   | { kind: "notice"; fi: number; reason: GuardReason }
   | { kind: "skeleton"; fi: number; height: number }
   | { kind: "error"; fi: number; message: string }
-  | { kind: "empty"; fi: number }
+  /** `whitespaceHidden` relabels the body: the file has changes, they are
+   * all whitespace and the hide-whitespace toggle dropped them. */
+  | { kind: "empty"; fi: number; whitespaceHidden: boolean }
+  /** Line comments whose host line disappeared under hide-whitespace. */
+  | { kind: "hiddenComments"; fi: number; count: number }
   | { kind: "hunk"; fi: number; hi: number; header: string }
   /** `hi`/`li` (hunk index, line index within the hunk) are set for hunk
    * lines; expanded gap-context lines carry neither. */
@@ -132,6 +136,7 @@ const ROW_HEIGHTS: Record<Exclude<Row["kind"], "skeleton">, number> = {
   notice: 60,
   error: 48,
   empty: 40,
+  hiddenComments: 40,
   hunk: 26,
   line: LINE_HEIGHT,
   comment: 96,
@@ -156,6 +161,8 @@ export function rowKey(row: Row): string {
       return `e${row.fi}`;
     case "empty":
       return `m${row.fi}`;
+    case "hiddenComments":
+      return `w${row.fi}`;
     case "hunk":
       return `h${row.fi}:${row.hi}`;
     case "comment":
@@ -259,6 +266,9 @@ export function buildRows(
   comments: Map<number, FileComments>,
   replies: RepliesByRoot,
   composer: ComposerLocation | null,
+  /** The hide-whitespace toggle the diffs were fetched with; drives the
+   * empty-state relabel and the hidden-comments indicator. */
+  ignoreWhitespace: boolean,
 ): Row[] {
   const rows: Row[] = [];
   // A thread root followed by its replies and (if open here) the reply
@@ -307,9 +317,37 @@ export function buildRows(
       rows.push({ kind: "skeleton", fi, height: skeletonHeight(file) });
       return;
     }
+    // With hide-whitespace on, comments on lines inside dropped hunks have
+    // no host row below and would silently vanish from the inline view;
+    // count them so an indicator row can point at the toggle. They are not
+    // orphans — the sidebar still lists them.
+    let hiddenComments = 0;
+    if (
+      ignoreWhitespace &&
+      fileComments !== undefined &&
+      fileComments.line.size > 0
+    ) {
+      const hosts = new Set<string>();
+      for (const hunk of diff.hunks) {
+        for (const line of hunk.lines) {
+          hosts.add(lineCommentKey(lineSide(line), lineNumber(line)));
+        }
+      }
+      for (const [key, bucket] of fileComments.line) {
+        if (!hosts.has(key)) {
+          hiddenComments += bucket.length;
+        }
+      }
+    }
     if (diff.hunks.length === 0) {
-      rows.push({ kind: "empty", fi });
+      rows.push({ kind: "empty", fi, whitespaceHidden: ignoreWhitespace });
+      if (hiddenComments > 0) {
+        rows.push({ kind: "hiddenComments", fi, count: hiddenComments });
+      }
       return;
+    }
+    if (hiddenComments > 0) {
+      rows.push({ kind: "hiddenComments", fi, count: hiddenComments });
     }
     const lineComposer =
       composer?.level === "line" && composer.fi === fi ? composer : null;
