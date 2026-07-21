@@ -1,0 +1,23 @@
+src/App.css
+  s_9a087d3e8fc19b::t_96f718ac5dce12 485,488,492,495,500-501,503-507,519,521,529-533,536,539-540,545-546,551-552,556-557,561-562,566-567,574,580-586,595,597-598,613,616-621,623-626
+src/components/FileList.tsx
+  s_9a087d3e8fc19b::t_1b1aa737ace9cd 80-81,100-104
+  s_9a087d3e8fc19b::t_43125b49e5d718 1
+  s_9a087d3e8fc19b::t_78156f4e04493b 21,26,33,43-44,46-56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "6508bbb677dfe894a5cb6f7b22d2f4cc4df0c853",
+  "prompts": {},
+  "sessions": {
+    "s_9a087d3e8fc19b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cf9c8021-12f9-4311-af3d-3de7b8806557",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
