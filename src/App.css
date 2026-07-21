@@ -482,24 +482,29 @@ button.primary:hover {
 
 .file-sidebar {
   flex: none;
-  width: 18rem;
+  width: 288px;
   overflow-y: auto;
   border-right: 1px solid var(--border);
-  background: var(--bg-subtle);
+  background: var(--bg-app);
 }
 
 .file-list {
-  padding: 0.75rem 0.5rem;
+  padding: 14px 10px;
 }
 
+/* Uppercase mono micro-header: "3 FILES CHANGED". */
 .file-list-header {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  gap: 0.5rem;
-  padding: 0 0.5rem 0.5rem;
+  gap: 8px;
+  padding: 0 10px 10px;
   color: var(--text-muted);
-  font-size: 0.85rem;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .file-list ul {
@@ -511,9 +516,9 @@ button.primary:hover {
 .file-row {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 8px;
   width: 100%;
-  padding: 0.35rem 0.5rem;
+  padding: 6px 10px;
   background: none;
   border: none;
   border-radius: 6px;
@@ -521,47 +526,62 @@ button.primary:hover {
   cursor: pointer;
 }
 
-.file-row:hover {
-  background: var(--bg);
+/* Warm highlight + 3px orange ribbon bookmark on the left edge. */
+.file-row:hover,
+.file-row.selected {
+  background: var(--surface-selected);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
+/* Tinted squares with colored letters, not solid fills. */
 .status-badge {
   flex: none;
-  width: 1.25rem;
-  height: 1.25rem;
+  width: 20px;
+  height: 20px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: 4px;
-  font-size: 0.75rem;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
   font-weight: 700;
-  color: #ffffff;
 }
 
 .status-added {
-  background: var(--added);
+  background: var(--badge-added-bg);
+  color: var(--badge-added-text);
 }
 
 .status-modified {
-  background: var(--accent);
+  background: var(--badge-modified-bg);
+  color: var(--badge-modified-text);
 }
 
 .status-deleted {
-  background: var(--removed);
+  background: var(--badge-deleted-bg);
+  color: var(--badge-deleted-text);
 }
 
 .status-renamed {
-  background: var(--renamed);
+  background: var(--badge-renamed-bg);
+  color: var(--badge-renamed-text);
 }
 
 .file-path {
   flex: 1;
   min-width: 0;
   font-family: var(--font-mono);
-  font-size: 0.85rem;
+  font-size: 12.5px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Sidebar rows truncate from the LEFT (…llingController.php); the <bdi>
+   keeps the path reading normally inside the rtl box. */
+.file-row .file-path {
+  direction: rtl;
+  text-align: left;
 }
 
 .file-old-path,
@@ -572,9 +592,10 @@ button.primary:hover {
 .file-counts {
   flex: none;
   display: inline-flex;
-  gap: 0.5rem;
+  gap: 8px;
   font-family: var(--font-mono);
-  font-size: 0.85rem;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .count-added {
@@ -589,17 +610,21 @@ button.primary:hover {
   color: var(--text-muted);
 }
 
+/* Open-comment count: teal circle, cream mono numeral. */
 .comment-count {
   flex: none;
-  min-width: 1.3rem;
-  padding: 0 0.3rem;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 999px;
-  background: var(--accent);
-  color: #ffffff;
-  font-size: 0.72rem;
+  background: var(--teal-800);
+  color: var(--text-on-dark);
+  font-family: var(--font-mono);
+  font-size: 11px;
   font-weight: 700;
-  text-align: center;
-  line-height: 1.3rem;
 }
 
 /* Comments */

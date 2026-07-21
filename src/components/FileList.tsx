@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { DiffSummary, FileStatus, FileSummary } from "../types";
 
 const STATUS_LABELS: Record<FileStatus, string> = {
@@ -17,17 +18,19 @@ interface FileListProps {
 function FileRow({
   file,
   openCount,
+  selected,
   onSelect,
 }: {
   file: FileSummary;
   openCount: number;
+  selected: boolean;
   onSelect: (path: string) => void;
 }) {
   return (
     <li>
       <button
         type="button"
-        className="file-row"
+        className={selected ? "file-row selected" : "file-row"}
         onClick={() => onSelect(file.path)}
       >
         <span
@@ -37,16 +40,20 @@ function FileRow({
         >
           {STATUS_LABELS[file.status]}
         </span>
+        {/* Paths truncate from the LEFT: rtl direction + <bdi> keeps the
+            filename end visible without reordering the text itself. */}
         <span className="file-path" title={file.path}>
-          {file.oldPath !== null && (
-            <>
-              <span className="file-old-path">{file.oldPath}</span>
-              <span className="file-rename-arrow" aria-hidden="true">
-                {" → "}
-              </span>
-            </>
-          )}
-          {file.path}
+          <bdi>
+            {file.oldPath !== null && (
+              <>
+                <span className="file-old-path">{file.oldPath}</span>
+                <span className="file-rename-arrow" aria-hidden="true">
+                  {" → "}
+                </span>
+              </>
+            )}
+            {file.path}
+          </bdi>
         </span>
         {openCount > 0 && (
           <span
@@ -70,6 +77,8 @@ function FileRow({
 }
 
 export function FileList({ summary, openCounts, onSelect }: FileListProps) {
+  // Purely visual: the ribbon bookmark on the row last clicked.
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
   return (
     <div className="file-list">
       <div className="file-list-header">
@@ -88,7 +97,11 @@ export function FileList({ summary, openCounts, onSelect }: FileListProps) {
             key={file.path}
             file={file}
             openCount={openCounts.get(file.path) ?? 0}
-            onSelect={onSelect}
+            selected={selectedPath === file.path}
+            onSelect={(path) => {
+              setSelectedPath(path);
+              onSelect(path);
+            }}
           />
         ))}
       </ul>
