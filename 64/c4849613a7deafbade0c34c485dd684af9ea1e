@@ -1,0 +1,29 @@
+src-tauri/.gitignore
+  s_363e99f0c2147d::t_993f0c144d1cf5 8-10
+src-tauri/build.rs
+  s_363e99f0c2147d::t_9fb176c5576395 2-13
+src-tauri/tauri.conf.json
+  s_363e99f0c2147d::t_87941a2d847f44 9
+  s_363e99f0c2147d::t_87e562148e37b0 7
+  s_363e99f0c2147d::t_030c2acf77f7be 29
+scripts/build-sidecar.sh
+  s_363e99f0c2147d::t_24cf22ab1b5052 9-11
+  s_363e99f0c2147d::t_0daf0dff2e1cc8 17-19,21
+  s_363e99f0c2147d::t_5c764324f7cbff 1-8,12-16,20,22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "64c4849613a7deafbade0c34c485dd684af9ea1e",
+  "prompts": {},
+  "sessions": {
+    "s_363e99f0c2147d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e23081f7-83a6-4fdd-9925-7e3142e24b6b",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
