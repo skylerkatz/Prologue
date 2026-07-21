@@ -10,6 +10,9 @@ version = "0.1.0"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
+# The workspace has a second binary (prologue); `tauri dev`'s bare
+# `cargo run` needs to know this one is the app.
+default-run = "diff-viewer"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
