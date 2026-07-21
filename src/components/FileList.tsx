@@ -11,7 +11,7 @@ const STATUS_LABELS: Record<FileStatus, string> = {
 
 interface FileListProps {
   summary: DiffSummary;
-  /** Repo root, for building the absolute path a double-click copies. */
+  /** Repo root, for building the absolute path an ⌥ double-click copies. */
   repoPath: string;
   /** Open (unresolved) comment count per file path; absent means zero. */
   openCounts: ReadonlyMap<string, number>;
@@ -29,7 +29,7 @@ function FileRow({
   openCount: number;
   selected: boolean;
   onSelect: (path: string) => void;
-  onCopyPath: () => void;
+  onCopyPath: (absolute: boolean) => void;
 }) {
   return (
     <li>
@@ -49,8 +49,8 @@ function FileRow({
             filename end visible without reordering the text itself. */}
         <span
           className="file-path"
-          title={`${file.path}\nDouble-click to copy the full path`}
-          onDoubleClick={onCopyPath}
+          title={`${file.path}\nDouble-click to copy the path (⌥ for absolute)`}
+          onDoubleClick={(event) => onCopyPath(event.altKey)}
         >
           <bdi>
             {file.oldPath !== null && (
@@ -93,7 +93,7 @@ export function FileList({
 }: FileListProps) {
   // Purely visual: the ribbon bookmark on the row last clicked.
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
-  const { copied, copyPath } = useCopyPath();
+  const { copied, copyPath } = useCopyPath(repoPath);
   return (
     <div className="file-list">
       <div className="file-list-header">
@@ -117,13 +117,15 @@ export function FileList({
               setSelectedPath(path);
               onSelect(path);
             }}
-            onCopyPath={() => copyPath(`${repoPath}/${file.path}`)}
+            onCopyPath={(absolute) => copyPath(file.path, absolute)}
           />
         ))}
       </ul>
       {copied && (
         <div className="copy-toast" role="status">
-          Copied file path to clipboard
+          {copied === "absolute"
+            ? "Copied absolute path to clipboard"
+            : "Copied file path to clipboard"}
         </div>
       )}
     </div>

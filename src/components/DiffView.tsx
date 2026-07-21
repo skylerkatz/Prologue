@@ -395,11 +395,13 @@ export function DiffView({
 
   const cancelEdit = useCallback(() => setEditingId(null), []);
 
-  // Double-click on a file card's name copies its absolute path.
-  const { copied, copyPath } = useCopyPath();
+  // Double-click on a file card's name copies its repo-relative path;
+  // ⌥ double-click copies the absolute path.
+  const { copied, copyPath } = useCopyPath(repoPath);
   const copyFilePath = useCallback(
-    (fi: number) => copyPath(`${repoPath}/${summary.files[fi].path}`),
-    [copyPath, repoPath, summary.files],
+    (fi: number, absolute: boolean) =>
+      copyPath(summary.files[fi].path, absolute),
+    [copyPath, summary.files],
   );
 
   const commentIndex = useMemo(
@@ -641,7 +643,9 @@ export function DiffView({
       </div>
       {copied && (
         <div className="copy-toast" role="status">
-          Copied file path to clipboard
+          {copied === "absolute"
+            ? "Copied absolute path to clipboard"
+            : "Copied file path to clipboard"}
         </div>
       )}
     </div>
@@ -662,7 +666,7 @@ interface RowContentProps {
   anchorStatuses: ReadonlyMap<number, AnchorStatus>;
   onToggle: (fi: number) => void;
   onLoad: (fi: number) => void;
-  onCopyPath: (fi: number) => void;
+  onCopyPath: (fi: number, absolute: boolean) => void;
   onExpand: (fi: number, gi: number, direction: ExpandDirection) => void;
   onGutterDown: (fi: number, hi: number, line: DiffLine, shiftKey: boolean) => void;
   onRowEnter: (fi: number, hi: number, line: DiffLine) => void;
@@ -720,7 +724,7 @@ const RowContent = memo(function RowContent({
           focused={cursorFi === row.fi}
           onToggle={() => onToggle(row.fi)}
           onAddComment={() => onAddFileComment(row.fi)}
-          onCopyPath={() => onCopyPath(row.fi)}
+          onCopyPath={(absolute) => onCopyPath(row.fi, absolute)}
         />
       );
     case "notice":
@@ -857,8 +861,8 @@ function FileHeaderRow({
   focused: boolean;
   onToggle: () => void;
   onAddComment: () => void;
-  /** Double-click on the file name copies its absolute path. */
-  onCopyPath: () => void;
+  /** Double-click on the file name copies its path; ⌥ for absolute. */
+  onCopyPath: (absolute: boolean) => void;
 }) {
   return (
     <div
@@ -881,8 +885,8 @@ function FileHeaderRow({
       </span>
       <span
         className="file-path"
-        title={`${file.path}\nDouble-click to copy the full path`}
-        onDoubleClick={onCopyPath}
+        title={`${file.path}\nDouble-click to copy the path (⌥ for absolute)`}
+        onDoubleClick={(event) => onCopyPath(event.altKey)}
       >
         {file.oldPath !== null && (
           <>
