@@ -1,0 +1,21 @@
+src-tauri/prologue-core/Cargo.toml
+  s_363e99f0c2147d::t_dacb803cf3cc0b 8-11
+src-tauri/prologue/Cargo.toml
+  s_363e99f0c2147d::t_71f3b3b2a2cd4b 10-11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "4fadcdf7e3c94af9b71b0370952f15b99b88d536",
+  "prompts": {},
+  "sessions": {
+    "s_363e99f0c2147d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e23081f7-83a6-4fdd-9925-7e3142e24b6b",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
