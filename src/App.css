@@ -4,47 +4,78 @@
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
   font-family: var(--font-sans);
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.5;
-  color-scheme: light dark;
+  /* Prologue is light-only for now. */
+  color-scheme: light;
 
-  --bg: #ffffff;
-  --bg-subtle: #f6f8fa;
-  --border: #d1d9e0;
-  --text: #1f2328;
-  --text-muted: #59636e;
-  --accent: #0969da;
-  --danger: #d1242f;
-  --added: #1a7f37;
-  --removed: #d1242f;
+  /* Brand — teal (title bar, repo pill, avatars) */
+  --teal-950: #0e2a2e;
+  --teal-900: #123338;
+  --teal-800: #173e42;
+  --teal-700: #1f5057;
+  --teal-100: #d7e4e2;
+
+  /* Brand — orange (ribbon, primary actions, selection) */
+  --orange-600: #e07b1a;
+  --orange-500: #ea8c1f;
+  --orange-400: #f6a33c;
+  --orange-100: #fbe9d2;
+  --orange-50: #fdf4e5;
+
+  /* Surfaces — warm cream chrome, white content */
+  --bg-app: #faf7f0;
+  --bg-card: #ffffff;
+  --bg-subtle: #f5f1e8;
+  --bg-titlebar: var(--teal-900);
+  --bg: var(--bg-app);
+
+  /* Ink */
+  --text: #223436;
+  --text-strong: #14282b;
+  --text-muted: #6d7a75;
+  --text-on-dark: #f3ead9;
+  --text-on-accent: #ffffff;
+
+  /* Lines */
+  --border: #e3ddd0;
+  --border-strong: #cfc7b6;
+
+  /* Semantic */
+  --accent: var(--orange-500);
+  --accent-strong: var(--orange-600);
+  --danger: #c4392e;
+  --added: #1f7a38;
+  --removed: #c4392e;
   --renamed: #9a6700;
-  --diff-add-bg: #dafbe1;
-  --diff-add-gutter: #aceebb;
-  --diff-del-bg: #ffebe9;
-  --diff-del-gutter: #ffcecb;
-  --hunk-bg: #ddf4ff;
-  --hunk-text: #59636e;
+
+  /* Diff tints (soft red/green on cream; the hunk header is the one cool tint) */
+  --diff-add-bg: #e3f4e3;
+  --diff-add-gutter: #c2e7c5;
+  --diff-del-bg: #fbe9e6;
+  --diff-del-gutter: #f5cfc8;
+  --hunk-bg: #e6f0f4;
+  --hunk-text: #5c6f74;
+  --line-selected-bg: #fdf0dc;
+
+  /* Component aliases */
+  --surface-selected: #f8ead6;
+  --comment-accent-border: var(--orange-400);
+  --badge-modified-bg: #fbe9d2;
+  --badge-modified-text: #b96a12;
+  --badge-added-bg: #ddefdd;
+  --badge-added-text: var(--added);
+  --badge-deleted-bg: #f9dbd6;
+  --badge-deleted-text: var(--removed);
+  --badge-renamed-bg: #f3e8c8;
+  --badge-renamed-text: var(--renamed);
+  --shadow-menu: 0 6px 24px rgba(20, 40, 43, 0.14);
+  --shadow-card: 0 1px 2px rgba(20, 40, 43, 0.05);
+  --overlay-scrim: rgba(14, 42, 46, 0.4);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0d1117;
-    --bg-subtle: #151b23;
-    --border: #3d444d;
-    --text: #f0f6fc;
-    --text-muted: #9198a1;
-    --accent: #4493f8;
-    --danger: #f85149;
-    --added: #3fb950;
-    --removed: #f85149;
-    --renamed: #d29922;
-    --diff-add-bg: rgba(46, 160, 67, 0.15);
-    --diff-add-gutter: rgba(63, 185, 80, 0.3);
-    --diff-del-bg: rgba(248, 81, 73, 0.12);
-    --diff-del-gutter: rgba(248, 81, 73, 0.3);
-    --hunk-bg: rgba(56, 139, 253, 0.12);
-    --hunk-text: #9198a1;
-  }
+::selection {
+  background: var(--orange-100);
 }
 
 * {
