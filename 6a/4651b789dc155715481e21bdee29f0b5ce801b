@@ -1,0 +1,22 @@
+src-tauri/src/lib.rs
+  s_e8c3eeea3a4d97::t_239fa1b1080d25 3
+  s_e8c3eeea3a4d97::t_6d704d4e7b50de 40-48
+src-tauri/src/migration.rs
+  s_e8c3eeea3a4d97::t_95b60d0acb7449 1-181
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "6a4651b789dc155715481e21bdee29f0b5ce801b",
+  "prompts": {},
+  "sessions": {
+    "s_e8c3eeea3a4d97": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d52bfb12-f974-47ae-ba89-0badbce3b460",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
