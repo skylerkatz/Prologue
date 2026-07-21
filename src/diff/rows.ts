@@ -35,9 +35,10 @@ export interface FileViewState {
   context: Map<number, string>;
 }
 
-export function initialFileState(): FileViewState {
+/** Reviewed files start collapsed (`expanded: false`); everything else open. */
+export function initialFileState(expanded: boolean): FileViewState {
   return {
-    expanded: true,
+    expanded,
     forceLoad: false,
     diff: null,
     error: null,

@@ -1435,3 +1435,65 @@ button.primary:hover {
   color: var(--text-muted);
   font-style: italic;
 }
+
+/* Reviewed files (GitHub-style "Viewed") */
+
+/* Checkbox + label at the right edge of the file header. */
+.reviewed-toggle {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.reviewed-toggle input {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.reviewed-toggle:hover {
+  color: var(--text);
+}
+
+/* Kin to .comment-flag: the file changed after it was marked reviewed. */
+.changed-badge {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: 999px;
+  color: var(--renamed);
+  border: 1px solid var(--renamed);
+  background: var(--bg-card);
+  white-space: nowrap;
+}
+
+/* Sidebar: reviewed rows recede; the check is a quiet green tick. */
+.file-row.reviewed .file-path {
+  opacity: 0.55;
+}
+
+.reviewed-check {
+  flex: none;
+  color: var(--added);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.changed-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--renamed);
+}
+
+.reviewed-progress {
+  color: var(--text-muted);
+  font-weight: 400;
+}

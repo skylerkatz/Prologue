@@ -7,7 +7,7 @@ use prologue_core::export::{self, ExportFormat};
 use prologue_core::repo::{self, open_git_repo, BranchList, RepoInfo};
 use prologue_core::review::{
     self, ArchivedReview, Comment, CommentState, NewComment, OpenReviewResult, ReanchorResult,
-    Review,
+    Review, ReviewedFile,
 };
 use prologue_core::rusqlite::Connection;
 
@@ -98,6 +98,41 @@ pub fn find_active_review(
 ) -> Result<Option<Review>, String> {
     let conn = lock(&db)?;
     review::find_active_review_impl(&conn, &repo_path, &branch)
+}
+
+/// The review's per-file reviewed marks. The frontend compares each stored
+/// fingerprint with the current diff summary's to derive reviewed vs
+/// "changed since review".
+#[tauri::command]
+pub fn list_reviewed_files(
+    db: tauri::State<'_, Db>,
+    review_id: i64,
+) -> Result<Vec<ReviewedFile>, String> {
+    let conn = lock(&db)?;
+    review::list_reviewed_files_impl(&conn, review_id)
+}
+
+/// Mark a file reviewed at `fingerprint` (the summary value the user saw);
+/// upserts, so re-marking a changed file refreshes the stored fingerprint.
+#[tauri::command]
+pub fn mark_file_reviewed(
+    db: tauri::State<'_, Db>,
+    review_id: i64,
+    file_path: String,
+    fingerprint: String,
+) -> Result<ReviewedFile, String> {
+    let conn = lock(&db)?;
+    review::mark_file_reviewed_impl(&conn, review_id, &file_path, &fingerprint)
+}
+
+#[tauri::command]
+pub fn unmark_file_reviewed(
+    db: tauri::State<'_, Db>,
+    review_id: i64,
+    file_path: String,
+) -> Result<(), String> {
+    let conn = lock(&db)?;
+    review::unmark_file_reviewed_impl(&conn, review_id, &file_path)
 }
 
 #[tauri::command]

@@ -34,6 +34,7 @@ import type {
   CommentState,
   DiffLine,
   DiffSummary,
+  FileReviewState,
   FileStatus,
   FileSummary,
   NewCommentInput,
@@ -75,6 +76,10 @@ interface DiffViewProps {
   replies: RepliesByRoot;
   /** Re-anchor outcome per line comment; "changed" flags the comment card. */
   anchorStatuses: ReadonlyMap<number, AnchorStatus>;
+  /** Per-file reviewed state; reviewed files mount collapsed and "changed"
+   * ones carry a badge. Absent = never marked. */
+  reviewStates: ReadonlyMap<string, FileReviewState>;
+  onToggleReviewed: (path: string) => void;
   onCreateComment: (input: NewCommentInput) => Promise<void>;
   onUpdateComment: (id: number, body: string) => Promise<void>;
   onDeleteComment: (id: number) => Promise<void>;
@@ -103,13 +108,20 @@ export function DiffView({
   comments,
   replies,
   anchorStatuses,
+  reviewStates,
+  onToggleReviewed,
   onCreateComment,
   onUpdateComment,
   onDeleteComment,
   onSetCommentState,
 }: DiffViewProps) {
+  // Initializer only: DiffView remounts per diff generation, so reviewed
+  // files start collapsed on every refresh/reload. "Changed since review"
+  // files start expanded — they need re-reviewing.
   const [states, setStates] = useState<FileViewState[]>(() =>
-    summary.files.map(initialFileState),
+    summary.files.map((f) =>
+      initialFileState(reviewStates.get(f.path) !== "reviewed"),
+    ),
   );
   // Syntax tokens per visible hunk, keyed `${fi}:${hi}`; rows render plain
   // until their hunk's entry appears, so highlighting never gates paint.
@@ -198,6 +210,19 @@ export function DiffView({
       updateState(fi, (s) => ({ ...s, expanded: !s.expanded }));
     },
     [updateState],
+  );
+
+  // Marking collapses the card and unmarking re-expands it; the caret
+  // (`toggleFile`) stays independent, so peeking at a reviewed file never
+  // unmarks it.
+  const toggleReviewed = useCallback(
+    (fi: number) => {
+      const path = summary.files[fi].path;
+      const isReviewed = reviewStates.get(path) === "reviewed";
+      updateState(fi, (s) => ({ ...s, expanded: isReviewed }));
+      onToggleReviewed(path);
+    },
+    [summary.files, reviewStates, onToggleReviewed, updateState],
   );
 
   const forceLoadFile = useCallback(
@@ -574,11 +599,17 @@ export function DiffView({
       } else if (e.key === "c") {
         e.preventDefault();
         composeAtCursor();
+      } else if (e.key === "v") {
+        e.preventDefault();
+        const fi = cursorFiRef.current;
+        if (fi !== null) {
+          toggleReviewed(fi);
+        }
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [moveCursor, composeAtCursor]);
+  }, [moveCursor, composeAtCursor, toggleReviewed]);
 
   useEffect(() => {
     if (scrollTarget === null) {
@@ -622,7 +653,9 @@ export function DiffView({
               drafts={drafts.current}
               replies={replies}
               anchorStatuses={anchorStatuses}
+              reviewStates={reviewStates}
               onToggle={toggleFile}
+              onToggleReviewed={toggleReviewed}
               onLoad={forceLoadFile}
               onCopyPath={copyFilePath}
               onExpand={expandGap}
@@ -664,7 +697,9 @@ interface RowContentProps {
   drafts: DraftStore;
   replies: RepliesByRoot;
   anchorStatuses: ReadonlyMap<number, AnchorStatus>;
+  reviewStates: ReadonlyMap<string, FileReviewState>;
   onToggle: (fi: number) => void;
+  onToggleReviewed: (fi: number) => void;
   onLoad: (fi: number) => void;
   onCopyPath: (fi: number, absolute: boolean) => void;
   onExpand: (fi: number, gi: number, direction: ExpandDirection) => void;
@@ -699,7 +734,9 @@ const RowContent = memo(function RowContent({
   drafts,
   replies,
   anchorStatuses,
+  reviewStates,
   onToggle,
+  onToggleReviewed,
   onLoad,
   onCopyPath,
   onExpand,
@@ -722,7 +759,9 @@ const RowContent = memo(function RowContent({
           file={files[row.fi]}
           expanded={states[row.fi].expanded}
           focused={cursorFi === row.fi}
+          reviewState={reviewStates.get(files[row.fi].path)}
           onToggle={() => onToggle(row.fi)}
+          onToggleReviewed={() => onToggleReviewed(row.fi)}
           onAddComment={() => onAddFileComment(row.fi)}
           onCopyPath={(absolute) => onCopyPath(row.fi, absolute)}
         />
@@ -851,7 +890,9 @@ function FileHeaderRow({
   file,
   expanded,
   focused,
+  reviewState,
   onToggle,
+  onToggleReviewed,
   onAddComment,
   onCopyPath,
 }: {
@@ -859,7 +900,9 @@ function FileHeaderRow({
   expanded: boolean;
   /** The keyboard cursor (j/k) sits on this file. */
   focused: boolean;
+  reviewState: FileReviewState | undefined;
   onToggle: () => void;
+  onToggleReviewed: () => void;
   onAddComment: () => void;
   /** Double-click on the file name copies its path; ⌥ for absolute. */
   onCopyPath: (absolute: boolean) => void;
@@ -898,6 +941,14 @@ function FileHeaderRow({
         )}
         {file.path}
       </span>
+      {reviewState === "changed" && (
+        <span
+          className="changed-badge"
+          title="This file changed since you marked it reviewed"
+        >
+          Changed since review
+        </span>
+      )}
       <button
         type="button"
         className="add-comment-button"
@@ -914,6 +965,19 @@ function FileHeaderRow({
           <span className="count-deleted">−{file.deletions}</span>
         </span>
       )}
+      <label className="reviewed-toggle" title="Mark this file as reviewed (v)">
+        <input
+          type="checkbox"
+          checked={reviewState === "reviewed"}
+          onChange={(e) => {
+            // Blur so the window keydown handler (which ignores INPUT
+            // targets) keeps serving j/k/c/v after a mouse toggle.
+            e.currentTarget.blur();
+            onToggleReviewed();
+          }}
+        />
+        Viewed
+      </label>
     </div>
   );
 }

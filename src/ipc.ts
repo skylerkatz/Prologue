@@ -13,6 +13,7 @@ import type {
   ReanchorResult,
   RepoInfo,
   Review,
+  ReviewedFile,
   WorkingTreeMode,
 } from "./types";
 
@@ -82,6 +83,30 @@ export function findActiveReview(
   branch: string,
 ): Promise<Review | null> {
   return invoke("find_active_review", { repoPath, branch });
+}
+
+/** The review's per-file reviewed marks (path + fingerprint at mark time). */
+export function listReviewedFiles(reviewId: number): Promise<ReviewedFile[]> {
+  return invoke("list_reviewed_files", { reviewId });
+}
+
+/**
+ * Mark a file reviewed at the fingerprint currently displayed; upserts, so
+ * re-marking a "changed since review" file refreshes the stored fingerprint.
+ */
+export function markFileReviewed(
+  reviewId: number,
+  filePath: string,
+  fingerprint: string,
+): Promise<ReviewedFile> {
+  return invoke("mark_file_reviewed", { reviewId, filePath, fingerprint });
+}
+
+export function unmarkFileReviewed(
+  reviewId: number,
+  filePath: string,
+): Promise<void> {
+  return invoke("unmark_file_reviewed", { reviewId, filePath });
 }
 
 export function updateCommentState(

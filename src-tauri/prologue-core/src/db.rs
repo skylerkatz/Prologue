@@ -50,6 +50,18 @@ const MIGRATIONS: &[&str] = &[
     // default); external writers (the prologue CLI) record who spoke — the
     // UI badges anything that isn't 'reviewer'.
     "ALTER TABLE comments ADD COLUMN author TEXT NOT NULL DEFAULT 'reviewer';",
+    // v4: per-file reviewed marks. `fingerprint` is the content identity of
+    // both diff sides at mark time; a row whose fingerprint no longer matches
+    // the current diff renders as "changed since review" until re-marked or
+    // unmarked. Rows for paths that leave the diff (renames) are left in
+    // place — invisible, and cascade-deleted with the review.
+    "CREATE TABLE reviewed_files (
+        review_id INTEGER NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+        file_path TEXT NOT NULL,
+        fingerprint TEXT NOT NULL,
+        reviewed_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        PRIMARY KEY (review_id, file_path)
+    );",
 ];
 
 /// The newest schema version this build knows how to read and migrate to.
@@ -241,6 +253,65 @@ mod tests {
             .unwrap();
         assert_eq!(body, "existing note");
         assert_eq!(author, "reviewer");
+    }
+
+    #[test]
+    fn v4_migration_applies_in_place_to_a_v3_database_with_rows() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("reviews.db");
+        v1_database_with_rows(&path);
+        {
+            let conn = Connection::open(&path).unwrap();
+            for (i, sql) in MIGRATIONS[1..3].iter().enumerate() {
+                conn.execute_batch(sql).unwrap();
+                conn.execute(
+                    "INSERT INTO schema_migrations (version) VALUES (?1)",
+                    [i as i64 + 2],
+                )
+                .unwrap();
+            }
+        }
+
+        let conn = open(&path).unwrap();
+        let version: i64 = conn
+            .query_row("SELECT MAX(version) FROM schema_migrations", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, MIGRATIONS.len() as i64);
+
+        // Existing rows survive and the new table is usable.
+        let body: String = conn
+            .query_row("SELECT body FROM comments WHERE id = 1", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(body, "existing note");
+        conn.execute(
+            "INSERT INTO reviewed_files (review_id, file_path, fingerprint)
+             VALUES (1, 'src/a.rs', 'aaa:bbb:644')",
+            [],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn deleting_a_review_cascades_to_its_reviewed_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = open(&dir.path().join("reviews.db")).unwrap();
+        conn.execute(
+            "INSERT INTO reviews (repo_path, branch, base_ref, mode)
+             VALUES ('/repo', 'feature', 'main', 'committed')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO reviewed_files (review_id, file_path, fingerprint)
+             VALUES (1, 'src/a.rs', 'aaa:bbb:644')",
+            [],
+        )
+        .unwrap();
+        conn.execute("DELETE FROM reviews WHERE id = 1", []).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM reviewed_files", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
     }
 
     #[test]

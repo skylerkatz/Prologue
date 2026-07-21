@@ -6,8 +6,11 @@ import {
   deleteComment,
   getDiffSummary,
   listComments,
+  listReviewedFiles,
+  markFileReviewed,
   openReview,
   reanchorComments,
+  unmarkFileReviewed,
   updateComment,
   updateCommentState,
 } from "../ipc";
@@ -18,9 +21,11 @@ import {
   type Comment,
   type CommentState,
   type DiffSummary,
+  type FileReviewState,
   type NewCommentInput,
   type RepoInfo,
   type Review,
+  type ReviewedFile,
   type WorkingTreeMode,
 } from "../types";
 import { ArchivedReviews } from "./ArchivedReviews";
@@ -82,6 +87,11 @@ export function ReviewShell({
   const [review, setReview] = useState<Review | null>(null);
   const [branchMerged, setBranchMerged] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
+  // Path → fingerprint stored at mark time; compared against the current
+  // summary's fingerprints to derive reviewed vs "changed since review".
+  const [reviewedFiles, setReviewedFiles] = useState<
+    ReadonlyMap<string, string>
+  >(new Map());
   const [anchorStatuses, setAnchorStatuses] = useState<
     ReadonlyMap<number, AnchorStatus>
   >(new Map());
@@ -118,6 +128,7 @@ export function ReviewShell({
       const opened = await openReview(repo.path, branch, baseBranch, mode);
       let reviewComments: Comment[] = [];
       let anchors: ReadonlyMap<number, AnchorStatus> = new Map();
+      let reviewedRows: ReviewedFile[] = [];
       if (opened.review !== null && opened.review.status === "active") {
         // Re-locate line comments in the recomputed diff before reading
         // them back (moves are persisted server-side).
@@ -130,6 +141,7 @@ export function ReviewShell({
         );
         anchors = new Map(results.map((r) => [r.commentId, r.status]));
         reviewComments = await listComments(opened.review.id);
+        reviewedRows = await listReviewedFiles(opened.review.id);
       }
       if (cancelled) {
         return;
@@ -152,6 +164,11 @@ export function ReviewShell({
       setReview(opened.review);
       setBranchMerged(opened.branchMerged);
       setComments(reviewComments);
+      // Same commit as setView, so the remounted DiffView initializes its
+      // collapse state against the fresh reviewed map.
+      setReviewedFiles(
+        new Map(reviewedRows.map((r) => [r.filePath, r.fingerprint])),
+      );
       setAnchorStatuses(anchors);
       setScrollTarget(null);
     })()
@@ -162,6 +179,7 @@ export function ReviewShell({
           setReview(null);
           setBranchMerged(false);
           setComments([]);
+          setReviewedFiles(new Map());
           setAnchorStatuses(new Map());
           setError(typeof e === "string" ? e : String(e));
         }
@@ -197,12 +215,16 @@ export function ReviewShell({
           pinned.review.id,
         );
         const reviewComments = await listComments(pinned.review.id);
+        const reviewedRows = await listReviewedFiles(pinned.review.id);
         // The view may have moved on (branch switch, refresh) meanwhile.
         if (disposed || current.current?.review.id !== pinned.review.id) {
           return;
         }
         setAnchorStatuses(new Map(results.map((r) => [r.commentId, r.status])));
         setComments(reviewComments);
+        setReviewedFiles(
+          new Map(reviewedRows.map((r) => [r.filePath, r.fingerprint])),
+        );
       })().catch(() => {
         // Leave the current comments in place; the manual Refresh button
         // still covers everything.
@@ -218,6 +240,58 @@ export function ReviewShell({
       disposed = true;
       unlisten?.();
     };
+  }, []);
+
+  /** Per-file review state derived from the displayed summary: a stored
+   * fingerprint that still matches is "reviewed"; one that no longer matches
+   * is "changed" (changed since review); unmarked files are absent. */
+  const reviewStates = useMemo(() => {
+    const map = new Map<string, FileReviewState>();
+    for (const f of view?.summary.files ?? []) {
+      const stored = reviewedFiles.get(f.path);
+      if (stored !== undefined) {
+        map.set(f.path, stored === f.fingerprint ? "reviewed" : "changed");
+      }
+    }
+    return map;
+  }, [view, reviewedFiles]);
+
+  // Ref mirror so the stable toggle callback reads the latest map without
+  // depending on it (state updaters run at render time, too late to pick
+  // the IPC call from inside one).
+  const reviewedRef = useRef(reviewedFiles);
+  reviewedRef.current = reviewedFiles;
+
+  /** Toggle a file's reviewed mark, optimistically: marking stores the
+   * fingerprint the user is looking at; unmarking deletes the row. */
+  const handleToggleReviewed = useCallback((path: string) => {
+    const pinned = current.current;
+    if (pinned === null) {
+      return;
+    }
+    const file = pinned.view.summary.files.find((f) => f.path === path);
+    if (file === undefined) {
+      return;
+    }
+    const previous = reviewedRef.current;
+    const wasReviewed = previous.get(path) === file.fingerprint;
+    const next = new Map(previous);
+    if (wasReviewed) {
+      next.delete(path);
+    } else {
+      // Marking an unreviewed or "changed since review" file both store the
+      // fingerprint currently on screen — the user reviewed what they saw.
+      next.set(path, file.fingerprint);
+    }
+    setReviewedFiles(next);
+    const op = wasReviewed
+      ? unmarkFileReviewed(pinned.review.id, path)
+      : markFileReviewed(pinned.review.id, path, file.fingerprint);
+    op.catch(() => {
+      if (current.current?.review.id === pinned.review.id) {
+        setReviewedFiles(previous);
+      }
+    });
   }, []);
 
   const handleCreate = useCallback(async (input: NewCommentInput) => {
@@ -445,6 +519,7 @@ export function ReviewShell({
                 summary={view.summary}
                 repoPath={repo.path}
                 openCounts={openCounts}
+                reviewStates={reviewStates}
                 onSelect={(path) =>
                   setScrollTarget((prev) => ({
                     path,
@@ -483,6 +558,8 @@ export function ReviewShell({
                 comments={diffComments}
                 replies={repliesByRoot}
                 anchorStatuses={anchorStatuses}
+                reviewStates={reviewStates}
+                onToggleReviewed={handleToggleReviewed}
                 onCreateComment={handleCreate}
                 onUpdateComment={handleUpdate}
                 onDeleteComment={handleDelete}

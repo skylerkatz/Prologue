@@ -166,6 +166,19 @@ pub struct NewComment {
     pub author: Option<String>,
 }
 
+/// One per-file reviewed mark. `fingerprint` is the [`FileSummary`] content
+/// identity at mark time; the frontend compares it with the current summary's
+/// value — equal means "reviewed", different means "changed since review".
+///
+/// [`FileSummary`]: crate::diff::FileSummary
+#[derive(Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewedFile {
+    pub file_path: String,
+    pub fingerprint: String,
+    pub reviewed_at: String,
+}
+
 /// What `open_review` produced: the branch's review (absent when the branch
 /// is merged and was never reviewed), plus whether the branch is already
 /// merged into the base — in which case `review`, if present, is archived
@@ -451,6 +464,79 @@ pub fn find_active_review_impl(
         .optional()
         .map_err(db_err)?;
     id.map(|id| get_review(conn, id)).transpose()
+}
+
+pub fn list_reviewed_files_impl(
+    conn: &Connection,
+    review_id: i64,
+) -> Result<Vec<ReviewedFile>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT file_path, fingerprint, reviewed_at
+             FROM reviewed_files WHERE review_id = ?1 ORDER BY file_path",
+        )
+        .map_err(db_err)?;
+    let rows = stmt
+        .query_map([review_id], |r| {
+            Ok(ReviewedFile {
+                file_path: r.get(0)?,
+                fingerprint: r.get(1)?,
+                reviewed_at: r.get(2)?,
+            })
+        })
+        .map_err(db_err)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(db_err)?;
+    Ok(rows)
+}
+
+/// Upsert: re-marking a file (e.g. one flagged "changed since review")
+/// replaces its fingerprint and bumps `reviewed_at`.
+pub fn mark_file_reviewed_impl(
+    conn: &Connection,
+    review_id: i64,
+    file_path: &str,
+    fingerprint: &str,
+) -> Result<ReviewedFile, String> {
+    ensure_review_active(conn, review_id)?;
+    conn.execute(
+        &format!(
+            "INSERT INTO reviewed_files (review_id, file_path, fingerprint)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT(review_id, file_path) DO UPDATE
+                 SET fingerprint = excluded.fingerprint, reviewed_at = {NOW}"
+        ),
+        (review_id, file_path, fingerprint),
+    )
+    .map_err(db_err)?;
+    conn.query_row(
+        "SELECT file_path, fingerprint, reviewed_at
+         FROM reviewed_files WHERE review_id = ?1 AND file_path = ?2",
+        (review_id, file_path),
+        |r| {
+            Ok(ReviewedFile {
+                file_path: r.get(0)?,
+                fingerprint: r.get(1)?,
+                reviewed_at: r.get(2)?,
+            })
+        },
+    )
+    .map_err(db_err)
+}
+
+/// Idempotent: unmarking a file that has no mark is not an error.
+pub fn unmark_file_reviewed_impl(
+    conn: &Connection,
+    review_id: i64,
+    file_path: &str,
+) -> Result<(), String> {
+    ensure_review_active(conn, review_id)?;
+    conn.execute(
+        "DELETE FROM reviewed_files WHERE review_id = ?1 AND file_path = ?2",
+        (review_id, file_path),
+    )
+    .map_err(db_err)?;
+    Ok(())
 }
 
 pub fn list_comments_impl(conn: &Connection, review_id: i64) -> Result<Vec<Comment>, String> {
@@ -1904,5 +1990,74 @@ mod tests {
         // Archived reviews are not "active".
         archive_review(&conn, review.id).unwrap();
         assert!(find_active_review_impl(&conn, "/repo", "feature").unwrap().is_none());
+    }
+
+    #[test]
+    fn reviewed_files_round_trip_and_upsert() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = test_db(&dir);
+        let review = open_review_impl(&conn, "/repo", "feature", "main", DiffMode::Committed).unwrap();
+
+        assert!(list_reviewed_files_impl(&conn, review.id).unwrap().is_empty());
+
+        let marked = mark_file_reviewed_impl(&conn, review.id, "src/a.rs", "aaa:bbb:644").unwrap();
+        assert_eq!(marked.file_path, "src/a.rs");
+        assert_eq!(marked.fingerprint, "aaa:bbb:644");
+        mark_file_reviewed_impl(&conn, review.id, "src/b.rs", "ccc:ddd:644").unwrap();
+
+        let listed = list_reviewed_files_impl(&conn, review.id).unwrap();
+        assert_eq!(
+            listed.iter().map(|f| f.file_path.as_str()).collect::<Vec<_>>(),
+            vec!["src/a.rs", "src/b.rs"]
+        );
+
+        // Re-marking (a "changed since review" file) replaces the fingerprint.
+        let remarked = mark_file_reviewed_impl(&conn, review.id, "src/a.rs", "aaa:eee:644").unwrap();
+        assert_eq!(remarked.fingerprint, "aaa:eee:644");
+        let listed = list_reviewed_files_impl(&conn, review.id).unwrap();
+        assert_eq!(listed.len(), 2);
+        assert_eq!(listed[0].fingerprint, "aaa:eee:644");
+    }
+
+    #[test]
+    fn unmark_file_reviewed_deletes_and_is_idempotent() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = test_db(&dir);
+        let review = open_review_impl(&conn, "/repo", "feature", "main", DiffMode::Committed).unwrap();
+        mark_file_reviewed_impl(&conn, review.id, "src/a.rs", "aaa:bbb:644").unwrap();
+
+        unmark_file_reviewed_impl(&conn, review.id, "src/a.rs").unwrap();
+        assert!(list_reviewed_files_impl(&conn, review.id).unwrap().is_empty());
+        // Unmarking again (or a never-marked path) is not an error.
+        unmark_file_reviewed_impl(&conn, review.id, "src/a.rs").unwrap();
+        unmark_file_reviewed_impl(&conn, review.id, "never-marked.rs").unwrap();
+    }
+
+    #[test]
+    fn reviewed_file_writes_are_rejected_on_archived_reviews() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = test_db(&dir);
+        let review = open_review_impl(&conn, "/repo", "feature", "main", DiffMode::Committed).unwrap();
+        mark_file_reviewed_impl(&conn, review.id, "src/a.rs", "aaa:bbb:644").unwrap();
+        archive_review(&conn, review.id).unwrap();
+
+        let err = mark_file_reviewed_impl(&conn, review.id, "src/b.rs", "ccc:ddd:644").unwrap_err();
+        assert!(err.contains("read-only"), "{err}");
+        let err = unmark_file_reviewed_impl(&conn, review.id, "src/a.rs").unwrap_err();
+        assert!(err.contains("read-only"), "{err}");
+        // Reads still work on archived reviews.
+        assert_eq!(list_reviewed_files_impl(&conn, review.id).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn reviewed_files_are_scoped_to_their_review() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = test_db(&dir);
+        let a = open_review_impl(&conn, "/repo-a", "feature", "main", DiffMode::Committed).unwrap();
+        let b = open_review_impl(&conn, "/repo-b", "fix", "main", DiffMode::Committed).unwrap();
+        mark_file_reviewed_impl(&conn, a.id, "src/a.rs", "aaa:bbb:644").unwrap();
+
+        assert_eq!(list_reviewed_files_impl(&conn, a.id).unwrap().len(), 1);
+        assert!(list_reviewed_files_impl(&conn, b.id).unwrap().is_empty());
     }
 }

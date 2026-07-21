@@ -21,6 +21,10 @@ export interface FileSummary {
   additions: number;
   deletions: number;
   binary: boolean;
+  /** Content identity of both diff sides, computed in Rust. Reviewed-file
+   * marks store it; a stored value that no longer matches means the file
+   * changed since it was reviewed. */
+  fingerprint: string;
 }
 
 export interface DiffSummary {
@@ -146,6 +150,18 @@ export interface OpenReviewResult {
   review: Review | null;
   branchMerged: boolean;
 }
+
+/** A per-file reviewed mark stored on the review. */
+export interface ReviewedFile {
+  filePath: string;
+  fingerprint: string;
+  reviewedAt: string;
+}
+
+/** Derived client-side per summary file: stored fingerprint matches the
+ * current one → "reviewed"; a stored mark whose fingerprint differs →
+ * "changed" (changed since review); no mark → absent from the map. */
+export type FileReviewState = "reviewed" | "changed";
 
 /** Where a line comment's anchor landed after a diff refresh. */
 export type AnchorStatus = "anchored" | "changed" | "orphaned";

@@ -1,4 +1,6 @@
-use git2::{Delta, Diff, DiffFindOptions, DiffLineType, DiffOptions, Oid, Patch, Repository};
+use git2::{
+    Delta, Diff, DiffFindOptions, DiffLineType, DiffOptions, ObjectType, Oid, Patch, Repository,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::repo::open_git_repo;
@@ -55,6 +57,12 @@ pub struct FileSummary {
     pub additions: usize,
     pub deletions: usize,
     pub binary: bool,
+    /// Content identity of both diff sides: "<old_blob_oid>:<new_blob_oid>:<mode>".
+    /// A zero OID means the side is absent (add/delete). Reviewed-file marks
+    /// store this value and compare it against later summaries to detect
+    /// "changed since review"; raw content, so it never varies with the
+    /// hide-whitespace toggle.
+    pub fingerprint: String,
 }
 
 #[derive(Serialize, Debug)]
@@ -152,13 +160,16 @@ pub fn get_diff_summary(
             };
         total_additions += additions;
         total_deletions += deletions;
+        let path = new_path(&delta)?;
+        let fingerprint = file_fingerprint(&repo, &head, mode, &delta, status, &path);
         files.push(FileSummary {
-            path: new_path(&delta)?,
+            path,
             old_path: rename_old_path(&delta, status),
             status,
             additions,
             deletions,
             binary,
+            fingerprint,
         });
     }
 
@@ -320,6 +331,30 @@ pub fn get_context_lines(
         lines,
         total_lines,
     })
+}
+
+/// Content identity of a delta's two sides plus the new-side file mode
+/// (catches chmod-only changes). In All mode libgit2 reports zero OIDs for
+/// workdir-side entries, so hash the bytes ourselves (no ODB write). Read
+/// failures (file vanished mid-scan) fall back to the zero OID — the file
+/// then shows as "changed since review" rather than failing the summary.
+fn file_fingerprint(
+    repo: &Repository,
+    head: &str,
+    mode: DiffMode,
+    delta: &git2::DiffDelta,
+    status: FileStatus,
+    path: &str,
+) -> String {
+    let old_id = delta.old_file().id();
+    let mut new_id = delta.new_file().id();
+    if new_id.is_zero() && status != FileStatus::Deleted {
+        new_id = new_side_content(repo, head, mode, path)
+            .ok()
+            .and_then(|bytes| Oid::hash_object(ObjectType::Blob, &bytes).ok())
+            .unwrap_or_else(Oid::zero);
+    }
+    format!("{old_id}:{new_id}:{:o}", u32::from(delta.new_file().mode()))
 }
 
 /// The new-side file content for `mode`: branch tip blob, index blob, or
@@ -562,6 +597,86 @@ mod tests {
 
         assert_eq!(summary.total_additions, 3);
         assert_eq!(summary.total_deletions, 1);
+    }
+
+    #[test]
+    fn fingerprints_are_stable_and_ignore_the_whitespace_toggle() {
+        let fixture = branch_fixture();
+        let first = summary_for(&fixture, DiffMode::Committed);
+        let second = summary_for(&fixture, DiffMode::Committed);
+        let with_ws = get_diff_summary(
+            fixture.path(),
+            "main".into(),
+            "feature".into(),
+            DiffMode::Committed,
+            true,
+        )
+        .unwrap();
+
+        for f in &first.files {
+            assert_eq!(f.fingerprint, file(&second, &f.path).fingerprint);
+            assert_eq!(
+                f.fingerprint,
+                file(&with_ws, &f.path).fingerprint,
+                "fingerprint must be raw-content, independent of -w"
+            );
+            assert!(
+                !f.fingerprint.starts_with("0000000000000000000000000000000000000000:0000"),
+                "both sides zero for {}: {}",
+                f.path,
+                f.fingerprint
+            );
+        }
+    }
+
+    #[test]
+    fn committing_an_edit_changes_only_that_files_fingerprint() {
+        let fixture = branch_fixture();
+        let before = summary_for(&fixture, DiffMode::Committed);
+        fixture.commit_file("a.txt", "one\ntwo\nthree\nfour\nfive\n", "more work");
+        let after = summary_for(&fixture, DiffMode::Committed);
+
+        assert_ne!(
+            file(&before, "a.txt").fingerprint,
+            file(&after, "a.txt").fingerprint
+        );
+        for path in ["b.txt", "new.txt", "renamed.txt"] {
+            assert_eq!(
+                file(&before, path).fingerprint,
+                file(&after, path).fingerprint,
+                "untouched file {path} must keep its fingerprint"
+            );
+        }
+    }
+
+    #[test]
+    fn all_mode_untracked_files_get_content_derived_fingerprints() {
+        let fixture = branch_fixture();
+        fixture.write("untracked.txt", "draft\n");
+        let before = summary_for(&fixture, DiffMode::All);
+        let untracked = file(&before, "untracked.txt").fingerprint.clone();
+        assert!(
+            !untracked.contains(":0000000000000000000000000000000000000000:"),
+            "workdir side must be hashed, not left as the zero OID: {untracked}"
+        );
+
+        fixture.write("untracked.txt", "draft\nedited\n");
+        let after = summary_for(&fixture, DiffMode::All);
+        assert_ne!(untracked, file(&after, "untracked.txt").fingerprint);
+    }
+
+    #[test]
+    fn identical_staged_content_fingerprints_the_same_in_staged_and_all_modes() {
+        let fixture = branch_fixture();
+        fixture.write("a.txt", "one\ntwo\nthree\nfour\nstaged\n");
+        fixture.stage(&["a.txt"]);
+        let staged = summary_for(&fixture, DiffMode::Staged);
+        let all = summary_for(&fixture, DiffMode::All);
+        assert_eq!(
+            file(&staged, "a.txt").fingerprint,
+            file(&all, "a.txt").fingerprint,
+            "same bytes must fingerprint identically across modes"
+        );
     }
 
     /// The new-side path from a numstat entry; renames render as
