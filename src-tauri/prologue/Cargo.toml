@@ -7,7 +7,8 @@ edition = "2021"
 [dependencies]
 prologue-core = { path = "../prologue-core" }
 clap = { version = "4", features = ["derive", "env"] }
-git2 = "0.20"
+# default-features off: local repo access only (see prologue-core).
+git2 = { version = "0.20", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
