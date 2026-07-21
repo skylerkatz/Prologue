@@ -87,6 +87,19 @@ pub fn open_review(
     review::open_review_checked_impl(&conn, &repo, &repo_path, &branch, &base_ref, mode)
 }
 
+/// The active review for (repo, branch), if any — read-only. Lets the app
+/// restore the review's stored base ref when the repo is reopened instead of
+/// falling back to the auto-detected default base.
+#[tauri::command]
+pub fn find_active_review(
+    db: tauri::State<'_, Db>,
+    repo_path: String,
+    branch: String,
+) -> Result<Option<Review>, String> {
+    let conn = lock(&db)?;
+    review::find_active_review_impl(&conn, &repo_path, &branch)
+}
+
 #[tauri::command]
 pub fn list_comments(db: tauri::State<'_, Db>, review_id: i64) -> Result<Vec<Comment>, String> {
     let conn = lock(&db)?;

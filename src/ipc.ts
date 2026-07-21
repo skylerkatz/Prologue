@@ -73,6 +73,17 @@ export function openReview(
   return invoke("open_review", { repoPath, branch, baseRef, mode });
 }
 
+/**
+ * The active review for (repo, branch), if any — read-only. Used on repo
+ * open to restore the base ref the review was last computed against.
+ */
+export function findActiveReview(
+  repoPath: string,
+  branch: string,
+): Promise<Review | null> {
+  return invoke("find_active_review", { repoPath, branch });
+}
+
 export function updateCommentState(
   commentId: number,
   state: CommentState,

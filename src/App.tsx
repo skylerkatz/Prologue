@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
-import { listBranches, openRepo, startWatching, stopWatching } from "./ipc";
+import {
+  findActiveReview,
+  listBranches,
+  openRepo,
+  startWatching,
+  stopWatching,
+} from "./ipc";
 import { addRecentRepo, getRecentRepos, removeRecentRepo } from "./recents";
 import type { BranchList, RepoInfo, WorkingTreeMode } from "./types";
 import { ReviewShell } from "./components/ReviewShell";
@@ -41,9 +47,22 @@ function App() {
     try {
       const repo = await openRepo(path);
       const branchList = await listBranches(repo.path);
+      // Resume where the review left off: the branch's active review pins
+      // the base it was last computed against, so reopening the app doesn't
+      // snap back to the auto-detected default. Must happen before the
+      // review shell's open_review call, which writes the base back.
+      let baseBranch = branchList.defaultBase;
+      try {
+        const active = await findActiveReview(repo.path, branchList.current);
+        if (active !== null && branchList.branches.includes(active.baseRef)) {
+          baseBranch = active.baseRef;
+        }
+      } catch {
+        // No stored base to restore; the detected default still works.
+      }
       setOpenState({ repo, branchList });
       setBranch(branchList.current);
-      setBaseBranch(branchList.defaultBase);
+      setBaseBranch(baseBranch);
       setMode("committed");
       setRecents(await addRecentRepo(repo.path));
       // Auto-refresh is an enhancement; if watching fails, the manual

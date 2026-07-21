@@ -79,6 +79,7 @@ pub fn run() {
             commands::get_file_diff,
             commands::get_context_lines,
             commands::open_review,
+            commands::find_active_review,
             commands::list_comments,
             commands::create_comment,
             commands::update_comment,
