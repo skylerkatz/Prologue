@@ -29,6 +29,8 @@ export function OrphanedComments({
 }: OrphanedCommentsProps) {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [replyingTo, setReplyingTo] = useState<number | null>(null);
+  // Collapse the whole bucket to its header row, like a file card.
+  const [expanded, setExpanded] = useState(true);
   const drafts = useRef<DraftStore>(new Map());
 
   if (comments.length === 0) {
@@ -37,54 +39,68 @@ export function OrphanedComments({
   return (
     <section className="orphaned-comments" aria-label="Orphaned comments">
       <header className="orphaned-header">
+        <button
+          type="button"
+          className="file-toggle"
+          aria-expanded={expanded}
+          aria-label={
+            expanded ? "Collapse orphaned comments" : "Expand orphaned comments"
+          }
+          onClick={() => setExpanded((v) => !v)}
+        >
+          {expanded ? "▾" : "▸"}
+        </button>
         <span className="orphaned-title">
           Orphaned comments ({comments.length})
         </span>
-        <span className="orphaned-hint">
-          The commented code is no longer in this diff — resolve, dismiss, or
-          keep for reference.
-        </span>
+        {expanded && (
+          <span className="orphaned-hint">
+            The commented code is no longer in this diff — resolve, dismiss, or
+            keep for reference.
+          </span>
+        )}
       </header>
-      {comments.map((comment) => (
-        <div key={comment.id} className="orphaned-comment">
-          <div className="orphaned-origin">
-            <code>{comment.filePath}</code>
-            {comment.startLine !== null && (
-              <span className="orphaned-lines">
-                was at{" "}
-                {comment.startLine === comment.endLine
-                  ? `line ${comment.startLine}`
-                  : `lines ${comment.startLine}–${comment.endLine}`}
-                {comment.side === "old" ? " (old)" : ""}
-              </span>
+      {expanded &&
+        comments.map((comment) => (
+          <div key={comment.id} className="orphaned-comment">
+            <div className="orphaned-origin">
+              <code>{comment.filePath}</code>
+              {comment.startLine !== null && (
+                <span className="orphaned-lines">
+                  was at{" "}
+                  {comment.startLine === comment.endLine
+                    ? `line ${comment.startLine}`
+                    : `lines ${comment.startLine}–${comment.endLine}`}
+                  {comment.side === "old" ? " (old)" : ""}
+                </span>
+              )}
+            </div>
+            {comment.codeAnchor !== null && (
+              <pre className="orphaned-anchor">
+                {comment.codeAnchor.lines.join("\n")}
+              </pre>
             )}
+            <CommentThread
+              root={comment}
+              replies={repliesByRoot.get(comment.id) ?? []}
+              editingId={editingId}
+              drafts={drafts.current}
+              replyingTo={replyingTo}
+              onReplyStart={setReplyingTo}
+              onReplyCancel={() => setReplyingTo(null)}
+              onCreateReply={(rootId, body) =>
+                onCreateReply(rootId, body).then(() => setReplyingTo(null))
+              }
+              onEditStart={setEditingId}
+              onEditCancel={() => setEditingId(null)}
+              onSave={(id, body) =>
+                onUpdate(id, body).then(() => setEditingId(null))
+              }
+              onDelete={onDelete}
+              onSetState={onSetState}
+            />
           </div>
-          {comment.codeAnchor !== null && (
-            <pre className="orphaned-anchor">
-              {comment.codeAnchor.lines.join("\n")}
-            </pre>
-          )}
-          <CommentThread
-            root={comment}
-            replies={repliesByRoot.get(comment.id) ?? []}
-            editingId={editingId}
-            drafts={drafts.current}
-            replyingTo={replyingTo}
-            onReplyStart={setReplyingTo}
-            onReplyCancel={() => setReplyingTo(null)}
-            onCreateReply={(rootId, body) =>
-              onCreateReply(rootId, body).then(() => setReplyingTo(null))
-            }
-            onEditStart={setEditingId}
-            onEditCancel={() => setEditingId(null)}
-            onSave={(id, body) =>
-              onUpdate(id, body).then(() => setEditingId(null))
-            }
-            onDelete={onDelete}
-            onSetState={onSetState}
-          />
-        </div>
-      ))}
+        ))}
     </section>
   );
 }

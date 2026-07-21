@@ -1251,9 +1251,13 @@ button.primary:hover {
 
 .orphaned-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 0.6rem;
   flex-wrap: wrap;
+}
+
+/* Threads below get breathing room only while expanded. */
+.orphaned-header:not(:last-child) {
   margin-bottom: 0.4rem;
 }
 
