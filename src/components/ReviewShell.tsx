@@ -30,6 +30,7 @@ import { FileList } from "./FileList";
 import { ModeToggle } from "./ModeToggle";
 import { OrphanedComments } from "./OrphanedComments";
 import { ReviewCommentsPanel } from "./ReviewCommentsPanel";
+import { WhitespaceToggle } from "./WhitespaceToggle";
 
 interface ReviewShellProps {
   repo: RepoInfo;
@@ -37,10 +38,12 @@ interface ReviewShellProps {
   branch: string;
   baseBranch: string;
   mode: WorkingTreeMode;
+  hideWhitespace: boolean;
   refreshKey: number;
   onBranchChange: (branch: string) => void;
   onBaseBranchChange: (base: string) => void;
   onModeChange: (mode: WorkingTreeMode) => void;
+  onHideWhitespaceChange: (hide: boolean) => void;
   onRefresh: () => void;
   onSwitchRepo: () => void;
 }
@@ -54,6 +57,8 @@ interface DiffViewState {
   base: string;
   head: string;
   mode: WorkingTreeMode;
+  /** The summary was computed with whitespace changes ignored (git `-w`). */
+  ignoreWhitespace: boolean;
   /** Bumped per fetch; remounts DiffView so lazy-loaded hunks reset too. */
   generation: number;
 }
@@ -64,10 +69,12 @@ export function ReviewShell({
   branch,
   baseBranch,
   mode,
+  hideWhitespace,
   refreshKey,
   onBranchChange,
   onBaseBranchChange,
   onModeChange,
+  onHideWhitespaceChange,
   onRefresh,
   onSwitchRepo,
 }: ReviewShellProps) {
@@ -98,7 +105,13 @@ export function ReviewShell({
     setLoading(true);
     setError(null);
     (async () => {
-      const summary = await getDiffSummary(repo.path, baseBranch, branch, mode);
+      const summary = await getDiffSummary(
+        repo.path,
+        baseBranch,
+        branch,
+        mode,
+        hideWhitespace,
+      );
       // Auto-archive reviews whose branch merged or vanished, then resume
       // (or start) this branch's review.
       await archiveStaleReviews(repo.path);
@@ -127,6 +140,7 @@ export function ReviewShell({
         base: baseBranch,
         head: branch,
         mode,
+        ignoreWhitespace: hideWhitespace,
         generation: generation.current,
       };
       // Comment creation stays possible only on an active review.
@@ -160,7 +174,7 @@ export function ReviewShell({
     return () => {
       cancelled = true;
     };
-  }, [repo.path, branch, baseBranch, mode, refreshKey]);
+  }, [repo.path, branch, baseBranch, mode, hideWhitespace, refreshKey]);
 
   // External writers (the prologue CLI) commit to reviews.db behind the
   // app's back; the backend's database watcher emits `comments-changed`
@@ -363,6 +377,10 @@ export function ReviewShell({
         </label>
         <div className="toolbar-spacer" />
         <ModeToggle mode={mode} onChange={onModeChange} />
+        <WhitespaceToggle
+          hidden={hideWhitespace}
+          onChange={onHideWhitespaceChange}
+        />
         <ExportMenu target={exportTarget} openCount={openCount} />
         <button
           type="button"
@@ -458,6 +476,7 @@ export function ReviewShell({
                 base={view.base}
                 head={view.head}
                 mode={view.mode}
+                ignoreWhitespace={view.ignoreWhitespace}
                 summary={view.summary}
                 scrollTarget={scrollTarget}
                 comments={diffComments}

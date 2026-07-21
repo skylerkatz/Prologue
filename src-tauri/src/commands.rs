@@ -36,8 +36,9 @@ pub fn get_diff_summary(
     base: String,
     head: String,
     mode: DiffMode,
+    ignore_whitespace: bool,
 ) -> Result<DiffSummary, String> {
-    diff::get_diff_summary(repo_path, base, head, mode)
+    diff::get_diff_summary(repo_path, base, head, mode, ignore_whitespace)
 }
 
 /// Hunks for a single file from the same diff `get_diff_summary` computes;
@@ -48,9 +49,10 @@ pub fn get_file_diff(
     base: String,
     head: String,
     mode: DiffMode,
+    ignore_whitespace: bool,
     path: String,
 ) -> Result<FileDiff, String> {
-    diff::get_file_diff(repo_path, base, head, mode, path)
+    diff::get_file_diff(repo_path, base, head, mode, ignore_whitespace, path)
 }
 
 /// Lines `start..=end` (1-based, clamped) of the file's new side — head tree,

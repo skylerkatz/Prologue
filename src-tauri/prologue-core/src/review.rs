@@ -636,11 +636,14 @@ pub fn create_comment_impl(
                 (Some(s), Some(e)) if s >= 1 && s <= e => (s, e),
                 _ => return Err("Invalid line range for comment".to_owned()),
             };
+            // Anchors are always extracted from the canonical full diff,
+            // never a whitespace-filtered view.
             let file_diff = diff::get_file_diff(
                 repo_path.to_owned(),
                 base.to_owned(),
                 head.to_owned(),
                 mode,
+                false,
                 path.clone(),
             )?;
             let anchor = extract_anchor(&file_diff, side, start, end)?;
@@ -818,11 +821,14 @@ pub fn reanchor_comments_impl(
         let diff = match diffs.get(path) {
             Some(cached) => cached,
             None => {
+                // Re-anchoring runs against the canonical full diff so orphan
+                // status never depends on the whitespace view preference.
                 let fetched = match diff::get_file_diff(
                     repo_path.to_owned(),
                     base.to_owned(),
                     head.to_owned(),
                     mode,
+                    false,
                     path.to_owned(),
                 ) {
                     Ok(d) => Some(d),

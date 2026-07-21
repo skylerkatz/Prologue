@@ -62,6 +62,9 @@ interface DiffViewProps {
   base: string;
   head: string;
   mode: WorkingTreeMode;
+  /** Fetch file hunks with whitespace changes ignored (git `-w`); must match
+   * the setting the summary was computed with. */
+  ignoreWhitespace: boolean;
   summary: DiffSummary;
   /** Bumping `nonce` scrolls the file's header into view. */
   scrollTarget: { path: string; nonce: number } | null;
@@ -93,6 +96,7 @@ export function DiffView({
   base,
   head,
   mode,
+  ignoreWhitespace,
   summary,
   scrollTarget,
   comments,
@@ -158,7 +162,14 @@ export function DiffView({
       }
       requested.current.add(fi);
       activeLoads.current += 1;
-      getFileDiff(repoPath, base, head, mode, summary.files[fi].path)
+      getFileDiff(
+        repoPath,
+        base,
+        head,
+        mode,
+        ignoreWhitespace,
+        summary.files[fi].path,
+      )
         .then((diff) => {
           updateState(fi, (s) => ({
             ...s,
@@ -178,7 +189,7 @@ export function DiffView({
           activeLoads.current -= 1;
         });
     },
-    [repoPath, base, head, mode, summary, updateState],
+    [repoPath, base, head, mode, ignoreWhitespace, summary, updateState],
   );
 
   const toggleFile = useCallback(

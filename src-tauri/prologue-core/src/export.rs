@@ -74,7 +74,9 @@ pub fn export_review_impl(
         .map(|r| r.comment_id)
         .collect();
     let summary =
-        diff::get_diff_summary(repo_path.to_owned(), base.to_owned(), head.to_owned(), mode)?;
+        // Exports always describe the canonical full diff, never a
+        // whitespace-filtered view.
+        diff::get_diff_summary(repo_path.to_owned(), base.to_owned(), head.to_owned(), mode, false)?;
     let diff_paths: HashSet<&str> = summary.files.iter().map(|f| f.path.as_str()).collect();
 
     let mut comments = review::list_comments_impl(conn, review_id)?;

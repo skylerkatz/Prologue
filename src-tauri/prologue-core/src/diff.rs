@@ -120,14 +120,17 @@ pub struct FileDiff {
 
 /// Merge-base (three-dot) file summary: diff(merge-base(base, head), head),
 /// where "head" is the branch tip, index, or working tree depending on `mode`.
+/// `ignore_whitespace` applies git `-w` semantics; whitespace-only files stay
+/// listed (deltas are detected by blob OID) with 0/0 stats.
 pub fn get_diff_summary(
     repo_path: String,
     base: String,
     head: String,
     mode: DiffMode,
+    ignore_whitespace: bool,
 ) -> Result<DiffSummary, String> {
     let repo = open_git_repo(&repo_path)?;
-    let (diff, merge_base) = build_diff(&repo, &base, &head, mode)?;
+    let (diff, merge_base) = build_diff(&repo, &base, &head, mode, ignore_whitespace)?;
 
     let mut files = Vec::new();
     let mut total_additions = 0;
@@ -176,10 +179,11 @@ pub fn get_file_diff(
     base: String,
     head: String,
     mode: DiffMode,
+    ignore_whitespace: bool,
     path: String,
 ) -> Result<FileDiff, String> {
     let repo = open_git_repo(&repo_path)?;
-    let (diff, _) = build_diff(&repo, &base, &head, mode)?;
+    let (diff, _) = build_diff(&repo, &base, &head, mode, ignore_whitespace)?;
 
     let (idx, status) = diff
         .deltas()
@@ -363,6 +367,7 @@ fn build_diff<'r>(
     base: &str,
     head: &str,
     mode: DiffMode,
+    ignore_whitespace: bool,
 ) -> Result<(Diff<'r>, Oid), String> {
     let base_commit = resolve_commit(repo, base)?;
     let head_commit = resolve_commit(repo, head)?;
@@ -375,6 +380,9 @@ fn build_diff<'r>(
         .map_err(git_err("Failed to load merge-base tree"))?;
 
     let mut opts = DiffOptions::new();
+    if ignore_whitespace {
+        opts.ignore_whitespace(true);
+    }
     let mut diff = match mode {
         DiffMode::Committed => {
             let head_tree = head_commit
@@ -507,6 +515,7 @@ mod tests {
             "main".into(),
             "feature".into(),
             mode,
+            false,
         )
         .unwrap()
     }
@@ -638,6 +647,7 @@ mod tests {
             "main".into(),
             "HEAD".into(),
             DiffMode::Committed,
+            false,
         )
         .unwrap();
         let expected = git_cli_numstat(&repo_path, "main", "HEAD");
@@ -733,6 +743,7 @@ mod tests {
             "main".into(),
             "feature".into(),
             DiffMode::Committed,
+            false,
             "a.txt".into(),
         )
         .unwrap();
@@ -776,6 +787,7 @@ mod tests {
             "main".into(),
             "feature".into(),
             DiffMode::Committed,
+            false,
             "b.txt".into(),
         )
         .unwrap();
@@ -798,6 +810,7 @@ mod tests {
             "main".into(),
             "feature".into(),
             DiffMode::All,
+            false,
             "untracked.txt".into(),
         )
         .unwrap();
@@ -815,6 +828,7 @@ mod tests {
             "main".into(),
             "feature".into(),
             DiffMode::Committed,
+            false,
             "nope.txt".into(),
         )
         .unwrap_err();
@@ -941,6 +955,54 @@ mod tests {
     }
 
     #[test]
+    fn ignore_whitespace_hides_indentation_only_changes() {
+        let fixture = FixtureRepo::new();
+        fixture.write("code.txt", "fn main() {\nlet x = 1;\n}\n");
+        fixture.stage(&["code.txt"]);
+        fixture.commit("initial");
+        fixture.create_branch("feature");
+        // Indentation-only edit: identical content modulo whitespace.
+        fixture.commit_file("code.txt", "fn main() {\n    let x = 1;\n}\n", "re-indent");
+
+        let summary = |ignore_whitespace: bool| {
+            get_diff_summary(
+                fixture.path(),
+                "main".into(),
+                "feature".into(),
+                DiffMode::Committed,
+                ignore_whitespace,
+            )
+            .unwrap()
+        };
+        let file_diff = |ignore_whitespace: bool| {
+            get_file_diff(
+                fixture.path(),
+                "main".into(),
+                "feature".into(),
+                DiffMode::Committed,
+                ignore_whitespace,
+                "code.txt".into(),
+            )
+            .unwrap()
+        };
+
+        let full = file(&summary(false), "code.txt").additions;
+        assert_eq!(full, 1, "the edit must be visible without the flag");
+        assert_eq!(file_diff(false).hunks.len(), 1);
+
+        let hidden = summary(true);
+        // The delta is detected by blob OID before whitespace processing, so
+        // the file stays listed — with empty stats.
+        let f = file(&hidden, "code.txt");
+        assert_eq!(
+            (f.status, f.additions, f.deletions),
+            (FileStatus::Modified, 0, 0)
+        );
+        assert_eq!((hidden.total_additions, hidden.total_deletions), (0, 0));
+        assert!(file_diff(true).hunks.is_empty());
+    }
+
+    #[test]
     fn diff_rejects_unresolvable_refs() {
         let fixture = branch_fixture();
         let err = get_diff_summary(
@@ -948,6 +1010,7 @@ mod tests {
             "does-not-exist".into(),
             "feature".into(),
             DiffMode::Committed,
+            false,
         )
         .unwrap_err();
         assert!(err.contains("Cannot resolve ref"), "{err}");

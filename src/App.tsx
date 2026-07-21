@@ -13,12 +13,19 @@ interface OpenRepoState {
   branchList: BranchList;
 }
 
+/** localStorage key for the "Hide whitespace changes" preference. */
+const HIDE_WHITESPACE_KEY = "prologue.hideWhitespace";
+
 function App() {
   const [recents, setRecents] = useState<string[]>([]);
   const [openState, setOpenState] = useState<OpenRepoState | null>(null);
   const [branch, setBranch] = useState("");
   const [baseBranch, setBaseBranch] = useState("");
   const [mode, setMode] = useState<WorkingTreeMode>("committed");
+  // Sticky across launches, unlike `mode` which resets per repo open.
+  const [hideWhitespace, setHideWhitespace] = useState(
+    () => localStorage.getItem(HIDE_WHITESPACE_KEY) === "true",
+  );
   const [refreshKey, setRefreshKey] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
@@ -59,6 +66,11 @@ function App() {
 
   async function removeRecent(path: string) {
     setRecents(await removeRecentRepo(path));
+  }
+
+  function changeHideWhitespace(hide: boolean) {
+    setHideWhitespace(hide);
+    localStorage.setItem(HIDE_WHITESPACE_KEY, String(hide));
   }
 
   /** Re-list branches (new ones appear) and recompute the current diff. */
@@ -125,10 +137,12 @@ function App() {
       branch={branch}
       baseBranch={baseBranch}
       mode={mode}
+      hideWhitespace={hideWhitespace}
       refreshKey={refreshKey}
       onBranchChange={setBranch}
       onBaseBranchChange={setBaseBranch}
       onModeChange={setMode}
+      onHideWhitespaceChange={changeHideWhitespace}
       onRefresh={() => void refresh()}
       onSwitchRepo={() => {
         stopWatching().catch(() => {});

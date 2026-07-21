@@ -105,6 +105,7 @@ fn recompute_anchors(conn: &Connection, review: &Review) -> Result<Recomputed, S
         review.base_ref.clone(),
         review.branch.clone(),
         review.mode,
+        false,
     )?;
     let paths = summary.files.into_iter().map(|f| f.path).collect();
     Ok((relocations, paths))
@@ -216,6 +217,7 @@ pub fn file_diff(review: &Review, path: &str) -> Result<FileDiff, String> {
         review.base_ref.clone(),
         review.branch.clone(),
         review.mode,
+        false,
         path.to_owned(),
     )
 }

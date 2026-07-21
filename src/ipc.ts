@@ -31,8 +31,15 @@ export function getDiffSummary(
   base: string,
   head: string,
   mode: WorkingTreeMode,
+  ignoreWhitespace: boolean,
 ): Promise<DiffSummary> {
-  return invoke("get_diff_summary", { repoPath, base, head, mode });
+  return invoke("get_diff_summary", {
+    repoPath,
+    base,
+    head,
+    mode,
+    ignoreWhitespace,
+  });
 }
 
 export function getFileDiff(
@@ -40,9 +47,17 @@ export function getFileDiff(
   base: string,
   head: string,
   mode: WorkingTreeMode,
+  ignoreWhitespace: boolean,
   path: string,
 ): Promise<FileDiff> {
-  return invoke("get_file_diff", { repoPath, base, head, mode, path });
+  return invoke("get_file_diff", {
+    repoPath,
+    base,
+    head,
+    mode,
+    ignoreWhitespace,
+    path,
+  });
 }
 
 /**
