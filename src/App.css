@@ -1056,19 +1056,12 @@ button.primary:hover {
   cursor: pointer;
 }
 
-.lineno-commentable:hover {
-  background: var(--accent);
-  color: var(--text-on-accent);
-}
-
-/* Line selection is orange, not blue: warm rows, accent gutters. */
+/* Line selection is orange, not blue: warm rows, accent gutters. The row
+   background applies to context lines only — addition/deletion tints
+   (later rules) intentionally win, so red/green rows keep their color and
+   the accent gutter below is the selection cue there. */
 .diff-line-selected {
   background: var(--line-selected-bg);
-}
-
-.diff-line-selected .lineno {
-  background: var(--accent);
-  color: var(--text-on-accent);
 }
 
 .line-sign {
@@ -1110,6 +1103,14 @@ button.primary:hover {
 
 .diff-line-deletion .line-sign {
   color: var(--removed);
+}
+
+/* After the addition/deletion gutter rules so the selection and hover
+   cues win on every line kind — red/green included. */
+.diff-line-selected .lineno,
+.lineno-commentable:hover {
+  background: var(--accent);
+  color: var(--text-on-accent);
 }
 
 /* Word-level changed spans inside modified line pairs; the gutter colors
