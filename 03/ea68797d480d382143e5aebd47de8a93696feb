@@ -1,0 +1,59 @@
+src-tauri/prologue-core/src/review.rs
+  s_e64fdb69f33152::t_596f8298678e66 489,508
+  s_e64fdb69f33152::t_c73887b6ee3a62 460
+  s_e64fdb69f33152::t_4086cf12061a86 711-713
+  s_e64fdb69f33152::t_31b6d955d9aa6b 608,610-618
+  s_e64fdb69f33152::t_52b908e2a6d7ed 137-140
+  s_e64fdb69f33152::t_1434bcf552a6f1 979
+  s_e64fdb69f33152::t_3a4781029cff6c 1008
+  s_e64fdb69f33152::t_4a55ac4af0d5d2 526
+  s_e64fdb69f33152::t_a05fa0f165cf51 163-166
+  s_e64fdb69f33152::t_edb817634207e5 659-660,671
+  s_e64fdb69f33152::t_bd0f963863fbf1 689
+  s_e64fdb69f33152::t_6f3ac41361c347 549
+  s_e64fdb69f33152::t_b098f02472f591 1259-1290
+  s_e64fdb69f33152::t_9d9520161972c1 558
+  s_e64fdb69f33152::t_6794980fc4ad33 1258
+src-tauri/prologue/src/show.rs
+  s_e64fdb69f33152::t_9f3aa957f22399 289
+src-tauri/prologue/src/main.rs
+  s_e64fdb69f33152::t_c1dc8e1fc30591 1-5,13
+  s_e64fdb69f33152::t_238fe47ffc810e 156-165,172-193,199-205
+  s_e64fdb69f33152::t_da40d0d766ce1d 471-529,570-578
+  s_e64fdb69f33152::t_44395252d8b513 596-597,601,606
+  s_e64fdb69f33152::t_3fb10057196eb2 206,264-371,373-401
+  s_e64fdb69f33152::t_1bc4b1bd062dfc 530-569
+  s_e64fdb69f33152::t_ee98201bc71c1f 69-131
+  s_e64fdb69f33152::t_b459d9416343a6 589-591,593-595,598,600,602-605,607
+src-tauri/prologue-core/src/export.rs
+  s_e64fdb69f33152::t_1cace61aa5100f 833,836-840
+  s_e64fdb69f33152::t_931ba7af802519 508
+  s_e64fdb69f33152::t_192007efa736bc 395-397,399-406
+  s_e64fdb69f33152::t_f585f5e8f7c52b 554
+src-tauri/prologue-core/src/db.rs
+  s_e64fdb69f33152::t_0dbeaa630bd2d1 219-245
+  s_e64fdb69f33152::t_974d9455297939 49-52
+  s_e64fdb69f33152::t_ef7ebc407d5081 218
+src-tauri/prologue/Cargo.toml
+  s_e64fdb69f33152::t_887a25e3ebe976 9
+src-tauri/prologue/src/db.rs
+  s_e64fdb69f33152::t_404d1c29f87735 19-32,40
+  s_e64fdb69f33152::t_9135fe5c60c8a9 118-139
+  s_e64fdb69f33152::t_dd116be2f0f1c8 117
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "03ea68797d480d382143e5aebd47de8a93696feb",
+  "prompts": {},
+  "sessions": {
+    "s_e64fdb69f33152": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "69b5473f-0f55-4375-bb62-ecd6e35f22af",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
