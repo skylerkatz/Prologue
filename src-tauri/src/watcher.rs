@@ -3,12 +3,16 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 /// Event emitted to the frontend after repo activity settles; the payload is
 /// the exact `repo_path` string `start_watching` was called with, so the
 /// frontend can compare it against its open repo without path normalization.
 const REPO_CHANGED_EVENT: &str = "repo-changed";
+
+/// Event emitted when another connection — the prologue CLI — commits to
+/// reviews.db. The app's own writes never fire it (see `start_db_watching`).
+const COMMENTS_CHANGED_EVENT: &str = "comments-changed";
 
 /// Quiet period after the last filesystem event before one refresh fires.
 /// Long enough to coalesce a commit's burst of `.git` writes, short enough
@@ -71,6 +75,55 @@ pub fn start_watching(
 pub fn stop_watching(state: State<RepoWatcher>) -> Result<(), String> {
     *state.0.lock().map_err(|_| "Watcher state poisoned")? = None;
     Ok(())
+}
+
+/// Watch the app-data dir (where reviews.db and its -wal live) and emit a
+/// debounced `comments-changed` event when an external connection committed
+/// to the database. Called once at setup; the watch lives as long as the app.
+///
+/// `PRAGMA data_version` on the app's own connection moves only when a
+/// DIFFERENT connection commits, so the app's own writes — which do produce
+/// filesystem events here — are filtered out and never self-trigger a
+/// refresh.
+pub fn start_db_watching(app: AppHandle, dir: std::path::PathBuf) -> Result<(), String> {
+    let (tx, rx): (Sender<()>, Receiver<()>) = std::sync::mpsc::channel();
+
+    let mut watcher = notify::recommended_watcher(move |res: notify::Result<Event>| {
+        if let Ok(event) = res {
+            if is_change(&event.kind) {
+                let _ = tx.send(());
+            }
+        }
+    })
+    .map_err(|e| format!("Failed to create database watcher: {e}"))?;
+
+    watcher
+        .watch(&dir, RecursiveMode::NonRecursive)
+        .map_err(|e| format!("Failed to watch {}: {e}", dir.display()))?;
+
+    std::thread::spawn(move || {
+        // The watcher moves in with the debounce thread and lives (keeps
+        // sending) for the app's lifetime, so this loop never exits.
+        let _watcher = watcher;
+        let mut last = data_version(&app);
+        debounce_loop(&rx, DEBOUNCE_WINDOW, || {
+            let current = data_version(&app);
+            if current.is_some() && current != last {
+                last = current;
+                let _ = app.emit(COMMENTS_CHANGED_EVENT, ());
+            }
+        });
+    });
+    Ok(())
+}
+
+/// The app connection's `PRAGMA data_version`; None if the database state
+/// is unavailable (poisoned lock), which skips the comparison rather than
+/// emitting spuriously.
+fn data_version(app: &AppHandle) -> Option<i64> {
+    let db = app.state::<prologue_core::db::Db>();
+    let conn = db.0.lock().ok()?;
+    conn.pragma_query_value(None, "data_version", |r| r.get(0)).ok()
 }
 
 /// Filesystem events that can change a diff. Access (reads) are noise —
@@ -165,6 +218,38 @@ mod tests {
     fn no_events_means_no_emit() {
         let emits = run_debounce(|_tx| {});
         assert_eq!(emits, 0);
+    }
+
+    /// The invariant `start_db_watching` rests on: `PRAGMA data_version`
+    /// is unchanged by this connection's own commits and moves when any
+    /// other connection commits — that's the whole self-trigger filter.
+    #[test]
+    fn data_version_moves_only_on_other_connections_commits() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("reviews.db");
+        let ours = prologue_core::db::open(&path).unwrap();
+        let version = |conn: &prologue_core::rusqlite::Connection| -> i64 {
+            conn.pragma_query_value(None, "data_version", |r| r.get(0)).unwrap()
+        };
+
+        let before = version(&ours);
+        ours.execute(
+            "INSERT INTO reviews (repo_path, branch, base_ref, mode)
+             VALUES ('/r', 'b', 'main', 'committed')",
+            [],
+        )
+        .unwrap();
+        assert_eq!(version(&ours), before, "own write must not move data_version");
+
+        let theirs = prologue_core::db::open(&path).unwrap();
+        theirs
+            .execute(
+                "INSERT INTO reviews (repo_path, branch, base_ref, mode)
+                 VALUES ('/r2', 'b', 'main', 'committed')",
+                [],
+            )
+            .unwrap();
+        assert_ne!(version(&ours), before, "external write must move data_version");
     }
 
     #[test]

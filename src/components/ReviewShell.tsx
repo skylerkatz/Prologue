@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import {
   archiveStaleReviews,
   createComment,
@@ -160,6 +161,50 @@ export function ReviewShell({
       cancelled = true;
     };
   }, [repo.path, branch, baseBranch, mode, refreshKey]);
+
+  // External writers (the prologue CLI) commit to reviews.db behind the
+  // app's back; the backend's database watcher emits `comments-changed`
+  // only for those (its data_version guard filters the app's own writes).
+  // Re-read comments — with a re-anchor pass — without recomputing the diff.
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | null = null;
+    void listen("comments-changed", () => {
+      const pinned = current.current;
+      if (pinned === null) {
+        return;
+      }
+      void (async () => {
+        const results = await reanchorComments(
+          pinned.review.repoPath,
+          pinned.view.base,
+          pinned.view.head,
+          pinned.view.mode,
+          pinned.review.id,
+        );
+        const reviewComments = await listComments(pinned.review.id);
+        // The view may have moved on (branch switch, refresh) meanwhile.
+        if (disposed || current.current?.review.id !== pinned.review.id) {
+          return;
+        }
+        setAnchorStatuses(new Map(results.map((r) => [r.commentId, r.status])));
+        setComments(reviewComments);
+      })().catch(() => {
+        // Leave the current comments in place; the manual Refresh button
+        // still covers everything.
+      });
+    }).then((fn) => {
+      if (disposed) {
+        fn();
+      } else {
+        unlisten = fn;
+      }
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
 
   const handleCreate = useCallback(async (input: NewCommentInput) => {
     const pinned = current.current;

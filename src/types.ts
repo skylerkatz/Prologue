@@ -130,6 +130,12 @@ export interface Comment {
    * governs the whole thread.
    */
   parentId: number | null;
+  /**
+   * Who wrote it: "reviewer" for comments made in the app, anything else
+   * for external writers (e.g. "agent" via the prologue CLI). Non-reviewer
+   * authors get a badge.
+   */
+  author: string;
   createdAt: string;
   updatedAt: string;
 }

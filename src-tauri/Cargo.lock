@@ -705,6 +705,7 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-mcp-bridge",
  "tauri-plugin-store",
+ "tempfile",
 ]
 
 [[package]]

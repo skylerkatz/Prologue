@@ -19,6 +19,9 @@ pub fn run() {
             let conn = db::open(&dir.join("reviews.db"))?;
             app.manage(db::Db(Mutex::new(conn)));
             app.manage(watcher::RepoWatcher::default());
+            // External writers (the prologue CLI) commit to reviews.db
+            // behind the app's back; surface them as `comments-changed`.
+            watcher::start_db_watching(app.handle().clone(), dir)?;
             Ok(())
         });
 

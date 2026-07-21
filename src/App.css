@@ -928,6 +928,17 @@ button.primary:hover {
   border-color: var(--added);
 }
 
+/* External authors (anything but the in-app reviewer) get a badge. */
+.comment-author {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  background: var(--bg-subtle);
+}
+
 .comment-state-dismissed {
   color: var(--text-muted);
 }

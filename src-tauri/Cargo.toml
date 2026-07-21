@@ -41,3 +41,6 @@ notify = "8.2.0"
 # Enabled by `tauri dev --features mcp-bridge` (see solo.yml); never enabled
 # for release builds.
 mcp-bridge = ["dep:tauri-plugin-mcp-bridge"]
+
+[dev-dependencies]
+tempfile = "3"

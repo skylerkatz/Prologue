@@ -181,6 +181,14 @@ export function CommentCard({
           C{comment.id}
           {isReply && <span className="comment-reply-tag"> (reply)</span>}
         </span>
+        {comment.author !== "reviewer" && (
+          <span
+            className="comment-author"
+            title={`Written by ${comment.author} (externally, via the prologue CLI)`}
+          >
+            {comment.author}
+          </span>
+        )}
         {closed && (
           <span className={`comment-state comment-state-${comment.state}`}>
             {STATE_BADGES[comment.state as Exclude<CommentState, "open">]}
