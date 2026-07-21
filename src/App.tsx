@@ -23,13 +23,24 @@ interface OpenRepoState {
 /** localStorage key for the "Hide whitespace changes" preference. */
 const HIDE_WHITESPACE_KEY = "prologue.hideWhitespace";
 
+/** localStorage key for the working-tree mode preference. */
+const MODE_KEY = "prologue.mode";
+
+/** The stored mode, or "committed" if nothing valid is stored. */
+function readStoredMode(): WorkingTreeMode {
+  const stored = localStorage.getItem(MODE_KEY);
+  return stored === "committed" || stored === "staged" || stored === "all"
+    ? stored
+    : "committed";
+}
+
 function App() {
   const [recents, setRecents] = useState<string[]>([]);
   const [openState, setOpenState] = useState<OpenRepoState | null>(null);
   const [branch, setBranch] = useState("");
   const [baseBranch, setBaseBranch] = useState("");
-  const [mode, setMode] = useState<WorkingTreeMode>("committed");
-  // Sticky across launches, unlike `mode` which resets per repo open.
+  // Both toggles are global preferences, sticky across launches and repos.
+  const [mode, setMode] = useState<WorkingTreeMode>(readStoredMode);
   const [hideWhitespace, setHideWhitespace] = useState(
     () => localStorage.getItem(HIDE_WHITESPACE_KEY) === "true",
   );
@@ -63,7 +74,6 @@ function App() {
       setOpenState({ repo, branchList });
       setBranch(branchList.current);
       setBaseBranch(baseBranch);
-      setMode("committed");
       setRecents(await addRecentRepo(repo.path));
       // Auto-refresh is an enhancement; if watching fails, the manual
       // Refresh button still covers everything.
@@ -86,6 +96,11 @@ function App() {
 
   async function removeRecent(path: string) {
     setRecents(await removeRecentRepo(path));
+  }
+
+  function changeMode(next: WorkingTreeMode) {
+    setMode(next);
+    localStorage.setItem(MODE_KEY, next);
   }
 
   function changeHideWhitespace(hide: boolean) {
@@ -160,7 +175,7 @@ function App() {
           refreshKey={refreshKey}
           onBranchChange={setBranch}
           onBaseBranchChange={setBaseBranch}
-          onModeChange={setMode}
+          onModeChange={changeMode}
           onHideWhitespaceChange={changeHideWhitespace}
           onRefresh={() => void refresh()}
           onSwitchRepo={() => {
