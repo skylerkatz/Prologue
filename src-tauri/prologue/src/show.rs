@@ -286,6 +286,7 @@ mod tests {
             end_line: Some(7),
             parent_id,
             body: body.to_owned(),
+            author: None,
         }
     }
 

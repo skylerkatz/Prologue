@@ -134,6 +134,10 @@ pub struct Comment {
     /// root's file/side/lines/anchor context (their own stay NULL), and
     /// their lifecycle is the root's (`state` is meaningless on replies).
     pub parent_id: Option<i64>,
+    /// Who wrote it: 'reviewer' for the app's own writes, anything else for
+    /// external writers (e.g. 'agent' via the prologue CLI). The UI badges
+    /// non-reviewer authors.
+    pub author: String,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -156,6 +160,10 @@ pub struct NewComment {
     #[serde(default)]
     pub parent_id: Option<i64>,
     pub body: String,
+    /// Who is writing. The app's IPC payloads never set it (None →
+    /// 'reviewer'); external writers name themselves, e.g. 'agent'.
+    #[serde(default)]
+    pub author: Option<String>,
 }
 
 /// What `open_review` produced: the branch's review (absent when the branch
@@ -449,7 +457,7 @@ pub fn list_comments_impl(conn: &Connection, review_id: i64) -> Result<Vec<Comme
     let mut stmt = conn
         .prepare(
             "SELECT id, review_id, level, file_path, side, start_line, end_line,
-                    code_anchor, commit_sha, state, body, parent_id, created_at, updated_at
+                    code_anchor, commit_sha, state, body, parent_id, author, created_at, updated_at
              FROM comments WHERE review_id = ?1 ORDER BY id",
         )
         .map_err(db_err)?;
@@ -478,6 +486,7 @@ type CommentColumns = (
     Option<i64>,
     String,
     String,
+    String,
 );
 
 fn comment_columns(r: &rusqlite::Row<'_>) -> rusqlite::Result<CommentColumns> {
@@ -496,6 +505,7 @@ fn comment_columns(r: &rusqlite::Row<'_>) -> rusqlite::Result<CommentColumns> {
         r.get(11)?,
         r.get(12)?,
         r.get(13)?,
+        r.get(14)?,
     ))
 }
 
@@ -513,6 +523,7 @@ fn comment_from_columns(c: CommentColumns) -> Result<Comment, String> {
         state,
         body,
         parent_id,
+        author,
         created_at,
         updated_at,
     ) = c;
@@ -535,6 +546,7 @@ fn comment_from_columns(c: CommentColumns) -> Result<Comment, String> {
         state: CommentState::parse(&state)?,
         body,
         parent_id,
+        author,
         created_at,
         updated_at,
     })
@@ -543,7 +555,7 @@ fn comment_from_columns(c: CommentColumns) -> Result<Comment, String> {
 fn get_comment(conn: &Connection, id: i64) -> Result<Comment, String> {
     conn.query_row(
         "SELECT id, review_id, level, file_path, side, start_line, end_line,
-                code_anchor, commit_sha, state, body, parent_id, created_at, updated_at
+                code_anchor, commit_sha, state, body, parent_id, author, created_at, updated_at
          FROM comments WHERE id = ?1",
         [id],
         comment_columns,
@@ -593,8 +605,17 @@ pub fn create_comment_impl(
         return Err("Comment text cannot be empty".to_owned());
     }
     ensure_review_active(conn, comment.review_id)?;
+    let author = comment.author.as_deref().unwrap_or("reviewer");
     if let Some(parent_id) = comment.parent_id {
-        return create_reply(conn, repo_path, head, comment.review_id, parent_id, &comment.body);
+        return create_reply(
+            conn,
+            repo_path,
+            head,
+            comment.review_id,
+            parent_id,
+            &comment.body,
+            author,
+        );
     }
     let (file_path, side, start_line, end_line, anchor) = match comment.level {
         CommentLevel::Review => (None, None, None, None, None),
@@ -635,8 +656,8 @@ pub fn create_comment_impl(
 
     conn.execute(
         "INSERT INTO comments (review_id, level, file_path, side, start_line, end_line,
-                               code_anchor, commit_sha, body)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                               code_anchor, commit_sha, body, author)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         (
             comment.review_id,
             comment.level.as_str(),
@@ -647,6 +668,7 @@ pub fn create_comment_impl(
             &anchor_json,
             &commit_sha,
             &comment.body,
+            author,
         ),
     )
     .map_err(db_err)?;
@@ -664,6 +686,7 @@ fn create_reply(
     review_id: i64,
     parent_id: i64,
     body: &str,
+    author: &str,
 ) -> Result<Comment, String> {
     let parent = get_comment(conn, parent_id)?;
     let root = match parent.parent_id {
@@ -685,9 +708,9 @@ fn create_reply(
     let repo = open_git_repo(repo_path)?;
     let commit_sha = diff::resolve_commit(&repo, head)?.id().to_string();
     conn.execute(
-        "INSERT INTO comments (review_id, level, parent_id, commit_sha, body)
-         VALUES (?1, ?2, ?3, ?4, ?5)",
-        (review_id, root.level.as_str(), root.id, &commit_sha, body),
+        "INSERT INTO comments (review_id, level, parent_id, commit_sha, body, author)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        (review_id, root.level.as_str(), root.id, &commit_sha, body, author),
     )
     .map_err(db_err)?;
     get_comment(conn, conn.last_insert_rowid())
@@ -953,6 +976,7 @@ mod tests {
             end_line: None,
             parent_id: None,
             body: body.to_owned(),
+            author: None,
         }
     }
 
@@ -981,6 +1005,7 @@ mod tests {
             end_line: Some(end),
             parent_id: None,
             body: "needs work".to_owned(),
+            author: None,
         }
     }
 
@@ -1228,6 +1253,39 @@ mod tests {
             assert_eq!(r.state, CommentState::Open);
         }
         assert_eq!(list_comments_impl(&conn, review.id).unwrap().len(), 6);
+    }
+
+    #[test]
+    fn author_defaults_to_reviewer_and_external_authors_persist() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = test_db(&dir);
+        let fixture = fixture();
+        let review =
+            open_review_impl(&conn, &fixture.path(), "feature", "main", DiffMode::Committed)
+                .unwrap();
+
+        // The app's payloads never set an author: comments and replies land
+        // as 'reviewer'.
+        let root = create(&conn, &fixture, new_comment(review.id, CommentLevel::Review, "root"));
+        assert_eq!(root.author, "reviewer");
+        let app_reply = create(&conn, &fixture, reply(review.id, root.id, "noted"));
+        assert_eq!(app_reply.author, "reviewer");
+
+        // External writers name themselves, on roots and replies alike.
+        let mut agent_root = new_comment(review.id, CommentLevel::Review, "a concern");
+        agent_root.author = Some("agent".to_owned());
+        assert_eq!(create(&conn, &fixture, agent_root).author, "agent");
+        let mut named_reply = reply(review.id, root.id, "done in abc123");
+        named_reply.author = Some("skyler".to_owned());
+        assert_eq!(create(&conn, &fixture, named_reply).author, "skyler");
+
+        // The stored rows round-trip through the list read.
+        let authors: Vec<String> = list_comments_impl(&conn, review.id)
+            .unwrap()
+            .into_iter()
+            .map(|c| c.author)
+            .collect();
+        assert_eq!(authors, ["reviewer", "reviewer", "agent", "skyler"]);
     }
 
     #[test]

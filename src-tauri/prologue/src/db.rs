@@ -16,6 +16,20 @@ pub fn default_db_path() -> Result<PathBuf, String> {
 /// older one is migrated by the same shared migrations the app runs. The
 /// returned connection is `query_only` — writes fail at the SQLite level.
 pub fn open_reviews_db(path: &Path) -> Result<Connection, String> {
+    let conn = open_checked(path)?;
+    conn.pragma_update(None, "query_only", "ON")
+        .map_err(|e| format!("Failed to make the connection read-only: {e}"))?;
+    Ok(conn)
+}
+
+/// Open `path` for the comment/reply commands: same seatbelt, but the
+/// connection can write. Lifecycle state stays untouchable regardless — the
+/// CLI has no commands that change it.
+pub fn open_reviews_db_for_write(path: &Path) -> Result<Connection, String> {
+    open_checked(path)
+}
+
+fn open_checked(path: &Path) -> Result<Connection, String> {
     if !path.is_file() {
         return Err(format!(
             "No reviews database at {} — has the Diff Viewer app been run yet?",
@@ -23,10 +37,7 @@ pub fn open_reviews_db(path: &Path) -> Result<Connection, String> {
         ));
     }
     check_schema_version(path)?;
-    let conn = prologue_core::db::open(path)?;
-    conn.pragma_update(None, "query_only", "ON")
-        .map_err(|e| format!("Failed to make the connection read-only: {e}"))?;
-    Ok(conn)
+    prologue_core::db::open(path)
 }
 
 /// Inspect the recorded schema version over a read-only connection (zero
@@ -101,6 +112,29 @@ mod tests {
             )
             .unwrap_err();
         assert!(err.to_string().contains("readonly"), "{err}");
+    }
+
+    #[test]
+    fn the_write_open_shares_the_seatbelt_but_accepts_writes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = at_version_db(&dir);
+
+        let conn = open_reviews_db_for_write(&path).unwrap();
+        conn.execute(
+            "INSERT INTO reviews (repo_path, branch, base_ref, mode)
+             VALUES ('/r', 'b', 'main', 'committed')",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+
+        // A too-new database is refused on the write path too.
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute("INSERT INTO schema_migrations (version) VALUES (999)", []).unwrap();
+        }
+        let err = open_reviews_db_for_write(&path).unwrap_err();
+        assert!(err.contains("rebuild prologue"), "{err}");
     }
 
     #[test]

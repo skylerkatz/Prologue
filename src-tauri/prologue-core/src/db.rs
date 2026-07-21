@@ -46,6 +46,10 @@ const MIGRATIONS: &[&str] = &[
     // review_id, parent_id, body, and timestamps; positional columns stay
     // NULL (they inherit the root's context). Deleting a root cascades.
     "ALTER TABLE comments ADD COLUMN parent_id INTEGER REFERENCES comments(id) ON DELETE CASCADE;",
+    // v3: author attribution. The app's own writes stay 'reviewer' (the
+    // default); external writers (the prologue CLI) record who spoke — the
+    // UI badges anything that isn't 'reviewer'.
+    "ALTER TABLE comments ADD COLUMN author TEXT NOT NULL DEFAULT 'reviewer';",
 ];
 
 /// The newest schema version this build knows how to read and migrate to.
@@ -209,6 +213,34 @@ mod tests {
         assert_eq!(body, "existing note");
         assert_eq!(state, "resolved");
         assert_eq!(parent_id, None);
+    }
+
+    #[test]
+    fn v3_migration_applies_in_place_to_a_v2_database_with_rows() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("reviews.db");
+        v1_database_with_rows(&path);
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(MIGRATIONS[1]).unwrap();
+            conn.execute("INSERT INTO schema_migrations (version) VALUES (2)", [])
+                .unwrap();
+        }
+
+        let conn = open(&path).unwrap();
+        let version: i64 = conn
+            .query_row("SELECT MAX(version) FROM schema_migrations", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, MIGRATIONS.len() as i64);
+
+        // Existing rows survive and are attributed to the reviewer.
+        let (body, author): (String, String) = conn
+            .query_row("SELECT body, author FROM comments WHERE id = 1", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
+        assert_eq!(body, "existing note");
+        assert_eq!(author, "reviewer");
     }
 
     #[test]

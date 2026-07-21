@@ -392,15 +392,18 @@ fn render_prompt(data: &ExportData, payload: ExportFormat) -> Result<String, Str
          line that no longer exists.\n\
          - Comments marked orphaned could not be re-located in the current diff; their file \
          and line range are the last known location. Do your best to find and address them; \
-         if the code is truly gone, say so in the checklist.\n\
-         - Some comments carry replies: clarifying context the reviewer added under the \
-         original comment. Read them as part of that comment; the checklist maps only \
-         top-level comment IDs, never reply IDs.\n\
+         if the code is truly gone, say so in your reply to that thread.\n\
+         - Some comments carry replies: clarifying context added under the original \
+         comment. Read them as part of that comment and address the thread as a whole.\n\
          - Make the code changes only; do not try to update or resolve the review itself.\n\n\
-         When you are finished, end your reply with a checklist mapping every comment ID to \
-         what was done, one line per comment, for example:\n\n\
-         - C12 — extracted the duplicated query into a helper\n\
-         - C13 — no change needed: the null case is already handled upstream\n",
+         As you address each comment, record what you did by replying to its thread with \
+         the `prologue` CLI:\n\n\
+         - prologue reply C12 --body \"extracted the duplicated query into a helper\"\n\
+         - prologue reply C13 --body \"no change needed: the null case is already handled upstream\"\n\n\
+         Reply to every top-level comment ID exactly once, as you finish it — including \
+         comments that need no change (say why). Your replies land in the review app \
+         directly and carry the head SHA at reply time. Resolving or dismissing threads is \
+         the reviewer's decision in the app, never yours.\n",
         data.repo,
         data.branch,
         data.base_ref,
@@ -502,6 +505,7 @@ mod tests {
                 end_line: lines.map(|(_, e)| e),
                 parent_id: None,
                 body: body.to_owned(),
+                author: None,
             },
         )
         .unwrap()
@@ -547,6 +551,7 @@ mod tests {
                 end_line: None,
                 parent_id: Some(parent_id),
                 body: body.to_owned(),
+                author: None,
             },
         )
         .unwrap()
@@ -825,11 +830,14 @@ why delete this file?
         assert!(prompt_md.contains("removed or replaced code"));
         assert!(prompt_md.contains("marked orphaned"));
         assert!(
-            prompt_md.contains("the checklist maps only top-level comment IDs, never reply IDs"),
+            prompt_md.contains("replying to its thread with the `prologue` CLI"),
             "{prompt_md}"
         );
-        assert!(prompt_md.contains("checklist mapping every comment ID"));
-        assert!(prompt_md.contains("- C12 — extracted the duplicated query into a helper"));
+        assert!(prompt_md.contains("Reply to every top-level comment ID exactly once"));
+        assert!(prompt_md
+            .contains("- prologue reply C12 --body \"extracted the duplicated query into a helper\""));
+        assert!(prompt_md.contains("never yours"));
+        assert!(!prompt_md.contains("checklist"), "the checklist instruction must be gone");
         assert!(prompt_md.ends_with(&markdown), "prompt must embed the markdown payload verbatim");
 
         let json = export(&conn, &fixture, review_id, ExportFormat::Json).unwrap();
