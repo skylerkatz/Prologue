@@ -1,10 +1,30 @@
-# Tauri + React + Typescript
+# Prologue
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
+Prologue is a macOS app for reviewing local git diffs: pick a repository and a
+base branch, read the diff with syntax highlighting, and leave review comments
+that live in a local SQLite database (never inside the reviewed repository).
+Reviews can be exported as prompts for coding agents, and the bundled
+`prologue` CLI lets agents read and reply to comments from the terminal.
 
-## Recommended IDE Setup
+Built with Tauri 2, React, and TypeScript.
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+## Development
+
+- `npm run tauri dev` — run the app (builds the CLI sidecar first)
+- `npm run build` — type-check + production frontend build
+- `cargo test` / `cargo clippy --all-targets` from `src-tauri/` — Rust checks
+  across the workspace (app, `prologue-core`, `prologue`)
+
+App data (reviews.db) lives in
+`~/Library/Application Support/com.skylerkatz.prologue/`; the app creates it
+on first launch.
+
+## Signing
+
+Bundles are ad-hoc signed (`signingIdentity: "-"` in `tauri.conf.json`): fine
+for local use, but Gatekeeper will block downloads on other machines. Before
+distributing publicly, swap in a Developer ID Application certificate and
+notarize.
 
 ## prologue CLI
 

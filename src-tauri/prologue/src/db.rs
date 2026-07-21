@@ -4,11 +4,11 @@ use prologue_core::db::SCHEMA_VERSION;
 use prologue_core::rusqlite::{Connection, OpenFlags};
 use std::path::{Path, PathBuf};
 
-/// The Diff Viewer app's database (its Tauri app-data directory).
+/// The Prologue app's database (its Tauri app-data directory).
 pub fn default_db_path() -> Result<PathBuf, String> {
     let home = std::env::var_os("HOME").ok_or("HOME is not set")?;
     Ok(PathBuf::from(home)
-        .join("Library/Application Support/com.skylerkatz.diff-viewer/reviews.db"))
+        .join("Library/Application Support/com.skylerkatz.prologue/reviews.db"))
 }
 
 /// Open `path` for reading. The schema version is checked before anything
@@ -32,7 +32,7 @@ pub fn open_reviews_db_for_write(path: &Path) -> Result<Connection, String> {
 fn open_checked(path: &Path) -> Result<Connection, String> {
     if !path.is_file() {
         return Err(format!(
-            "No reviews database at {} — has the Diff Viewer app been run yet?",
+            "No reviews database at {} — launch the Prologue app once to create it.",
             path.display()
         ));
     }

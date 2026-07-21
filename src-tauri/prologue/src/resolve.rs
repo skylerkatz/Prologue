@@ -6,7 +6,7 @@ use prologue_core::rusqlite::Connection;
 use std::path::{Path, PathBuf};
 
 /// An explicit REVIEW argument: a numeric id, or `repo@branch` where repo is
-/// a path (contains `/`) or a repository name (`diff-viewer@main`).
+/// a path (contains `/`) or a repository name (`my-app@main`).
 pub enum ReviewRef {
     Id(i64),
     RepoBranch { repo: String, branch: String },
@@ -103,7 +103,7 @@ pub fn resolve_review(conn: &Connection, arg: Option<&str>, cwd: &Path) -> Resul
                 .collect();
             if matches.is_empty() {
                 return Err(format!(
-                    "No active review for {}@{branch} — open one in the Diff Viewer app, \
+                    "No active review for {}@{branch} — open one in the Prologue app, \
                      or pass a review id (see `prologue reviews`)",
                     workdir.display()
                 ));
@@ -154,9 +154,9 @@ mod tests {
     #[test]
     fn review_ref_parses_ids_and_repo_at_branch() {
         assert!(matches!(ReviewRef::parse("42"), Ok(ReviewRef::Id(42))));
-        match ReviewRef::parse("diff-viewer@main").unwrap() {
+        match ReviewRef::parse("my-app@main").unwrap() {
             ReviewRef::RepoBranch { repo, branch } => {
-                assert_eq!(repo, "diff-viewer");
+                assert_eq!(repo, "my-app");
                 assert_eq!(branch, "main");
             }
             ReviewRef::Id(_) => panic!("parsed as id"),

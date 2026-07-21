@@ -1,7 +1,7 @@
 [package]
 name = "prologue"
 version = "0.1.0"
-description = "Command-line access to Prologue (Diff Viewer) code reviews"
+description = "Command-line access to Prologue code reviews"
 edition = "2021"
 
 [dependencies]

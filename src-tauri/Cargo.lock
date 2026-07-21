@@ -694,22 +694,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "diff-viewer"
-version = "0.1.0"
-dependencies = [
- "notify",
- "prologue-core",
- "serde",
- "tauri",
- "tauri-build",
- "tauri-plugin-clipboard-manager",
- "tauri-plugin-dialog",
- "tauri-plugin-mcp-bridge",
- "tauri-plugin-store",
- "tempfile",
-]
-
-[[package]]
 name = "digest"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2969,6 +2953,22 @@ dependencies = [
  "prologue-core",
  "serde",
  "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "prologue-app"
+version = "0.1.0"
+dependencies = [
+ "notify",
+ "prologue-core",
+ "serde",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-clipboard-manager",
+ "tauri-plugin-dialog",
+ "tauri-plugin-mcp-bridge",
+ "tauri-plugin-store",
  "tempfile",
 ]
 

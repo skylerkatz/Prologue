@@ -15,7 +15,7 @@ export function WelcomePage({
 }: WelcomePageProps) {
   return (
     <main className="welcome">
-      <h1>Diff Viewer</h1>
+      <h1>Prologue</h1>
       <p className="tagline">Review local branches like a GitHub PR.</p>
       <button type="button" className="primary" onClick={onPickRepo}>
         Open Repository…

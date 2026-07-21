@@ -1,4 +1,4 @@
-//! `prologue` — command-line access to Prologue (Diff Viewer) code reviews:
+//! `prologue` — command-line access to Prologue code reviews:
 //! read anything, add comments and replies. Opens the database, acts, and
 //! exits; never a daemon. Thread lifecycle (resolve/dismiss/reopen/delete)
 //! deliberately does not exist here — closing a thread is the reviewer's
@@ -19,7 +19,7 @@ use std::path::PathBuf;
 #[derive(Parser)]
 #[command(name = "prologue", version, about = "Read-only access to Prologue code reviews")]
 struct Cli {
-    /// Path to reviews.db (default: the Diff Viewer app's database)
+    /// Path to reviews.db (default: the Prologue app's database)
     #[arg(long, global = true, value_name = "PATH")]
     db: Option<PathBuf>,
     #[command(subcommand)]
@@ -30,7 +30,7 @@ struct Cli {
 enum Command {
     /// List reviews, active first
     Reviews {
-        /// Only reviews of this repository (a path, or a name like "diff-viewer")
+        /// Only reviews of this repository (a path, or a name like "my-app")
         #[arg(long, value_name = "REPO")]
         repo: Option<String>,
         /// Include archived reviews
@@ -451,11 +451,11 @@ mod tests {
     #[test]
     fn cli_surface_parses_as_documented() {
         Cli::try_parse_from(["prologue", "reviews"]).unwrap();
-        Cli::try_parse_from(["prologue", "reviews", "--repo", "diff-viewer", "--archived", "--json"])
+        Cli::try_parse_from(["prologue", "reviews", "--repo", "my-app", "--archived", "--json"])
             .unwrap();
         Cli::try_parse_from(["prologue", "show"]).unwrap();
         Cli::try_parse_from(["prologue", "show", "7", "--json"]).unwrap();
-        Cli::try_parse_from(["prologue", "show", "diff-viewer@main"]).unwrap();
+        Cli::try_parse_from(["prologue", "show", "my-app@main"]).unwrap();
         Cli::try_parse_from(["prologue", "show", "--file", "src/a.rs", "--diff"]).unwrap();
         Cli::try_parse_from(["prologue", "show", "--file", "src/a.rs"]).unwrap();
         // --diff needs --file.

@@ -1,6 +1,6 @@
 ---
 name: prologue-review
-description: Read and respond to Prologue (Diff Viewer) code reviews with the `prologue` CLI. Use when asked to address review comments on a branch, when an exported review prompt says to reply via prologue, or when adding review comments/replies from the terminal.
+description: Read and respond to Prologue code reviews with the `prologue` CLI. Use when asked to address review comments on a branch, when an exported review prompt says to reply via prologue, or when adding review comments/replies from the terminal.
 ---
 
 # Working a Prologue review with the `prologue` CLI
