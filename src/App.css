@@ -903,7 +903,10 @@ button.primary:hover {
   overflow-y: auto;
   overflow-x: hidden;
   background: var(--bg-app);
-  padding: 2px 22px 40px;
+  /* No top padding: the pinned sticky header must sit flush against the
+     pane's top edge (padding would leave a sliver of scrolling content
+     visible above it). */
+  padding: 0 22px 40px;
 }
 
 .diff-virtual {
@@ -919,6 +922,16 @@ button.primary:hover {
   background: var(--bg-card);
   border-left: 1px solid var(--border);
   border-right: 1px solid var(--border);
+}
+
+/* The active file's header pins to the top of the scrollport while its
+   rows scroll beneath. It renders in flow (no translate) so position:
+   sticky works inside the virtualized container; -16px cancels the row's
+   transparent 16px spacer so the card header sits flush at the top. */
+.diff-row-pinned {
+  position: sticky;
+  top: -16px;
+  z-index: 2;
 }
 
 /* A header row opens a new card; the gap above it shows the app chrome. */
@@ -948,6 +961,18 @@ button.primary:hover {
   > .diff-file-header,
 .diff-row:has(> .diff-file-header):last-child > .diff-file-header {
   border-radius: 8px;
+}
+
+/* Pinned: the wrapper takes the pane background so the rounded corner
+   notches show cream (like a card at rest) instead of the rows scrolling
+   behind. After the transparent-header-row rule — same specificity,
+   later wins. */
+.diff-row.diff-row-pinned {
+  background: var(--bg-app);
+}
+
+.diff-row.diff-row-pinned > .diff-file-header {
+  box-shadow: var(--shadow-card);
 }
 
 .diff-file-header {
@@ -981,7 +1006,6 @@ button.primary:hover {
   border: none;
   border-radius: 4px;
   padding: 0;
-  font-size: 10px;
   color: var(--text-muted);
   cursor: pointer;
 }
@@ -989,6 +1013,16 @@ button.primary:hover {
 .file-toggle:hover {
   background: var(--bg-subtle);
   color: var(--text);
+}
+
+/* Stroked SVG disclosure chevron: points right, rotates down on expand. */
+.chevron {
+  display: block;
+  transition: transform 120ms ease;
+}
+
+.chevron-expanded {
+  transform: rotate(90deg);
 }
 
 .hunk-header {
@@ -1245,7 +1279,11 @@ button.primary:hover {
 /* --- M5: orphaned bucket --------------------------------------------- */
 
 .orphaned-comments {
-  margin: 0.75rem;
+  /* Lives inside .diff-scroll now, whose 22px padding provides the gutter
+     (edges align with the file cards). 16px matches the file-to-file
+     rhythm; no bottom margin — the first file card's own 16px spacer
+     provides the gap. */
+  margin: 16px 0 0;
   border: 1px solid var(--renamed);
   border-radius: 8px;
   padding: 0.6rem 0.75rem;

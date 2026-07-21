@@ -538,16 +538,18 @@ export function ReviewShell({
                 onDelete={handleDelete}
                 onSetState={handleSetState}
               />
-              <OrphanedComments
-                comments={orphanedComments}
-                repliesByRoot={repliesByRoot}
-                onCreateReply={handleCreateReply}
-                onUpdate={handleUpdate}
-                onDelete={handleDelete}
-                onSetState={handleSetState}
-              />
               <DiffView
                 key={view.generation}
+                topContent={
+                  <OrphanedComments
+                    comments={orphanedComments}
+                    repliesByRoot={repliesByRoot}
+                    onCreateReply={handleCreateReply}
+                    onUpdate={handleUpdate}
+                    onDelete={handleDelete}
+                    onSetState={handleSetState}
+                  />
+                }
                 repoPath={repo.path}
                 base={view.base}
                 head={view.head}

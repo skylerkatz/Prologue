@@ -2,12 +2,18 @@ import {
   memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type CSSProperties,
+  type ReactNode,
 } from "react";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import {
+  defaultRangeExtractor,
+  useVirtualizer,
+  type Range,
+} from "@tanstack/react-virtual";
 import { getContextLines, getFileDiff } from "../ipc";
 import { guardReason, type GuardReason } from "../diff/guards";
 import { segmentLine } from "../diff/segments";
@@ -47,6 +53,7 @@ import {
   replyDraftKey,
   type DraftStore,
 } from "./Comments";
+import { Chevron } from "./Chevron";
 import { useCopyPath } from "./useCopyPath";
 
 /** Parallel `get_file_diff` calls; each recomputes the repo diff in Rust. */
@@ -68,6 +75,9 @@ interface DiffViewProps {
    * the setting the summary was computed with. */
   ignoreWhitespace: boolean;
   summary: DiffSummary;
+  /** Rendered inside the scroll pane above the file cards (the orphaned
+   * bucket) so it scrolls out of frame with the diff. */
+  topContent?: ReactNode;
   /** Bumping `nonce` scrolls the file's header into view. */
   scrollTarget: { path: string; nonce: number } | null;
   /** File- and line-level comments (review-level ones are ignored here). */
@@ -104,6 +114,7 @@ export function DiffView({
   mode,
   ignoreWhitespace,
   summary,
+  topContent,
   scrollTarget,
   comments,
   replies,
@@ -215,11 +226,19 @@ export function DiffView({
   // Marking collapses the card and unmarking re-expands it; the caret
   // (`toggleFile`) stays independent, so peeking at a reviewed file never
   // unmarks it.
+  const pendingScrollFi = useRef<number | null>(null);
   const toggleReviewed = useCallback(
     (fi: number) => {
       const path = summary.files[fi].path;
       const isReviewed = reviewStates.get(path) === "reviewed";
       updateState(fi, (s) => ({ ...s, expanded: isReviewed }));
+      if (!isReviewed) {
+        // Collapsing removes the file's rows; without a correction the
+        // viewport would land mid-way through a later file. Scroll the
+        // collapsed header to the top instead — the next file sits right
+        // below it. (Runs from an effect once the row model has rebuilt.)
+        pendingScrollFi.current = fi;
+      }
       onToggleReviewed(path);
     },
     [summary.files, reviewStates, onToggleReviewed, updateState],
@@ -447,14 +466,118 @@ export function DiffView({
     [summary.files, states, commentIndex, replies, composer, ignoreWhitespace],
   );
 
+  // Height of the content rendered above the virtual list (the orphaned
+  // bucket); fed to the virtualizer as scrollMargin so row offsets and
+  // scrollToIndex stay correct. Item `start` values include the margin.
+  const topRef = useRef<HTMLDivElement | null>(null);
+  const [topHeight, setTopHeight] = useState(0);
+  useLayoutEffect(() => {
+    const el = topRef.current;
+    if (el === null) {
+      return;
+    }
+    const measure = () => setTopHeight(el.getBoundingClientRect().height);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  // Sticky file headers: while the top of the scrollport is inside a file's
+  // BODY, that file's header stays mounted (rangeExtractor) and renders
+  // in-flow with position: sticky instead of a translate, so it pins while
+  // its rows scroll beneath it. A header row at the top pins nothing — so
+  // collapsed (e.g. reviewed) files, which contribute no body rows, never
+  // pin and scroll away like any other row.
+  const headerIndexByFi = useMemo(() => {
+    const map = new Map<number, number>();
+    rows.forEach((row, i) => {
+      if (row.kind === "file") {
+        map.set(row.fi, i);
+      }
+    });
+    return map;
+  }, [rows]);
+  const activeStickyIndex = useRef(-1);
+  const rangeExtractor = useCallback(
+    (range: Range) => {
+      const top = rows[range.startIndex];
+      const active =
+        top !== undefined && top.kind !== "file"
+          ? (headerIndexByFi.get(top.fi) ?? -1)
+          : -1;
+      activeStickyIndex.current = active;
+      const next = new Set(defaultRangeExtractor(range));
+      if (active !== -1) {
+        next.add(active);
+      }
+      return [...next].sort((a, b) => a - b);
+    },
+    [rows, headerIndexByFi],
+  );
+
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: (index) => estimateRowHeight(rows[index]),
     getItemKey: (index) => rowKey(rows[index]),
     overscan: 12,
+    scrollMargin: topHeight,
+    rangeExtractor,
   });
   const items = virtualizer.getVirtualItems();
+
+  // Push-out: once the pinned file's last row nears the top, slide the
+  // header up with it (GitHub-style) instead of hovering over the tail.
+  // Driven imperatively from scroll events — the virtualizer doesn't
+  // re-render per scrolled pixel, so React state would lag.
+  const pinnedLastIndex = (() => {
+    const active = activeStickyIndex.current;
+    if (active === -1) {
+      return -1;
+    }
+    for (let i = active + 1; i < rows.length; i++) {
+      if (rows[i].kind === "file") {
+        return i - 1;
+      }
+    }
+    return rows.length - 1;
+  })();
+  const pinnedRef = useRef<{ el: HTMLDivElement; lastIndex: number } | null>(
+    null,
+  );
+  const updatePinnedPush = useCallback(() => {
+    const scroller = scrollRef.current;
+    const pinned = pinnedRef.current;
+    if (scroller === null || pinned === null) {
+      return;
+    }
+    const measurement = virtualizer.measurementsCache[pinned.lastIndex];
+    if (measurement === undefined) {
+      return;
+    }
+    // The row wrapper carries a 16px transparent spacer above the 44px-ish
+    // header; sticky top -16px keeps the header flush. Viewport y of the
+    // file's bottom = its virtual end − scroll (the pane has no top padding).
+    const spacer = 16;
+    const headerHeight = pinned.el.offsetHeight - spacer;
+    const fileBottom = measurement.end - scroller.scrollTop;
+    const push = Math.min(0, fileBottom - headerHeight);
+    pinned.el.style.top = `${-spacer + push}px`;
+  }, [virtualizer]);
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    if (scroller === null) {
+      return;
+    }
+    scroller.addEventListener("scroll", updatePinnedPush, { passive: true });
+    return () => scroller.removeEventListener("scroll", updatePinnedPush);
+  }, [updatePinnedPush]);
+  // Re-apply after every render: the pinned row, its file's measured end,
+  // or the row model may have changed without a scroll event.
+  useEffect(() => {
+    updatePinnedPush();
+  });
 
   const langs = useMemo(
     () => summary.files.map((file) => detectLang(file.path)),
@@ -528,6 +651,17 @@ export function DiffView({
     },
     [rows, virtualizer],
   );
+
+  // Deferred scroll after a mark-reviewed collapse: waits for `rows` to
+  // rebuild without the collapsed file's body so the header's new index
+  // (and the shrunken offsets) are what gets scrolled to.
+  useEffect(() => {
+    const fi = pendingScrollFi.current;
+    if (fi !== null) {
+      pendingScrollFi.current = null;
+      scrollToFile(fi);
+    }
+  }, [rows, scrollToFile]);
 
   const moveCursor = useCallback(
     (delta: number) => {
@@ -629,17 +763,34 @@ export function DiffView({
 
   return (
     <div className="diff-scroll" ref={scrollRef}>
+      <div ref={topRef}>{topContent}</div>
       <div
         className="diff-virtual"
         style={{ height: virtualizer.getTotalSize() }}
       >
-        {items.map((item) => (
+        {items.map((item) => {
+          const isPinned = item.index === activeStickyIndex.current;
+          return (
           <div
             key={item.key}
             data-index={item.index}
-            ref={virtualizer.measureElement}
-            className="diff-row"
-            style={{ transform: `translateY(${item.start}px)` }}
+            ref={(el) => {
+              virtualizer.measureElement(el);
+              if (isPinned) {
+                pinnedRef.current =
+                  el === null ? null : { el, lastIndex: pinnedLastIndex };
+              } else if (el !== null && el.style.top !== "") {
+                // React doesn't know about the imperative push-out offset;
+                // clear it when a row stops being the pinned header.
+                el.style.top = "";
+              }
+            }}
+            className={isPinned ? "diff-row diff-row-pinned" : "diff-row"}
+            style={
+              isPinned
+                ? undefined
+                : { transform: `translateY(${item.start - topHeight}px)` }
+            }
           >
             <RowContent
               row={rows[item.index]}
@@ -672,7 +823,8 @@ export function DiffView({
               onSetCommentState={onSetCommentState}
             />
           </div>
-        ))}
+          );
+        })}
       </div>
       {copied && (
         <div className="copy-toast" role="status">
@@ -918,7 +1070,7 @@ function FileHeaderRow({
         aria-label={expanded ? "Collapse file" : "Expand file"}
         onClick={onToggle}
       >
-        {expanded ? "▾" : "▸"}
+        <Chevron expanded={expanded} />
       </button>
       <span
         className={`status-badge status-${file.status}`}

@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import type { Comment, CommentState, RepliesByRoot } from "../types";
+import { Chevron } from "./Chevron";
 import { CommentThread, type DraftStore } from "./Comments";
 
 interface OrphanedCommentsProps {
@@ -30,7 +31,9 @@ export function OrphanedComments({
   const [editingId, setEditingId] = useState<number | null>(null);
   const [replyingTo, setReplyingTo] = useState<number | null>(null);
   // Collapse the whole bucket to its header row, like a file card.
-  const [expanded, setExpanded] = useState(true);
+  // Starts minimized: orphans are reference material, not the review's
+  // main path — expand on demand.
+  const [expanded, setExpanded] = useState(false);
   const drafts = useRef<DraftStore>(new Map());
 
   if (comments.length === 0) {
@@ -48,7 +51,7 @@ export function OrphanedComments({
           }
           onClick={() => setExpanded((v) => !v)}
         >
-          {expanded ? "▾" : "▸"}
+          <Chevron expanded={expanded} />
         </button>
         <span className="orphaned-title">
           Orphaned comments ({comments.length})
