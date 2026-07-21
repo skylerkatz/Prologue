@@ -120,7 +120,6 @@ pub struct FileDiff {
 
 /// Merge-base (three-dot) file summary: diff(merge-base(base, head), head),
 /// where "head" is the branch tip, index, or working tree depending on `mode`.
-#[tauri::command]
 pub fn get_diff_summary(
     repo_path: String,
     base: String,
@@ -172,7 +171,6 @@ pub fn get_diff_summary(
 
 /// Hunks for a single file from the same diff `get_diff_summary` computes;
 /// fetched on demand so only the summary crosses IPC up front.
-#[tauri::command]
 pub fn get_file_diff(
     repo_path: String,
     base: String,
@@ -284,7 +282,6 @@ pub struct ContextLines {
 /// index, or working tree depending on `mode`. Old-side line numbers are
 /// derivable on the frontend: within a gap between hunks both sides advance
 /// together, offset by the surrounding hunk's old/new starts.
-#[tauri::command]
 pub fn get_context_lines(
     repo_path: String,
     head: String,
@@ -627,8 +624,11 @@ mod tests {
 
     #[test]
     fn committed_diff_matches_git_cli_on_this_real_repo() {
-        // CARGO_MANIFEST_DIR is src-tauri; the git repo root is its parent.
+        // CARGO_MANIFEST_DIR is src-tauri/prologue-core; the git repo root
+        // is two levels up.
         let repo_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
             .parent()
             .unwrap()
             .to_string_lossy()

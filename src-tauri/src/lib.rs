@@ -1,14 +1,7 @@
-mod anchor;
-mod db;
-mod diff;
-mod export;
-mod intraline;
-mod repo;
-mod review;
+mod commands;
 mod watcher;
-#[cfg(test)]
-mod testutil;
 
+use prologue_core::db;
 use std::sync::Mutex;
 use tauri::Manager;
 
@@ -41,21 +34,21 @@ pub fn run() {
 
     builder
         .invoke_handler(tauri::generate_handler![
-            repo::open_repo,
-            repo::list_branches,
-            diff::get_diff_summary,
-            diff::get_file_diff,
-            diff::get_context_lines,
-            review::open_review,
-            review::list_comments,
-            review::create_comment,
-            review::update_comment,
-            review::delete_comment,
-            review::update_comment_state,
-            review::reanchor_comments,
-            review::archive_stale_reviews,
-            review::list_archived_reviews,
-            export::export_review,
+            commands::open_repo,
+            commands::list_branches,
+            commands::get_diff_summary,
+            commands::get_file_diff,
+            commands::get_context_lines,
+            commands::open_review,
+            commands::list_comments,
+            commands::create_comment,
+            commands::update_comment,
+            commands::delete_comment,
+            commands::update_comment_state,
+            commands::reanchor_comments,
+            commands::archive_stale_reviews,
+            commands::list_archived_reviews,
+            commands::export_review,
             watcher::start_watching,
             watcher::stop_watching
         ])

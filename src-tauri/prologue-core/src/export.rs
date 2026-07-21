@@ -6,7 +6,6 @@ use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
 use crate::anchor::AnchorStatus;
-use crate::db::Db;
 use crate::diff::{self, DiffMode};
 use crate::repo::open_git_repo;
 use crate::review::{self, CodeAnchor, Comment, CommentLevel, CommentSide, CommentState};
@@ -18,26 +17,6 @@ pub enum ExportFormat {
     Json,
     PromptMarkdown,
     PromptJson,
-}
-
-/// Render the review's open comments as clipboard-ready text. Line ranges,
-/// orphan status, and the header SHAs are all resolved against the diff as
-/// it stands right now — the same computation the UI displays.
-#[tauri::command]
-pub fn export_review(
-    db: tauri::State<'_, Db>,
-    repo_path: String,
-    base: String,
-    head: String,
-    mode: DiffMode,
-    review_id: i64,
-    format: ExportFormat,
-) -> Result<String, String> {
-    let conn = db
-        .0
-        .lock()
-        .map_err(|_| "Review database is unavailable".to_owned())?;
-    export_review_impl(&conn, &repo_path, &base, &head, mode, review_id, format)
 }
 
 /// One open thread root plus whether it is orphaned in the current diff (its
@@ -67,7 +46,10 @@ struct ExportData<'a> {
     files: Vec<(String, Vec<ExportComment<'a>>)>,
 }
 
-pub(crate) fn export_review_impl(
+/// Render the review's open comments as clipboard-ready text. Line ranges,
+/// orphan status, and the header SHAs are all resolved against the diff as
+/// it stands right now — the same computation the UI displays.
+pub fn export_review_impl(
     conn: &Connection,
     repo_path: &str,
     base: &str,

@@ -601,18 +601,14 @@ dependencies = [
 name = "diff-viewer"
 version = "0.1.0"
 dependencies = [
- "git2",
  "notify",
- "rusqlite",
- "serde",
- "serde_json",
+ "prologue-core",
  "tauri",
  "tauri-build",
  "tauri-plugin-clipboard-manager",
  "tauri-plugin-dialog",
  "tauri-plugin-mcp-bridge",
  "tauri-plugin-store",
- "tempfile",
 ]
 
 [[package]]
@@ -2888,6 +2884,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8fd00f0bb2e90d81d1044c2b32617f68fcb9fa3bb7640c23e9c748e53fb30934"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "prologue-core"
+version = "0.1.0"
+dependencies = [
+ "git2",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

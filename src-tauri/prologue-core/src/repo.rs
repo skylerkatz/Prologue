@@ -18,7 +18,7 @@ pub struct BranchList {
 
 /// Open the repository at exactly `path` (no upward discovery), with
 /// user-facing error messages.
-pub(crate) fn open_git_repo(path: &str) -> Result<Repository, String> {
+pub fn open_git_repo(path: &str) -> Result<Repository, String> {
     let repo_path = Path::new(path);
     if !repo_path.is_dir() {
         return Err(format!("Not a directory: {path}"));
@@ -27,7 +27,6 @@ pub(crate) fn open_git_repo(path: &str) -> Result<Repository, String> {
 }
 
 /// Validate that `path` points to a local git repository and return its identity.
-#[tauri::command]
 pub fn open_repo(path: String) -> Result<RepoInfo, String> {
     open_git_repo(&path)?;
     let name = Path::new(&path)
@@ -39,7 +38,6 @@ pub fn open_repo(path: String) -> Result<RepoInfo, String> {
 
 /// List local and remote-tracking branches, the checked-out branch, and the
 /// auto-detected default base ref.
-#[tauri::command]
 pub fn list_branches(repo_path: String) -> Result<BranchList, String> {
     let repo = open_git_repo(&repo_path)?;
     let mut local = Vec::new();
@@ -102,8 +100,11 @@ mod tests {
     use crate::testutil::FixtureRepo;
 
     fn this_repo() -> String {
-        // CARGO_MANIFEST_DIR is src-tauri; the git repo root is its parent.
+        // CARGO_MANIFEST_DIR is src-tauri/prologue-core; the git repo root
+        // is two levels up.
         Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
             .parent()
             .unwrap()
             .to_string_lossy()

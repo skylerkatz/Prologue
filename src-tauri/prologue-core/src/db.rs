@@ -2,7 +2,7 @@ use rusqlite::Connection;
 use std::path::Path;
 use std::sync::Mutex;
 
-/// Review database handle, managed as Tauri state.
+/// Review database handle; the app manages it as Tauri state.
 pub struct Db(pub Mutex<Connection>);
 
 /// Timestamp expression used for all created_at/updated_at columns:
@@ -57,12 +57,21 @@ pub fn open(path: &Path) -> Result<Connection, String> {
         .map_err(|e| format!("Failed to enable WAL mode: {e}"))?;
     conn.pragma_update(None, "foreign_keys", "ON")
         .map_err(|e| format!("Failed to enable foreign keys: {e}"))?;
+    // Writers from more than one process (app + CLI) share this database;
+    // wait briefly on a locked connection instead of failing immediately.
+    conn.busy_timeout(std::time::Duration::from_millis(500))
+        .map_err(|e| format!("Failed to set busy timeout: {e}"))?;
     migrate(&conn)?;
     Ok(conn)
 }
 
 fn migrate(conn: &Connection) -> Result<(), String> {
     let db_err = |e: rusqlite::Error| format!("Failed to migrate review database: {e}");
+    // Take the write lock up front so two processes opening concurrently
+    // cannot both read the version table and race the same migration.
+    let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)
+        .map_err(db_err)?;
+    let conn = &*tx;
     conn.execute_batch(&format!(
         "CREATE TABLE IF NOT EXISTS schema_migrations (
             version INTEGER PRIMARY KEY,
@@ -84,6 +93,7 @@ fn migrate(conn: &Connection) -> Result<(), String> {
         conn.execute("INSERT INTO schema_migrations (version) VALUES (?1)", [version])
             .map_err(db_err)?;
     }
+    tx.commit().map_err(db_err)?;
     Ok(())
 }
 
@@ -112,7 +122,7 @@ mod tests {
     }
 
     #[test]
-    fn open_enables_wal_and_foreign_keys() {
+    fn open_enables_wal_foreign_keys_and_busy_timeout() {
         let dir = tempfile::tempdir().unwrap();
         let conn = open(&dir.path().join("reviews.db")).unwrap();
         let mode: String = conn
@@ -123,6 +133,10 @@ mod tests {
             .pragma_query_value(None, "foreign_keys", |r| r.get(0))
             .unwrap();
         assert_eq!(fk, 1);
+        let timeout: i64 = conn
+            .pragma_query_value(None, "busy_timeout", |r| r.get(0))
+            .unwrap();
+        assert_eq!(timeout, 500);
     }
 
     #[test]

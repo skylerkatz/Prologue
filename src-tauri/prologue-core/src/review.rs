@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::anchor::{self, AnchorStatus};
-use crate::db::{Db, NOW};
+use crate::db::NOW;
 use crate::diff::{self, DiffLine, DiffMode, FileDiff};
 use crate::repo::open_git_repo;
 
@@ -169,119 +169,11 @@ pub struct OpenReviewResult {
     pub branch_merged: bool,
 }
 
-/// Resume the active review for (repo, branch), creating one if none exists.
-/// The stored base ref and mode follow the caller's current choice. A branch
-/// already merged into the base gets no new active review — its existing
-/// active review is archived and the latest archived one is returned
-/// read-only instead.
-#[tauri::command]
-pub fn open_review(
-    db: tauri::State<'_, Db>,
-    repo_path: String,
-    branch: String,
-    base_ref: String,
-    mode: DiffMode,
-) -> Result<OpenReviewResult, String> {
-    let repo = open_git_repo(&repo_path)?;
-    let conn = lock(&db)?;
-    open_review_checked_impl(&conn, &repo, &repo_path, &branch, &base_ref, mode)
-}
-
-/// Set a comment's lifecycle state (open | resolved | dismissed). Resolved
-/// and dismissed comments stay in history; `updated_at` is untouched so
-/// "(edited)" keeps meaning body edits.
-#[tauri::command]
-pub fn update_comment_state(
-    db: tauri::State<'_, Db>,
-    comment_id: i64,
-    state: CommentState,
-) -> Result<Comment, String> {
-    let conn = lock(&db)?;
-    update_comment_state_impl(&conn, comment_id, state)
-}
-
-/// Re-locate every line comment of `review_id` in the current diff via its
-/// code anchor, persisting moved line ranges. Returns one status per line
-/// comment; review- and file-level comments have no anchor and are skipped.
-#[tauri::command]
-pub fn reanchor_comments(
-    db: tauri::State<'_, Db>,
-    repo_path: String,
-    base: String,
-    head: String,
-    mode: DiffMode,
-    review_id: i64,
-) -> Result<Vec<ReanchorResult>, String> {
-    let conn = lock(&db)?;
-    reanchor_comments_impl(&conn, &repo_path, &base, &head, mode, review_id)
-}
-
-/// Archive every active review of this repo whose branch was merged into
-/// its base or deleted. Returns the reviews archived by this call.
-#[tauri::command]
-pub fn archive_stale_reviews(
-    db: tauri::State<'_, Db>,
-    repo_path: String,
-) -> Result<Vec<Review>, String> {
-    let repo = open_git_repo(&repo_path)?;
-    let conn = lock(&db)?;
-    archive_stale_reviews_impl(&conn, &repo, &repo_path)
-}
-
-/// Archived reviews of this repo, newest first, for the read-only browser.
-#[tauri::command]
-pub fn list_archived_reviews(
-    db: tauri::State<'_, Db>,
-    repo_path: String,
-) -> Result<Vec<ArchivedReview>, String> {
-    let conn = lock(&db)?;
-    list_archived_reviews_impl(&conn, &repo_path)
-}
-
-#[tauri::command]
-pub fn list_comments(db: tauri::State<'_, Db>, review_id: i64) -> Result<Vec<Comment>, String> {
-    let conn = lock(&db)?;
-    list_comments_impl(&conn, review_id)
-}
-
-#[tauri::command]
-pub fn create_comment(
-    db: tauri::State<'_, Db>,
-    repo_path: String,
-    base: String,
-    head: String,
-    mode: DiffMode,
-    comment: NewComment,
-) -> Result<Comment, String> {
-    let conn = lock(&db)?;
-    create_comment_impl(&conn, &repo_path, &base, &head, mode, comment)
-}
-
-#[tauri::command]
-pub fn update_comment(
-    db: tauri::State<'_, Db>,
-    comment_id: i64,
-    body: String,
-) -> Result<Comment, String> {
-    let conn = lock(&db)?;
-    update_comment_impl(&conn, comment_id, &body)
-}
-
-#[tauri::command]
-pub fn delete_comment(db: tauri::State<'_, Db>, comment_id: i64) -> Result<(), String> {
-    let conn = lock(&db)?;
-    delete_comment_impl(&conn, comment_id)
-}
-
-fn lock<'a>(db: &'a tauri::State<'_, Db>) -> Result<std::sync::MutexGuard<'a, Connection>, String> {
-    db.0.lock().map_err(|_| "Review database is unavailable".to_owned())
-}
-
 fn db_err(e: rusqlite::Error) -> String {
     format!("Review database error: {e}")
 }
 
-pub(crate) fn open_review_impl(
+pub fn open_review_impl(
     conn: &Connection,
     repo_path: &str,
     branch: &str,
@@ -400,7 +292,7 @@ fn archive_review(conn: &Connection, id: i64) -> Result<(), String> {
     Ok(())
 }
 
-pub(crate) fn open_review_checked_impl(
+pub fn open_review_checked_impl(
     conn: &Connection,
     repo: &Repository,
     repo_path: &str,
@@ -446,7 +338,7 @@ pub(crate) fn open_review_checked_impl(
     })
 }
 
-pub(crate) fn archive_stale_reviews_impl(
+pub fn archive_stale_reviews_impl(
     conn: &Connection,
     repo: &Repository,
     repo_path: &str,
@@ -482,7 +374,7 @@ pub struct ArchivedReview {
     pub comment_count: i64,
 }
 
-pub(crate) fn list_archived_reviews_impl(
+pub fn list_archived_reviews_impl(
     conn: &Connection,
     repo_path: &str,
 ) -> Result<Vec<ArchivedReview>, String> {
@@ -508,7 +400,7 @@ pub(crate) fn list_archived_reviews_impl(
         .collect()
 }
 
-pub(crate) fn list_comments_impl(conn: &Connection, review_id: i64) -> Result<Vec<Comment>, String> {
+pub fn list_comments_impl(conn: &Connection, review_id: i64) -> Result<Vec<Comment>, String> {
     let mut stmt = conn
         .prepare(
             "SELECT id, review_id, level, file_path, side, start_line, end_line,
@@ -644,7 +536,7 @@ fn ensure_comment_mutable(conn: &Connection, comment_id: i64) -> Result<(), Stri
     ensure_review_active(conn, review_id)
 }
 
-pub(crate) fn create_comment_impl(
+pub fn create_comment_impl(
     conn: &Connection,
     repo_path: &str,
     base: &str,
@@ -756,7 +648,7 @@ fn create_reply(
     get_comment(conn, conn.last_insert_rowid())
 }
 
-pub(crate) fn update_comment_impl(
+pub fn update_comment_impl(
     conn: &Connection,
     comment_id: i64,
     body: &str,
@@ -777,7 +669,7 @@ pub(crate) fn update_comment_impl(
     get_comment(conn, comment_id)
 }
 
-pub(crate) fn delete_comment_impl(conn: &Connection, comment_id: i64) -> Result<(), String> {
+pub fn delete_comment_impl(conn: &Connection, comment_id: i64) -> Result<(), String> {
     ensure_comment_mutable(conn, comment_id)?;
     let changed = conn
         .execute("DELETE FROM comments WHERE id = ?1", [comment_id])
@@ -788,7 +680,7 @@ pub(crate) fn delete_comment_impl(conn: &Connection, comment_id: i64) -> Result<
     Ok(())
 }
 
-pub(crate) fn update_comment_state_impl(
+pub fn update_comment_state_impl(
     conn: &Connection,
     comment_id: i64,
     state: CommentState,
@@ -829,7 +721,7 @@ pub struct ReanchorResult {
     pub end_line: Option<u32>,
 }
 
-pub(crate) fn reanchor_comments_impl(
+pub fn reanchor_comments_impl(
     conn: &Connection,
     repo_path: &str,
     base: &str,
