@@ -1,0 +1,1 @@
+Sidebar file row: status badge, left-truncated mono path, optional teal comment pill, +/\u2212 counts. Selected = warm highlight + 3px orange bookmark inset.\n\n```jsx\n<FileRow path="app/Http/Controllers/My/Billing/BillingController.php" commentCount={1} additions={3} deletions={1} selected />\n```\n

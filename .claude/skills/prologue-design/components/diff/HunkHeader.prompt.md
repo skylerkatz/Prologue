@@ -1,0 +1,1 @@
+Hunk range header; light cool-blue band (--hunk-bg), muted mono text.\n\n```jsx\n<HunkHeader text="@@ -60,7 +60,8 @@ class BillingController extends Controller" />\n```\n

@@ -1,0 +1,1 @@
+Textarea composer with orange primary submit, secondary Cancel, and the \u2318\u21a9 hint right-aligned. Focus turns the border orange \u2014 no glow ring.\n\n```jsx\n<CommentComposer placeholder="Overall notes about this review\u2026" onSubmit={save} onCancel={close} />\n```\n

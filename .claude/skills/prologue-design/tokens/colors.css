@@ -1,0 +1,66 @@
+/* Prologue color system — light mode only.
+   Warm cream chrome, deep teal brand, amber-orange accent, soft diff tints. */
+:root {
+  /* Brand — teal (app icon background, title bar, avatars) */
+  --teal-950: #0e2a2e;
+  --teal-900: #123338;
+  --teal-800: #173e42;
+  --teal-700: #1f5057;
+  --teal-100: #d7e4e2;
+
+  /* Brand — orange (ribbon, primary actions, selection) */
+  --orange-600: #e07b1a;
+  --orange-500: #ea8c1f;
+  --orange-400: #f6a33c;
+  --orange-100: #fbe9d2;
+  --orange-50: #fdf4e5;
+
+  /* Surfaces — warm cream chrome, white content */
+  --bg-app: #faf7f0;        /* toolbar, sidebar, panel chrome */
+  --bg-card: #ffffff;       /* file cards, comment cards, menus */
+  --bg-subtle: #f5f1e8;     /* hovers, composer wells, reply cards */
+  --bg-titlebar: var(--teal-900);
+
+  /* Ink */
+  --text: #223436;          /* primary — dark teal-ink */
+  --text-strong: #14282b;   /* headings, bold paths */
+  --text-muted: #6d7a75;    /* meta, timestamps, line numbers */
+  --text-on-dark: #f3ead9;  /* cream text on teal */
+  --text-on-accent: #ffffff;
+
+  /* Lines */
+  --border: #e3ddd0;        /* card + control borders */
+  --border-strong: #cfc7b6; /* select outlines, focused-adjacent */
+
+  /* Semantic */
+  --accent: var(--orange-500);      /* primary actions, selection, links */
+  --accent-strong: var(--orange-600);
+  --danger: #c4392e;
+  --added: #1f7a38;
+  --removed: #c4392e;
+  --renamed: #9a6700;
+
+  /* Diff tints (soft red/green on cream, per mockup) */
+  --diff-add-bg: #e3f4e3;
+  --diff-add-gutter: #c2e7c5;
+  --diff-del-bg: #fbe9e6;
+  --diff-del-gutter: #f5cfc8;
+  --hunk-bg: #e6f0f4;       /* the one cool tint: hunk headers */
+  --hunk-text: #5c6f74;
+  --line-selected-bg: #fdf0dc; /* orange-tinted selected lines */
+
+  /* Component aliases */
+  --surface-selected: #f8ead6;      /* selected file row */
+  --comment-accent-border: var(--orange-400); /* comment card left rail */
+  --badge-modified-bg: #fbe9d2;
+  --badge-modified-text: #b96a12;
+  --badge-added-bg: #ddefdd;
+  --badge-added-text: var(--added);
+  --badge-deleted-bg: #f9dbd6;
+  --badge-deleted-text: var(--removed);
+  --badge-renamed-bg: #f3e8c8;
+  --badge-renamed-text: var(--renamed);
+  --shadow-menu: 0 6px 24px rgba(20, 40, 43, 0.14);
+  --shadow-card: 0 1px 2px rgba(20, 40, 43, 0.05);
+  --overlay-scrim: rgba(14, 42, 46, 0.4);
+}

@@ -1,0 +1,22 @@
+/* Prologue type system.
+   Three voices: serif for the brand + section headings, sans for UI copy,
+   mono for everything git (paths, branches, diffs, comment IDs). */
+:root {
+  --font-serif: "Lora", Georgia, "Times New Roman", serif;
+  --font-sans: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --text-xs: 11px;    /* pills, uppercase labels, hints */
+  --text-sm: 12px;    /* diff code, meta, timestamps */
+  --text-base: 13px;  /* UI controls, comment bodies, file paths */
+  --text-md: 14px;    /* body default */
+  --text-lg: 17px;    /* wordmark in title bar */
+  --text-xl: 20px;    /* section headings (serif) */
+  --text-2xl: 28px;   /* welcome heading (serif) */
+
+  --leading-tight: 1.25;
+  --leading-normal: 1.5;
+  --leading-code: 21px; /* fixed diff line height */
+
+  --tracking-caps: 0.06em; /* uppercase sidebar/recents headers */
+}

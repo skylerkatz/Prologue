@@ -1,0 +1,1 @@
+Thread = root card containing indented reply cards and a trailing "\u21b3 Reply" action. Lifecycle lives on the root; resolving collapses the whole thread.\n\n```jsx\n<CommentThread root={{ id: 2, body: "Here is a local comment", time: "Jul 16 at 3:14 PM" }} replies={[{ id: 2, body: "And a reply\u2026", time: "Jul 17 at 9:02 AM" }]} onReply={openComposer} />\n```\n

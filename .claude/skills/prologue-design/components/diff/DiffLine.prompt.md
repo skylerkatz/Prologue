@@ -1,0 +1,1 @@
+One virtualized diff line on the 52px/52px/18px/1fr grid, 12px/21px mono. Additions/deletions tint the row and gutters; selection turns gutters orange.\n\n```jsx\n<DiffLine kind="addition" newNo={63}>$lifetime_but_billable = ...;</DiffLine>\n```\n

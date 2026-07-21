@@ -1,0 +1,1 @@
+Diff file-card header: \u25be disclosure, status badge, bold mono path, +/\u2212 counts, outline "+ Add comment". The j/k keyboard cursor shows as an inset 3px orange bar (focused).\n\n```jsx\n<FileCardHeader path="app/Http/Controllers/My/Billing/BillingController.php" additions={3} deletions={1} onAddComment={add} />\n```\n

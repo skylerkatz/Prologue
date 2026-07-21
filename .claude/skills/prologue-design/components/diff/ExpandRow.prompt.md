@@ -1,0 +1,1 @@
+Collapsed-context row between hunks; orange text links (\u2191/\u2193 Show 20, Expand all) on the subtle band.\n\n```jsx\n<ExpandRow count={59} onShowTop={top} onExpandAll={all} />\n```\n

@@ -1,0 +1,33 @@
+<!-- @dsCard group="Components" viewport="700x400" subtitle="CommentCard, thread with reply, composer" name="Comments" -->
+<!DOCTYPE html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css"><style>body{margin:0;padding:16px;font-family:var(--font-sans);font-size:13px;color:var(--text);background:var(--bg-app)}.g{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.lbl{font-family:var(--font-mono);font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin:14px 0 6px}.lbl:first-child{margin-top:0}</style></head><body>
+<div style="display:flex;flex-direction:column;gap:14px;max-width:660px">
+<article style="background:var(--bg-card);border:1px solid var(--border);border-left:3px solid var(--comment-accent-border);border-radius:8px">
+  <header style="display:flex;align-items:center;gap:8px;padding:8px 12px 0">
+    <span style="width:26px;height:26px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;background:var(--teal-800);color:var(--text-on-dark);font-family:var(--font-mono);font-size:11px;font-weight:700">C2</span>
+    <span style="font-weight:700;color:var(--text-strong)">You</span>
+    <span style="font-size:12px;color:var(--text-muted)">Lines 95–98</span>
+    <span style="font-size:12px;color:var(--text-muted)">Jul 16 at 3:14 PM</span>
+    <span style="flex:1"></span>
+    <button style="font-family:var(--font-sans);font-size:13px;padding:5px 13px;border-radius:6px;cursor:pointer;background:transparent;color:var(--text-muted);border:1px solid transparent;font-weight:500;padding:2px 9px;font-size:12px">Edit</button><button style="font-family:var(--font-sans);font-size:13px;padding:5px 13px;border-radius:6px;cursor:pointer;background:transparent;color:var(--text-muted);border:1px solid transparent;font-weight:500;padding:2px 9px;font-size:12px">Delete</button>
+  </header>
+  <p style="margin:0;padding:6px 12px 12px;font-size:13.5px">Here is a local comment</p>
+  <div style="display:flex;flex-direction:column;gap:8px;padding:0 12px 10px">
+    <article style="background:var(--bg-subtle);border:1px solid var(--border);border-radius:8px;margin-left:24px">
+      <header style="display:flex;align-items:center;gap:8px;padding:8px 12px 0">
+        <span style="width:22px;height:22px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;background:var(--teal-800);color:var(--text-on-dark);font-family:var(--font-mono);font-size:9.5px;font-weight:700">C2</span>
+        <span style="font-weight:700;color:var(--text-strong)">You</span>
+        <span style="font-size:12px;color:var(--text-muted)">Jul 17 at 9:02 AM</span>
+        <span style="flex:1"></span>
+        <button style="font-family:var(--font-sans);font-size:13px;padding:5px 13px;border-radius:6px;cursor:pointer;background:transparent;color:var(--text-muted);border:1px solid transparent;font-weight:500;padding:2px 9px;font-size:12px">Edit</button><button style="font-family:var(--font-sans);font-size:13px;padding:5px 13px;border-radius:6px;cursor:pointer;background:transparent;color:var(--text-muted);border:1px solid transparent;font-weight:500;padding:2px 9px;font-size:12px">Delete</button>
+      </header>
+      <p style="margin:0;padding:6px 12px 12px;font-size:13.5px">And a reply — one level of nesting, indented once and no further.</p>
+    </article>
+    <span><button style="font-family:var(--font-sans);font-size:13px;padding:5px 13px;border-radius:6px;cursor:pointer;background:transparent;color:var(--text-muted);border:1px solid transparent;font-weight:500;padding:2px 9px;font-size:12px;color:var(--text);font-weight:600">↳ Reply</button></span>
+  </div>
+</article>
+<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:8px 10px 10px">
+  <div style="border:1px solid var(--border-strong);border-radius:6px;padding:7px 9px;color:var(--text-muted);font-size:13px;min-height:48px">Comment on the selected lines…</div>
+  <div style="display:flex;align-items:center;gap:8px;margin-top:7px"><button style="font-family:var(--font-sans);font-size:13px;padding:5px 13px;border-radius:6px;cursor:pointer;background:var(--accent);color:#fff;border:1px solid transparent;font-weight:600;opacity:.55;padding:2px 9px;font-size:12px">Comment</button><button style="font-family:var(--font-sans);font-size:13px;padding:5px 13px;border-radius:6px;cursor:pointer;background:var(--bg-card);color:var(--text);border:1px solid var(--border);font-weight:500;padding:2px 9px;font-size:12px">Cancel</button><span style="margin-left:auto;font-size:11.5px;color:var(--text-muted)">⌘↩ to submit</span></div>
+</div>
+</div>
+</body></html>

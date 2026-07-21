@@ -1,0 +1,22 @@
+/* Prologue spacing, radii, layout constants. */
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  --radius-sm: 4px;   /* status badges, inline code, intraline marks */
+  --radius-md: 6px;   /* buttons, selects, composers, menus */
+  --radius-lg: 8px;   /* file cards, comment cards */
+  --radius-xl: 10px;  /* panels, archive dialog, window */
+  --radius-pill: 999px;
+
+  --sidebar-width: 288px;
+  --titlebar-height: 44px;
+  --toolbar-height: 52px;
+  --gutter-col: 52px;      /* one line-number column */
+  --diff-indent: 24px;     /* reply indent = one level, no further */
+}

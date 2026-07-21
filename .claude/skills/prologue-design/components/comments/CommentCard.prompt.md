@@ -1,0 +1,1 @@
+Comment card per the mockup: white, 8px radius, 3px orange left rail, teal C-id avatar, bold "You", muted meta, quiet ghost actions right-aligned. Replies set isReply (24px indent, subtle bg, no rail).\n\n```jsx\n<CommentCard id={2} body="Here is a local comment" location="Lines 95\u201398" time="Jul 16 at 3:14 PM" />\n```\n

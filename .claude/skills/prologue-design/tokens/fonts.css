@@ -1,0 +1,5 @@
+/* Prologue webfonts — served from Google Fonts (see readme: font substitution note).
+   Lora        — wordmark + section headings (serif)
+   IBM Plex Sans — UI copy, comment bodies, labels
+   IBM Plex Mono — code, diffs, file paths, branch names */
+@import url("https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400..700;1,400..700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap");
