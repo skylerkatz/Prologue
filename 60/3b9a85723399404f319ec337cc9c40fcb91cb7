@@ -1,0 +1,19 @@
+src-tauri/Cargo.toml
+  s_79e9c12cf6af5f::t_3123cac227eb0b 13-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "603b9a85723399404f319ec337cc9c40fcb91cb7",
+  "prompts": {},
+  "sessions": {
+    "s_79e9c12cf6af5f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "406197cd-fd70-49d4-8db3-565123f3b763",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
