@@ -1,0 +1,19 @@
+.claude/skills/prologue-review/SKILL.md
+  s_e64fdb69f33152::t_3ed51861a294f6 1-74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "448438e2dee2e27fd5ff57421b9c25ac13d0aeb7",
+  "prompts": {},
+  "sessions": {
+    "s_e64fdb69f33152": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "69b5473f-0f55-4375-bb62-ecd6e35f22af",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
