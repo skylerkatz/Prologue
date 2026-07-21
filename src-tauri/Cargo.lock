@@ -699,6 +699,7 @@ version = "0.1.0"
 dependencies = [
  "notify",
  "prologue-core",
+ "serde",
  "tauri",
  "tauri-build",
  "tauri-plugin-clipboard-manager",

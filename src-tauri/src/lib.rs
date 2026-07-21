@@ -1,9 +1,30 @@
+mod cli_install;
 mod commands;
 mod watcher;
 
 use prologue_core::db;
 use std::sync::Mutex;
 use tauri::Manager;
+
+/// Add "Install 'prologue' Command Line Tool…" to the app submenu, after
+/// the About item.
+fn add_install_cli_menu_item(app: &tauri::App) -> tauri::Result<()> {
+    use tauri::menu::{Menu, MenuItem};
+
+    let menu = Menu::default(app.handle())?;
+    if let Some(app_submenu) = menu.items()?.first().and_then(|i| i.as_submenu().cloned()) {
+        let item = MenuItem::with_id(
+            app,
+            "install-cli",
+            format!("Install '{}' Command Line Tool…", cli_install::CLI_NAME),
+            true,
+            None::<&str>,
+        )?;
+        app_submenu.insert(&item, 1)?;
+    }
+    app.set_menu(menu)?;
+    Ok(())
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -22,7 +43,22 @@ pub fn run() {
             // External writers (the prologue CLI) commit to reviews.db
             // behind the app's back; surface them as `comments-changed`.
             watcher::start_db_watching(app.handle().clone(), dir)?;
+            add_install_cli_menu_item(app)?;
             Ok(())
+        })
+        .on_menu_event(|app, event| {
+            if event.id().as_ref() == "install-cli" {
+                use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+                let (kind, text) = match cli_install::install_cli(None) {
+                    Ok(report) => (MessageDialogKind::Info, report.message),
+                    Err(e) => (MessageDialogKind::Error, format!("Install failed: {e}")),
+                };
+                app.dialog()
+                    .message(text)
+                    .title("Install Command Line Tool")
+                    .kind(kind)
+                    .show(|_| {});
+            }
         });
 
     // Agent automation bridge (WebSocket on 127.0.0.1:9223+). Debug builds
@@ -52,6 +88,7 @@ pub fn run() {
             commands::archive_stale_reviews,
             commands::list_archived_reviews,
             commands::export_review,
+            cli_install::install_cli,
             watcher::start_watching,
             watcher::stop_watching
         ])
