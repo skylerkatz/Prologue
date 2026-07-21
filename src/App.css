@@ -1151,16 +1151,19 @@ button.primary:hover {
   color: var(--danger);
 }
 
-.diff-file-empty {
-  padding: 0.75rem;
-  color: var(--text-muted);
-}
-
+/* Whitespace-suppression bands: quiet italic strips, per the UI kit. */
+.diff-file-empty,
 .diff-hidden-comments {
-  padding: 0.5rem 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 26px;
+  padding: 4px 12px;
+  background: var(--bg-subtle);
   color: var(--text-muted);
-  font-size: 0.85rem;
+  font-size: 12px;
   font-style: italic;
+  text-align: center;
 }
 
 /* --- M5: comment lifecycle ------------------------------------------- */
