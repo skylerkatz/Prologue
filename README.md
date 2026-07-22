@@ -19,6 +19,9 @@ Built with Tauri 2, React, and TypeScript.
 - `npm run build` — type-check + production frontend build. The script pins
   `NODE_ENV=production` because a shell exporting `NODE_ENV=development` would
   otherwise make `vite build` ship the development React build.
+- `npm run test` — frontend unit tests (Vitest, no DOM environment) covering
+  the diff row model, intraline segments, file guards, recents, and pure
+  helpers; Tauri plugins are mocked.
 - `cargo test` / `cargo clippy --all-targets` from `src-tauri/` — Rust checks
   across the workspace (app, `prologue-core`, `prologue`)
 
