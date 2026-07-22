@@ -18,6 +18,7 @@ export function GuideMenu({
   hasTarget,
   emptyDiff,
   guide,
+  isStale,
   generating,
   error,
   clearError,
@@ -69,8 +70,19 @@ export function GuideMenu({
         : !cliAvailable && guide === null
           ? "Install Claude Code to generate guides"
           : guide !== null
-            ? "Review guide options"
+            ? isStale
+              ? "Review guide options — the diff has changed since the guide was generated"
+              : "Review guide options"
             : "Generate a review guide — sends the diff to Anthropic through your Claude Code account";
+  // Regenerate rides the exact gates Generate does; a stored guide keeps
+  // the button itself enabled, so the item carries its own reason.
+  const regenerateBlocked = !hasTarget
+    ? "Guides need an active review"
+    : emptyDiff
+      ? "No changes to guide"
+      : !cliAvailable
+        ? "Install Claude Code to generate guides"
+        : null;
 
   return (
     <div className="export-menu" ref={rootRef}>
@@ -82,6 +94,9 @@ export function GuideMenu({
         onClick={() => setOpen((prev) => !prev)}
       >
         {generating ? "Generating…" : "Guide ▾"}
+        {!generating && guide !== null && isStale && (
+          <span className="guide-stale-dot" aria-hidden="true" />
+        )}
       </button>
       {open && (
         <div className="export-options" role="menu">
@@ -97,16 +112,39 @@ export function GuideMenu({
               Cancel
             </button>
           ) : guide !== null ? (
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                setOpen(false);
-                onToggleGrouped();
-              }}
-            >
-              {grouped ? "Show flat file list" : "Group files by section"}
-            </button>
+            <>
+              {isStale && (
+                <p className="menu-note stale" role="status">
+                  Guide is stale — the diff has changed since it was
+                  generated.
+                </p>
+              )}
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setOpen(false);
+                  onToggleGrouped();
+                }}
+              >
+                {grouped ? "Show flat file list" : "Group files by section"}
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                disabled={regenerateBlocked !== null}
+                title={
+                  regenerateBlocked ??
+                  "Replaces the guide — sends the diff to Anthropic through your Claude Code account"
+                }
+                onClick={() => {
+                  setOpen(false);
+                  onGenerate();
+                }}
+              >
+                Regenerate guide
+              </button>
+            </>
           ) : (
             <>
               <button

@@ -558,6 +558,37 @@ button.primary:hover {
   line-height: 1.45;
 }
 
+/* The Guide menu's staleness callout: same amber as changed-since-review.
+   It leads the dropdown, so the fine-print rule flips to the bottom edge. */
+.menu-note.stale {
+  border-top: none;
+  border-bottom: 1px solid var(--border);
+  color: var(--renamed);
+}
+
+/* A gated menu item (Regenerate without the CLI) recedes instead of hiding
+   so its tooltip can say why. */
+.export-options button:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.export-options button:disabled:hover {
+  background: none;
+}
+
+/* Quiet staleness cue on the Guide button — the sidebar's
+   changed-since-review dot, relocated to the toolbar. */
+.guide-stale-dot {
+  display: inline-block;
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--renamed);
+}
+
 .copy-toast {
   position: fixed;
   bottom: 20px;
