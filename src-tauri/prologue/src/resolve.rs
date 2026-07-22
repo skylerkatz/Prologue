@@ -163,11 +163,7 @@ mod tests {
     use super::*;
     use prologue_core::diff::DiffMode;
     use prologue_core::review::open_review_impl;
-    use prologue_core::testutil::FixtureRepo;
-
-    fn test_db(dir: &tempfile::TempDir) -> Connection {
-        prologue_core::db::open(&dir.path().join("reviews.db")).unwrap()
-    }
+    use prologue_core::testutil::{open_test_db as test_db, FixtureRepo};
 
     #[test]
     fn review_ref_parses_ids_and_repo_at_branch() {

@@ -537,7 +537,7 @@ mod tests {
         use prologue_core::testutil::FixtureRepo;
 
         let dir = tempfile::tempdir().unwrap();
-        let conn = prologue_core::db::open(&dir.path().join("reviews.db")).unwrap();
+        let conn = prologue_core::testutil::open_test_db(&dir);
         let fixture = FixtureRepo::new();
         fixture.commit_file("a.txt", "one\n", "initial");
         fixture.create_branch("feature");

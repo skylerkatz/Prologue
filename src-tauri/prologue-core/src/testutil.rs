@@ -1,8 +1,15 @@
 use git2::build::CheckoutBuilder;
 use git2::{Commit, Oid, Repository, RepositoryInitOptions, Signature};
+use rusqlite::Connection;
 use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
+
+/// A fresh `reviews.db` inside `dir`, migrated to the current schema — the
+/// database every review/comment/export/show test opens.
+pub fn open_test_db(dir: &TempDir) -> Connection {
+    crate::db::open(&dir.path().join("reviews.db")).unwrap()
+}
 
 /// Throwaway git repository in a temp dir for exercising branch and diff logic.
 pub struct FixtureRepo {
@@ -19,6 +26,27 @@ impl Default for FixtureRepo {
 impl FixtureRepo {
     pub fn new() -> Self {
         Self::with_initial_head("main")
+    }
+
+    /// The standard review fixture shared by the review/comment/export/show
+    /// tests: main has a 10-line code.txt (`alpha 1`…`alpha 10`) plus d.txt;
+    /// feature replaces line 6 with "beta 6a"/"beta 6b" and deletes d.txt.
+    pub fn standard_review_fixture() -> Self {
+        let fixture = Self::new();
+        let lines: Vec<String> = (1..=10).map(|n| format!("alpha {n}")).collect();
+        fixture.write("code.txt", &(lines.join("\n") + "\n"));
+        fixture.write("d.txt", "doomed one\ndoomed two\n");
+        fixture.stage(&["code.txt", "d.txt"]);
+        fixture.commit("initial");
+
+        fixture.create_branch("feature");
+        let mut changed = lines.clone();
+        changed[5] = "beta 6a\nbeta 6b".to_owned();
+        fixture.write("code.txt", &(changed.join("\n") + "\n"));
+        fixture.stage(&["code.txt"]);
+        fixture.stage_removal(&["d.txt"]);
+        fixture.commit("feature work");
+        fixture
     }
 
     pub fn with_initial_head(branch: &str) -> Self {

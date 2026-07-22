@@ -498,30 +498,10 @@ pub fn unmark_file_reviewed_impl(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testutil::FixtureRepo;
+    use crate::testutil::{open_test_db as test_db, FixtureRepo};
 
-    fn test_db(dir: &tempfile::TempDir) -> Connection {
-        crate::db::open(&dir.path().join("reviews.db")).unwrap()
-    }
-
-    /// main has a 10-line file; feature replaces line 6 with two lines and
-    /// deletes d.txt.
     fn fixture() -> FixtureRepo {
-        let fixture = FixtureRepo::new();
-        let lines: Vec<String> = (1..=10).map(|n| format!("alpha {n}")).collect();
-        fixture.write("code.txt", &(lines.join("\n") + "\n"));
-        fixture.write("d.txt", "doomed one\ndoomed two\n");
-        fixture.stage(&["code.txt", "d.txt"]);
-        fixture.commit("initial");
-
-        fixture.create_branch("feature");
-        let mut changed = lines.clone();
-        changed[5] = "beta 6a\nbeta 6b".to_owned();
-        fixture.write("code.txt", &(changed.join("\n") + "\n"));
-        fixture.stage(&["code.txt"]);
-        fixture.stage_removal(&["d.txt"]);
-        fixture.commit("feature work");
-        fixture
+        FixtureRepo::standard_review_fixture()
     }
 
     fn new_comment(review_id: i64, level: CommentLevel, body: &str) -> NewComment {

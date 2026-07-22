@@ -162,22 +162,10 @@ mod tests {
     use super::*;
     use prologue_core::diff::DiffMode;
     use prologue_core::review::{create_comment_impl, open_review_impl, NewComment};
-    use prologue_core::testutil::FixtureRepo;
+    use prologue_core::testutil::{open_test_db as test_db, FixtureRepo};
 
-    fn test_db(dir: &tempfile::TempDir) -> Connection {
-        prologue_core::db::open(&dir.path().join("reviews.db")).unwrap()
-    }
-
-    /// main: 10-line code.txt; feature: line 6 replaced by two lines.
     fn fixture() -> FixtureRepo {
-        let fixture = FixtureRepo::new();
-        let lines: Vec<String> = (1..=10).map(|n| format!("alpha {n}")).collect();
-        fixture.commit_file("code.txt", &(lines.join("\n") + "\n"), "initial");
-        fixture.create_branch("feature");
-        let mut changed = lines.clone();
-        changed[5] = "beta 6a\nbeta 6b".to_owned();
-        fixture.commit_file("code.txt", &(changed.join("\n") + "\n"), "feature work");
-        fixture
+        FixtureRepo::standard_review_fixture()
     }
 
     fn comment(review_id: i64, parent_id: Option<i64>, body: &str) -> NewComment {
