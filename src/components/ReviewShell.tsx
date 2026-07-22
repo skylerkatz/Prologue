@@ -49,7 +49,6 @@ interface ReviewShellProps {
   onBaseBranchChange: (base: string) => void;
   onModeChange: (mode: WorkingTreeMode) => void;
   onHideWhitespaceChange: (hide: boolean) => void;
-  onRefresh: () => void;
   onSwitchRepo: () => void;
 }
 
@@ -80,7 +79,6 @@ export function ReviewShell({
   onBaseBranchChange,
   onModeChange,
   onHideWhitespaceChange,
-  onRefresh,
   onSwitchRepo,
 }: ReviewShellProps) {
   const [view, setView] = useState<DiffViewState | null>(null);
@@ -226,10 +224,27 @@ export function ReviewShell({
           new Map(reviewedRows.map((r) => [r.filePath, r.fingerprint])),
         );
       })().catch(() => {
-        // Leave the current comments in place; the manual Refresh button
-        // still covers everything.
+        // Leave the current comments in place; View > Refresh still
+        // covers everything.
       });
     }).then((fn) => {
+      if (disposed) {
+        fn();
+      } else {
+        unlisten = fn;
+      }
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+
+  // View > Archived Reviews… (native menu) — replaces the old toolbar button.
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | null = null;
+    void listen("menu-view-archived", () => setShowArchive(true)).then((fn) => {
       if (disposed) {
         fn();
       } else {
@@ -456,23 +471,6 @@ export function ReviewShell({
           onChange={onHideWhitespaceChange}
         />
         <ExportMenu target={exportTarget} openCount={openCount} />
-        <button
-          type="button"
-          className="refresh-button"
-          title="Browse archived reviews (read-only)"
-          onClick={() => setShowArchive(true)}
-        >
-          Archived
-        </button>
-        <button
-          type="button"
-          className="refresh-button"
-          title="Refresh branches and diff"
-          onClick={onRefresh}
-          disabled={loading}
-        >
-          ↻ Refresh
-        </button>
       </header>
       <main className="diff-main">
         {error !== null ? (

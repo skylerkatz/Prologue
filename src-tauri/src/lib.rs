@@ -4,15 +4,41 @@ mod watcher;
 
 use prologue_core::db;
 use std::sync::Mutex;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
-/// Add "Install 'prologue' Command Line Tool…" to the app submenu, after
-/// the About item.
-fn add_install_cli_menu_item(app: &tauri::App) -> tauri::Result<()> {
-    use tauri::menu::{Menu, MenuItem};
+/// Menu item id for the View > Archived Reviews… entry.
+const MENU_VIEW_ARCHIVED_ID: &str = "view-archived";
+/// Event emitted to the frontend when View > Archived Reviews… is chosen.
+const MENU_VIEW_ARCHIVED_EVENT: &str = "menu-view-archived";
+/// Menu item id for the View > Refresh entry.
+const MENU_REFRESH_ID: &str = "view-refresh";
+/// Event emitted to the frontend when View > Refresh is chosen.
+const MENU_REFRESH_EVENT: &str = "menu-refresh";
+
+/// Handles to the View menu items that only make sense with a repo open;
+/// the frontend enables them on repo open and disables them on the
+/// welcome screen.
+struct RepoMenuItems {
+    refresh: tauri::menu::MenuItem<tauri::Wry>,
+    archived: tauri::menu::MenuItem<tauri::Wry>,
+}
+
+#[tauri::command]
+fn set_repo_menu_enabled(app: tauri::AppHandle, enabled: bool) {
+    if let Some(items) = app.try_state::<RepoMenuItems>() {
+        let _ = items.refresh.set_enabled(enabled);
+        let _ = items.archived.set_enabled(enabled);
+    }
+}
+
+/// Customize the default menu: "Install 'prologue' Command Line Tool…" in
+/// the app submenu after About, and "Refresh" / "Archived Reviews…" in View.
+fn setup_menu(app: &tauri::App) -> tauri::Result<()> {
+    use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 
     let menu = Menu::default(app.handle())?;
-    if let Some(app_submenu) = menu.items()?.first().and_then(|i| i.as_submenu().cloned()) {
+    let items = menu.items()?;
+    if let Some(app_submenu) = items.first().and_then(|i| i.as_submenu()) {
         let item = MenuItem::with_id(
             app,
             "install-cli",
@@ -21,6 +47,34 @@ fn add_install_cli_menu_item(app: &tauri::App) -> tauri::Result<()> {
             None::<&str>,
         )?;
         app_submenu.insert(&item, 1)?;
+    }
+    // Locate View by title — Menu::default gives it no stable id.
+    if let Some(view_submenu) = items
+        .iter()
+        .filter_map(|i| i.as_submenu())
+        .find(|s| s.text().is_ok_and(|t| t == "View"))
+    {
+        // Both start disabled until the frontend reports an open repo —
+        // neither action means anything on the welcome screen.
+        let refresh = MenuItem::with_id(
+            app,
+            MENU_REFRESH_ID,
+            "Refresh",
+            false,
+            Some("CmdOrCtrl+R"),
+        )?;
+        let archived = MenuItem::with_id(
+            app,
+            MENU_VIEW_ARCHIVED_ID,
+            "Archived Reviews…",
+            false,
+            Some("CmdOrCtrl+Shift+A"),
+        )?;
+        // "Enter Full Screen" conventionally stays at the bottom.
+        view_submenu.insert(&refresh, 0)?;
+        view_submenu.insert(&archived, 1)?;
+        view_submenu.insert(&PredefinedMenuItem::separator(app)?, 2)?;
+        app.manage(RepoMenuItems { refresh, archived });
     }
     app.set_menu(menu)?;
     Ok(())
@@ -43,11 +97,11 @@ pub fn run() {
             // External writers (the prologue CLI) commit to reviews.db
             // behind the app's back; surface them as `comments-changed`.
             watcher::start_db_watching(app.handle().clone(), dir)?;
-            add_install_cli_menu_item(app)?;
+            setup_menu(app)?;
             Ok(())
         })
-        .on_menu_event(|app, event| {
-            if event.id().as_ref() == "install-cli" {
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "install-cli" => {
                 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
                 let (kind, text) = match cli_install::install_cli(None) {
                     Ok(report) => (MessageDialogKind::Info, report.message),
@@ -59,6 +113,15 @@ pub fn run() {
                     .kind(kind)
                     .show(|_| {});
             }
+            MENU_VIEW_ARCHIVED_ID => {
+                // ReviewShell listens; with no repo open nothing is mounted
+                // and the event is a deliberate no-op.
+                let _ = app.emit(MENU_VIEW_ARCHIVED_EVENT, ());
+            }
+            MENU_REFRESH_ID => {
+                let _ = app.emit(MENU_REFRESH_EVENT, ());
+            }
+            _ => {}
         });
 
     // Agent automation bridge (WebSocket on 127.0.0.1:9223+). Debug builds
@@ -94,7 +157,8 @@ pub fn run() {
             commands::export_review,
             cli_install::install_cli,
             watcher::start_watching,
-            watcher::stop_watching
+            watcher::stop_watching,
+            set_repo_menu_enabled
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

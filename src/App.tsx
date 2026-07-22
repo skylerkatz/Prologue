@@ -5,6 +5,7 @@ import {
   findActiveReview,
   listBranches,
   openRepo,
+  setRepoMenuEnabled,
   startWatching,
   stopWatching,
 } from "./ipc";
@@ -76,7 +77,7 @@ function App() {
       setBaseBranch(baseBranch);
       setRecents(await addRecentRepo(repo.path));
       // Auto-refresh is an enhancement; if watching fails, the manual
-      // Refresh button still covers everything.
+      // View > Refresh still covers everything.
       startWatching(repo.path).catch(() => {});
     } catch (e) {
       setError(typeof e === "string" ? e : String(e));
@@ -128,7 +129,7 @@ function App() {
   refreshRef.current = refresh;
 
   // The Rust watcher emits `repo-changed` (debounced) on working-tree or
-  // .git activity; run the exact same path as the manual Refresh button.
+  // .git activity; run the exact same path as View > Refresh.
   const repoPath = openState?.repo.path ?? null;
   useEffect(() => {
     if (repoPath === null) {
@@ -152,6 +153,31 @@ function App() {
       unlisten?.();
     };
   }, [repoPath]);
+
+  // View > Refresh / Archived Reviews… only make sense with a repo open;
+  // the items start disabled on the Rust side and follow the repo from here.
+  useEffect(() => {
+    setRepoMenuEnabled(repoPath !== null).catch(() => {});
+  }, [repoPath]);
+
+  // View > Refresh (⌘R) — same path as the old toolbar Refresh button.
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | null = null;
+    void listen("menu-refresh", () => {
+      void refreshRef.current();
+    }).then((fn) => {
+      if (disposed) {
+        fn();
+      } else {
+        unlisten = fn;
+      }
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
 
   return (
     <div className="app-shell">
@@ -177,7 +203,6 @@ function App() {
           onBaseBranchChange={setBaseBranch}
           onModeChange={changeMode}
           onHideWhitespaceChange={changeHideWhitespace}
-          onRefresh={() => void refresh()}
           onSwitchRepo={() => {
             stopWatching().catch(() => {});
             setOpenState(null);

@@ -141,6 +141,11 @@ export function listArchivedReviews(
   return invoke("list_archived_reviews", { repoPath });
 }
 
+/** Enable/disable the repo-dependent View menu items (Refresh, Archived). */
+export function setRepoMenuEnabled(enabled: boolean): Promise<void> {
+  return invoke("set_repo_menu_enabled", { enabled });
+}
+
 export function listComments(reviewId: number): Promise<Comment[]> {
   return invoke("list_comments", { reviewId });
 }
