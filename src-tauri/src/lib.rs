@@ -122,6 +122,15 @@ pub fn run() {
             // Reviews and comments live in the app data dir — never inside
             // the reviewed repository.
             let dir = app.path().app_data_dir()?;
+            // tauri.conf.json's `identifier` decides this directory; the CLI
+            // reaches the same file via db::APP_IDENTIFIER. A mismatch would
+            // silently split the app and CLI onto two databases.
+            debug_assert!(
+                dir.ends_with(db::APP_IDENTIFIER),
+                "app_data_dir {dir:?} does not end with db::APP_IDENTIFIER \
+                 ({}) — tauri.conf.json and prologue-core disagree",
+                db::APP_IDENTIFIER
+            );
             std::fs::create_dir_all(&dir)?;
             let conn = db::open(&dir.join("reviews.db"))?;
             app.manage(db::Db(Mutex::new(conn)));
@@ -204,4 +213,22 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    /// tauri.conf.json's `identifier` and core's APP_IDENTIFIER must name
+    /// the same directory — a mismatch silently splits the app and CLI onto
+    /// two databases. The startup debug_assert catches it at runtime; this
+    /// catches it in CI without launching the app.
+    #[test]
+    fn bundle_identifier_matches_the_shared_constant() {
+        let conf = include_str!("../tauri.conf.json");
+        let expected = format!("\"identifier\": \"{}\"", prologue_core::db::APP_IDENTIFIER);
+        assert!(
+            conf.contains(&expected),
+            "tauri.conf.json does not declare {expected} — keep it in sync \
+             with prologue_core::db::APP_IDENTIFIER"
+        );
+    }
 }

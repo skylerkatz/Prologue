@@ -1,9 +1,15 @@
-use rusqlite::Connection;
+use rusqlite::{Connection, OpenFlags};
 use std::path::Path;
 use std::sync::Mutex;
 
 /// Review database handle; the app manages it as Tauri state.
 pub struct Db(pub Mutex<Connection>);
+
+/// The app's bundle identifier — also the name of its data directory under
+/// ~/Library/Application Support, where reviews.db lives. Must stay in sync
+/// with tauri.conf.json's `identifier` (the app debug-asserts the match at
+/// startup); the CLI derives its default database path from it.
+pub const APP_IDENTIFIER: &str = "com.skylerkatz.prologue";
 
 /// Timestamp expression used for all created_at/updated_at columns:
 /// ISO-8601 UTC with millisecond precision.
@@ -70,8 +76,10 @@ const MIGRATIONS: &[&str] = &[
 pub const SCHEMA_VERSION: i64 = MIGRATIONS.len() as i64;
 
 /// Open (creating if needed) the reviews database at `path` and bring its
-/// schema up to date.
+/// schema up to date. Files this build cannot understand — foreign
+/// databases, or a schema newer than the binary — are refused untouched.
 pub fn open(path: &Path) -> Result<Connection, String> {
+    check_compatible(path)?;
     let conn = Connection::open(path)
         .map_err(|e| format!("Failed to open review database: {e}"))?;
     conn.pragma_update(None, "journal_mode", "WAL")
@@ -84,6 +92,58 @@ pub fn open(path: &Path) -> Result<Connection, String> {
         .map_err(|e| format!("Failed to set busy timeout: {e}"))?;
     migrate(&conn)?;
     Ok(conn)
+}
+
+/// The schema-version seatbelt, shared by every binary that opens the
+/// database: a file with foreign tables is not ours to touch, and a schema
+/// newer than this build must not be operated on (migrations only go
+/// forward). Inspected over a separate read-only connection so a refused
+/// file is left byte-identical. A missing file passes — `open` creates it.
+fn check_compatible(path: &Path) -> Result<(), String> {
+    if !path.is_file() {
+        return Ok(());
+    }
+    let conn = Connection::open_with_flags(
+        path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(|e| format!("Failed to open review database: {e}"))?;
+    let db_err = |e: rusqlite::Error| format!("Failed to read {}: {e}", path.display());
+
+    let tables: i64 = conn
+        .query_row("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table'", [], |r| r.get(0))
+        .map_err(db_err)?;
+    let has_migrations: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master
+             WHERE type = 'table' AND name = 'schema_migrations'",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(db_err)?;
+    if has_migrations == 0 {
+        // A brand-new empty file may be migrated; anything with foreign
+        // tables is not ours to touch.
+        return if tables == 0 {
+            Ok(())
+        } else {
+            Err(format!("{} is not a Prologue reviews database", path.display()))
+        };
+    }
+
+    let version = stored_schema_version(&conn).map_err(db_err)?;
+    if version > SCHEMA_VERSION {
+        return Err(format!(
+            "This reviews database is newer than this build (database schema v{version}, \
+             this build knows v{SCHEMA_VERSION}) — update the Prologue app or rebuild prologue"
+        ));
+    }
+    Ok(())
+}
+
+/// The highest applied migration version, 0 on a fresh migrations table.
+fn stored_schema_version(conn: &Connection) -> rusqlite::Result<i64> {
+    conn.query_row("SELECT COALESCE(MAX(version), 0) FROM schema_migrations", [], |r| r.get(0))
 }
 
 fn migrate(conn: &Connection) -> Result<(), String> {
@@ -100,11 +160,7 @@ fn migrate(conn: &Connection) -> Result<(), String> {
         );"
     ))
     .map_err(db_err)?;
-    let current: i64 = conn
-        .query_row("SELECT COALESCE(MAX(version), 0) FROM schema_migrations", [], |r| {
-            r.get(0)
-        })
-        .map_err(db_err)?;
+    let current: i64 = stored_schema_version(conn).map_err(db_err)?;
     for (i, sql) in MIGRATIONS.iter().enumerate() {
         let version = i as i64 + 1;
         if version <= current {
@@ -158,6 +214,53 @@ mod tests {
             .pragma_query_value(None, "busy_timeout", |r| r.get(0))
             .unwrap();
         assert_eq!(timeout, 500);
+    }
+
+    /// The app's own open path (this `open`) must refuse a database written
+    /// by a newer build — same seatbelt the CLI gets.
+    #[test]
+    fn open_refuses_a_database_newer_than_this_binary() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("reviews.db");
+        {
+            let conn = open(&path).unwrap();
+            conn.execute("INSERT INTO schema_migrations (version) VALUES (999)", [])
+                .unwrap();
+        }
+
+        let err = open(&path).unwrap_err();
+        assert!(err.contains("v999"), "{err}");
+        assert!(err.contains(&format!("v{SCHEMA_VERSION}")), "{err}");
+
+        // The refused file was not touched: the recorded version is intact.
+        let conn = Connection::open(&path).unwrap();
+        let version: i64 = conn
+            .query_row("SELECT MAX(version) FROM schema_migrations", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, 999);
+    }
+
+    #[test]
+    fn open_refuses_a_foreign_database() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("other.db");
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch("CREATE TABLE users (id INTEGER PRIMARY KEY);").unwrap();
+        }
+
+        let err = open(&path).unwrap_err();
+        assert!(err.contains("not a Prologue reviews database"), "{err}");
+        // No schema was created alongside the foreign tables.
+        let conn = Connection::open(&path).unwrap();
+        let reviews: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'reviews'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(reviews, 0);
     }
 
     #[test]

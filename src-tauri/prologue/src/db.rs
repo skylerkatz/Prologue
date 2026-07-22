@@ -1,20 +1,23 @@
-//! Opening the reviews database read-only, with the schema-version seatbelt.
+//! Opening the reviews database read-only. The schema-version seatbelt
+//! lives in `prologue_core::db::open`, shared with the app.
 
-use prologue_core::db::SCHEMA_VERSION;
-use prologue_core::rusqlite::{Connection, OpenFlags};
+use prologue_core::db::APP_IDENTIFIER;
+use prologue_core::rusqlite::Connection;
 use std::path::{Path, PathBuf};
 
 /// The Prologue app's database (its Tauri app-data directory).
 pub fn default_db_path() -> Result<PathBuf, String> {
     let home = std::env::var_os("HOME").ok_or("HOME is not set")?;
     Ok(PathBuf::from(home)
-        .join("Library/Application Support/com.skylerkatz.prologue/reviews.db"))
+        .join("Library/Application Support")
+        .join(APP_IDENTIFIER)
+        .join("reviews.db"))
 }
 
-/// Open `path` for reading. The schema version is checked before anything
-/// else touches the file: a database newer than this binary is refused, an
-/// older one is migrated by the same shared migrations the app runs. The
-/// returned connection is `query_only` — writes fail at the SQLite level.
+/// Open `path` for reading. Core's open runs the shared schema seatbelt
+/// first: a database newer than this binary is refused, an older one is
+/// migrated by the same shared migrations the app runs. The returned
+/// connection is `query_only` — writes fail at the SQLite level.
 pub fn open_reviews_db(path: &Path) -> Result<Connection, String> {
     let conn = open_checked(path)?;
     conn.pragma_update(None, "query_only", "ON")
@@ -30,62 +33,21 @@ pub fn open_reviews_db_for_write(path: &Path) -> Result<Connection, String> {
 }
 
 fn open_checked(path: &Path) -> Result<Connection, String> {
+    // The CLI never creates the database (core's open would) — a missing
+    // file means the app has not run yet.
     if !path.is_file() {
         return Err(format!(
             "No reviews database at {} — launch the Prologue app once to create it.",
             path.display()
         ));
     }
-    check_schema_version(path)?;
     prologue_core::db::open(path)
-}
-
-/// Inspect the recorded schema version over a read-only connection (zero
-/// side effects) and refuse anything this binary is too old to understand.
-fn check_schema_version(path: &Path) -> Result<(), String> {
-    let conn = Connection::open_with_flags(
-        path,
-        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-    )
-    .map_err(|e| format!("Failed to open review database: {e}"))?;
-    let db_err = |e: prologue_core::rusqlite::Error| format!("Failed to read {}: {e}", path.display());
-
-    let tables: i64 = conn
-        .query_row("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table'", [], |r| r.get(0))
-        .map_err(db_err)?;
-    let has_migrations: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM sqlite_master
-             WHERE type = 'table' AND name = 'schema_migrations'",
-            [],
-            |r| r.get(0),
-        )
-        .map_err(db_err)?;
-    if has_migrations == 0 {
-        // A brand-new empty file may be migrated; anything with foreign
-        // tables is not ours to touch.
-        return if tables == 0 {
-            Ok(())
-        } else {
-            Err(format!("{} is not a Prologue reviews database", path.display()))
-        };
-    }
-
-    let version: i64 = conn
-        .query_row("SELECT COALESCE(MAX(version), 0) FROM schema_migrations", [], |r| r.get(0))
-        .map_err(db_err)?;
-    if version > SCHEMA_VERSION {
-        return Err(format!(
-            "prologue is older than your reviews.db (database schema v{version}, \
-             this prologue knows v{SCHEMA_VERSION}) — rebuild prologue"
-        ));
-    }
-    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use prologue_core::db::SCHEMA_VERSION;
 
     fn at_version_db(dir: &tempfile::TempDir) -> PathBuf {
         let path = dir.path().join("reviews.db");
