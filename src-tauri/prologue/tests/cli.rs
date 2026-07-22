@@ -3,10 +3,12 @@
 //! subcommand, the read-only vs write connection selection, the
 //! not-inside-a-repository note, and show's degraded path.
 
-use prologue_core::diff::{DiffMode, DiffSpec};
+use prologue_core::diff::{self, DiffMode, DiffSpec};
 use prologue_core::export::{export_review_impl, ExportFormat};
+use prologue_core::guide::{save_guide_impl, GuideSection, NewGuide};
 use prologue_core::review::{self, CommentLevel, CommentSide, NewComment, Review};
 use prologue_core::testutil::{open_test_db, FixtureRepo};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
@@ -60,6 +62,133 @@ fn seeded(dir: &tempfile::TempDir) -> (PathBuf, FixtureRepo, Review, i64) {
     )
     .unwrap();
     (dir.path().join("reviews.db"), fixture, review, comment.id)
+}
+
+/// Store a two-section guide for the review, as the app's generation would.
+fn seed_guide(dir: &tempfile::TempDir, review: &Review) {
+    let conn = open_test_db(dir);
+    let summary = diff::get_diff_summary(&DiffSpec::from(review), false).unwrap();
+    let fingerprints: BTreeMap<String, String> =
+        summary.files.iter().map(|f| (f.path.clone(), f.fingerprint.clone())).collect();
+    save_guide_impl(
+        &conn,
+        &NewGuide {
+            review_id: review.id,
+            base_ref: review.base_ref.clone(),
+            head_ref: review.branch.clone(),
+            mode: review.mode,
+            fingerprints,
+            model: "claude-test".to_owned(),
+            cost_usd: Some(0.02),
+        },
+        &[
+            GuideSection {
+                title: "Core change".to_owned(),
+                summary: "Line 6 becomes two beta lines.".to_owned(),
+                files: vec!["code.txt".to_owned()],
+            },
+            GuideSection {
+                title: "Cleanup".to_owned(),
+                summary: "Drops the doomed file.".to_owned(),
+                files: vec!["d.txt".to_owned()],
+            },
+        ],
+    )
+    .unwrap();
+}
+
+#[test]
+fn guide_prints_sections_with_file_statuses_and_counts() {
+    let dir = tempfile::tempdir().unwrap();
+    let (db, fixture, review, _) = seeded(&dir);
+    seed_guide(&dir, &review);
+
+    // Bare invocation resolves the review from the cwd's repo and branch.
+    let output = prologue(&db, Path::new(&fixture.path()), &["guide"]);
+    assert!(output.status.success(), "{}", err_str(&output));
+    let text = out_str(&output);
+    assert!(text.contains("Review #"), "{text}");
+    assert!(text.contains("Guide: 2 section(s), 2 file(s) — model claude-test"), "{text}");
+    assert!(text.contains("01/02 Core change"), "{text}");
+    assert!(text.contains("  Line 6 becomes two beta lines."), "{text}");
+    assert!(text.contains("  M code.txt +2 -1"), "{text}");
+    assert!(text.contains("02/02 Cleanup"), "{text}");
+    assert!(text.contains("  D d.txt +0 -2"), "{text}");
+}
+
+#[test]
+fn guide_json_round_trips_the_stored_structure() {
+    let dir = tempfile::tempdir().unwrap();
+    let (db, fixture, review, _) = seeded(&dir);
+    seed_guide(&dir, &review);
+
+    let output =
+        prologue(&db, Path::new(&fixture.path()), &["guide", &review.id.to_string(), "--json"]);
+    assert!(output.status.success(), "{}", err_str(&output));
+    let parsed: serde_json::Value = serde_json::from_str(out_str(&output).trim()).unwrap();
+    assert_eq!(parsed["reviewId"], serde_json::json!(review.id));
+    assert_eq!(parsed["baseRef"], "main");
+    assert_eq!(parsed["headRef"], "feature");
+    assert_eq!(parsed["mode"], "committed");
+    assert_eq!(parsed["model"], "claude-test");
+    assert_eq!(parsed["sections"][0]["title"], "Core change");
+    assert_eq!(parsed["sections"][0]["files"][0], "code.txt");
+    assert_eq!(parsed["sections"][1]["files"], serde_json::json!(["d.txt"]));
+    // Fingerprints ride along for staleness checks by agents.
+    assert!(parsed["fingerprints"]["code.txt"].is_string(), "{parsed}");
+}
+
+#[test]
+fn guide_without_a_stored_guide_exits_non_zero() {
+    let dir = tempfile::tempdir().unwrap();
+    let (db, fixture, review, _) = seeded(&dir);
+
+    let output = prologue(&db, Path::new(&fixture.path()), &["guide", &review.id.to_string()]);
+    assert!(!output.status.success());
+    let err = err_str(&output);
+    assert!(err.contains(&format!("No guide for review {}", review.id)), "{err}");
+    assert!(err.contains("generate one in the Prologue app"), "{err}");
+}
+
+#[test]
+fn guide_for_an_unknown_review_exits_non_zero() {
+    let dir = tempfile::tempdir().unwrap();
+    let (db, fixture, _review, _) = seeded(&dir);
+
+    let output = prologue(&db, Path::new(&fixture.path()), &["guide", "999"]);
+    assert!(!output.status.success());
+    assert!(err_str(&output).contains("No review with id 999"), "{}", err_str(&output));
+}
+
+/// A guide survives its branch: deleting the reviewed branch makes the
+/// current diff uncomputable; the guide still prints, paths only, with a
+/// warning.
+#[test]
+fn guide_degrades_to_paths_when_the_branch_is_gone() {
+    let dir = tempfile::tempdir().unwrap();
+    let conn = open_test_db(&dir);
+    let db = dir.path().join("reviews.db");
+    let fixture = FixtureRepo::standard_review_fixture();
+    let head = fixture.repo.head().unwrap().peel_to_commit().unwrap();
+    fixture.repo.branch("doomed", &head, false).unwrap();
+    let review =
+        review::open_review_impl(&conn, &fixture.path(), "doomed", "main", DiffMode::Committed)
+            .unwrap();
+    drop(conn);
+    seed_guide(&dir, &review);
+    fixture.delete_branch("doomed");
+
+    let output = prologue(&db, Path::new(&fixture.path()), &["guide", &review.id.to_string()]);
+    assert!(output.status.success(), "{}", err_str(&output));
+    assert!(
+        err_str(&output).contains("could not compute the current diff"),
+        "{}",
+        err_str(&output)
+    );
+    let text = out_str(&output);
+    assert!(text.contains("01/02 Core change"), "{text}");
+    assert!(text.contains("\n  code.txt\n"), "{text}");
+    assert!(!text.contains("M code.txt"), "{text}");
 }
 
 #[test]

@@ -5,6 +5,7 @@
 //! act, in the app.
 
 mod db;
+mod guide;
 mod resolve;
 mod show;
 
@@ -58,6 +59,17 @@ enum Command {
         /// of threads (valid coordinates for line comments)
         #[arg(long, requires = "file")]
         diff: bool,
+        /// Machine-readable output
+        #[arg(long)]
+        json: bool,
+    },
+    /// Print the review's stored guide: ordered sections grouping the
+    /// changed files, with per-file status and line counts (read-only;
+    /// guides are generated in the Prologue app)
+    Guide {
+        /// Review id or repo@branch (default: inferred from the cwd's
+        /// repository and checked-out branch)
+        review: Option<String>,
         /// Machine-readable output
         #[arg(long)]
         json: bool,
@@ -260,6 +272,16 @@ fn run(cli: Cli) -> Result<(), String> {
                 } else {
                     print!("{}", show::render_text(&data));
                 }
+            }
+        }
+        Command::Guide { review, json } => {
+            let review = resolve::resolve_review(&conn, review.as_deref(), &cwd)?;
+            let guide = guide::find_guide(&conn, &review)?;
+            if json {
+                println!("{}", to_json(&guide)?);
+            } else {
+                let summary = guide::current_summary(&review);
+                print!("{}", guide::render_text(&review, &guide, summary.as_ref()));
             }
         }
         Command::Export { review, format } => {
@@ -467,6 +489,13 @@ mod tests {
         assert!(Cli::try_parse_from(["prologue", "show", "--diff"]).is_err());
         // --db is global.
         Cli::try_parse_from(["prologue", "show", "--db", "/tmp/x.db"]).unwrap();
+
+        Cli::try_parse_from(["prologue", "guide"]).unwrap();
+        Cli::try_parse_from(["prologue", "guide", "7", "--json"]).unwrap();
+        Cli::try_parse_from(["prologue", "guide", "my-app@main"]).unwrap();
+        // Read-only on purpose: no generation or refresh flags exist.
+        assert!(Cli::try_parse_from(["prologue", "guide", "--generate"]).is_err());
+        assert!(Cli::try_parse_from(["prologue", "guide", "--regenerate"]).is_err());
 
         for format in ["md", "markdown", "json", "prompt-md", "prompt-markdown", "prompt-json"] {
             Cli::try_parse_from(["prologue", "export", "7", "--format", format]).unwrap();

@@ -111,7 +111,7 @@ pub fn render_text(data: &ShowData) -> String {
     out
 }
 
-fn repo_name(repo_path: &str) -> String {
+pub(crate) fn repo_name(repo_path: &str) -> String {
     std::path::Path::new(repo_path)
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
