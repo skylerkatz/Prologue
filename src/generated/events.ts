@@ -11,3 +11,5 @@ export const MENU_VIEW_ARCHIVED_EVENT = "menu-view-archived";
 export const MENU_REFRESH_EVENT = "menu-refresh";
 /** View > Hide Resolved Comments toggled; payload is the new checked state. */
 export const MENU_HIDE_RESOLVED_EVENT = "menu-hide-resolved";
+/** Help > Keyboard Shortcuts chosen. */
+export const MENU_SHOW_SHORTCUTS_EVENT = "menu-show-shortcuts";

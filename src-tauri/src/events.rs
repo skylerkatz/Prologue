@@ -13,6 +13,8 @@ pub const MENU_VIEW_ARCHIVED: &str = "menu-view-archived";
 pub const MENU_REFRESH: &str = "menu-refresh";
 /// View > Hide Resolved Comments toggled; payload is the new checked state.
 pub const MENU_HIDE_RESOLVED: &str = "menu-hide-resolved";
+/// Help > Keyboard Shortcuts chosen.
+pub const MENU_SHOW_SHORTCUTS: &str = "menu-show-shortcuts";
 
 #[cfg(test)]
 mod tests {
@@ -33,12 +35,15 @@ mod tests {
              /** View > Refresh chosen. */\n\
              export const MENU_REFRESH_EVENT = \"{menu_refresh}\";\n\
              /** View > Hide Resolved Comments toggled; payload is the new checked state. */\n\
-             export const MENU_HIDE_RESOLVED_EVENT = \"{menu_hide_resolved}\";\n",
+             export const MENU_HIDE_RESOLVED_EVENT = \"{menu_hide_resolved}\";\n\
+             /** Help > Keyboard Shortcuts chosen. */\n\
+             export const MENU_SHOW_SHORTCUTS_EVENT = \"{menu_show_shortcuts}\";\n",
             repo_changed = super::REPO_CHANGED,
             comments_changed = super::COMMENTS_CHANGED,
             menu_view_archived = super::MENU_VIEW_ARCHIVED,
             menu_refresh = super::MENU_REFRESH,
             menu_hide_resolved = super::MENU_HIDE_RESOLVED,
+            menu_show_shortcuts = super::MENU_SHOW_SHORTCUTS,
         );
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../src/generated/events.ts");
         let current = std::fs::read_to_string(&path).unwrap_or_default();

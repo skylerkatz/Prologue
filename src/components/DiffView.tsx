@@ -912,8 +912,11 @@ export function DiffView({
       ) {
         return;
       }
-      // The archive browser overlays the diff; don't scroll behind it.
-      if (document.querySelector(".archive-overlay") !== null) {
+      // The archive browser and the `?` cheat sheet overlay the diff;
+      // don't scroll behind them.
+      if (
+        document.querySelector(".archive-overlay, .shortcut-help") !== null
+      ) {
         return;
       }
       if (e.key === "j") {

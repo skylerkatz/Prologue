@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTauriEvent } from "../useTauriEvent";
-import { MENU_VIEW_ARCHIVED_EVENT } from "../generated/events";
+import {
+  MENU_SHOW_SHORTCUTS_EVENT,
+  MENU_VIEW_ARCHIVED_EVENT,
+} from "../generated/events";
 import type { BranchList, RepoInfo, DiffMode } from "../types";
 import { ArchivedReviews } from "./ArchivedReviews";
 import { BranchSelect } from "./BranchSelect";
@@ -11,6 +14,7 @@ import { FileList } from "./FileList";
 import { ModeToggle } from "./ModeToggle";
 import { OrphanedComments } from "./OrphanedComments";
 import { ReviewCommentsPanel } from "./ReviewCommentsPanel";
+import { ShortcutHelp } from "./ShortcutHelp";
 import { WhitespaceToggle } from "./WhitespaceToggle";
 import { useCommentMutations } from "./useCommentMutations";
 import { useReviewDerived } from "./useReviewDerived";
@@ -84,6 +88,7 @@ export function ReviewShell({
 
   const [showArchive, setShowArchive] = useState(false);
   const [showFileJump, setShowFileJump] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   // The click's view generation invalidates the target on refresh: DiffView
   // scrolls on mount for any non-null target (it remounts when the shell
   // swaps it out for an empty state and back), and it must never chase a
@@ -99,6 +104,48 @@ export function ReviewShell({
     setShowFileJump(false);
     setShowArchive(true);
   });
+
+  // Help > Keyboard Shortcuts — same overlay as the `?` key.
+  useTauriEvent(MENU_SHOW_SHORTCUTS_EVENT, () => {
+    setShowFileJump(false);
+    setShowHelp(true);
+  });
+
+  // `?` toggles the shortcut cheat sheet; Esc closes it. Esc only reaches
+  // here when the sheet is topmost: FileJump swallows its own Esc, and ⌘P
+  // is suppressed while the sheet is up, so the two never stack.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) {
+        return;
+      }
+      // Never hijack typing: composers, branch selects, the ⌘P palette.
+      const target = e.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.tagName === "TEXTAREA" ||
+          target.tagName === "INPUT" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (e.key === "?") {
+        // Opening waits its turn behind the other overlays; closing with a
+        // second `?` always works.
+        if (!showHelp && (showFileJump || showArchive)) {
+          return;
+        }
+        e.preventDefault();
+        setShowHelp((open) => !open);
+      } else if (e.key === "Escape" && showHelp) {
+        e.preventDefault();
+        setShowHelp(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [showHelp, showFileJump, showArchive]);
 
   // ⌘P (or Ctrl+P) opens the file-jump palette over the diff.
   const canJump =
@@ -128,7 +175,7 @@ export function ReviewShell({
       ) {
         return;
       }
-      if (!canJump || showArchive) {
+      if (!canJump || showArchive || showHelp) {
         return;
       }
       // Swallow the webview's print shortcut even when already open.
@@ -137,7 +184,7 @@ export function ReviewShell({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [canJump, showArchive]);
+  }, [canJump, showArchive, showHelp]);
 
   /** What the Export menu would export: the displayed diff's pinned params
    * plus its active review; null (disabled) when there is neither. */
@@ -317,6 +364,7 @@ export function ReviewShell({
           onClose={() => setShowArchive(false)}
         />
       )}
+      {showHelp && <ShortcutHelp onClose={() => setShowHelp(false)} />}
     </div>
   );
 }

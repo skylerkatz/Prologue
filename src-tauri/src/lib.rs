@@ -13,14 +13,17 @@ const MENU_VIEW_ARCHIVED_ID: &str = "view-archived";
 const MENU_REFRESH_ID: &str = "view-refresh";
 /// Menu item id for the View > Hide Resolved Comments check item.
 const MENU_HIDE_RESOLVED_ID: &str = "view-hide-resolved";
+/// Menu item id for the Help > Keyboard Shortcuts entry.
+const MENU_SHOW_SHORTCUTS_ID: &str = "help-shortcuts";
 
-/// Handles to the View menu items that only make sense with a repo open;
-/// the frontend enables them on repo open and disables them on the
-/// welcome screen.
+/// Handles to the View and Help menu items that only make sense with a
+/// repo open; the frontend enables them on repo open and disables them on
+/// the welcome screen.
 struct RepoMenuItems {
     refresh: tauri::menu::MenuItem<tauri::Wry>,
     archived: tauri::menu::MenuItem<tauri::Wry>,
     hide_resolved: tauri::menu::CheckMenuItem<tauri::Wry>,
+    shortcuts: tauri::menu::MenuItem<tauri::Wry>,
 }
 
 #[tauri::command]
@@ -29,6 +32,7 @@ fn set_repo_menu_enabled(app: tauri::AppHandle, enabled: bool) {
         let _ = items.refresh.set_enabled(enabled);
         let _ = items.archived.set_enabled(enabled);
         let _ = items.hide_resolved.set_enabled(enabled);
+        let _ = items.shortcuts.set_enabled(enabled);
     }
 }
 
@@ -42,10 +46,10 @@ fn set_hide_resolved_checked(app: tauri::AppHandle, checked: bool) {
 }
 
 /// Customize the default menu: "Install 'prologue' Command Line Tool…" in
-/// the app submenu after About, and "Refresh" / "Archived Reviews…" /
-/// "Hide Resolved Comments" in View.
+/// the app submenu after About, "Refresh" / "Archived Reviews…" / "Hide
+/// Resolved Comments" in View, and "Keyboard Shortcuts" in Help.
 fn setup_menu(app: &tauri::App) -> tauri::Result<()> {
-    use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
+    use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, HELP_SUBMENU_ID};
 
     let menu = Menu::default(app.handle())?;
     let items = menu.items()?;
@@ -58,6 +62,25 @@ fn setup_menu(app: &tauri::App) -> tauri::Result<()> {
             None::<&str>,
         )?;
         app_submenu.insert(&item, 1)?;
+    }
+    // Help > Keyboard Shortcuts opens the same overlay as the in-app `?`
+    // key. No accelerator: a menu accelerator would swallow the keystroke
+    // even while typing in a composer; the webview handler suppresses that
+    // itself. Starts disabled like the View items — the overlay lives in
+    // the review screen.
+    let shortcuts = MenuItem::with_id(
+        app,
+        MENU_SHOW_SHORTCUTS_ID,
+        "Keyboard Shortcuts",
+        false,
+        None::<&str>,
+    )?;
+    if let Some(help_submenu) = items
+        .iter()
+        .filter_map(|i| i.as_submenu())
+        .find(|s| s.id().as_ref() == HELP_SUBMENU_ID)
+    {
+        help_submenu.append(&shortcuts)?;
     }
     // Locate View by title — Menu::default gives it no stable id.
     if let Some(view_submenu) = items
@@ -100,6 +123,7 @@ fn setup_menu(app: &tauri::App) -> tauri::Result<()> {
             refresh,
             archived,
             hide_resolved,
+            shortcuts,
         });
     }
     app.set_menu(menu)?;
@@ -164,6 +188,9 @@ pub fn run() {
             }
             MENU_REFRESH_ID => {
                 let _ = app.emit(events::MENU_REFRESH, ());
+            }
+            MENU_SHOW_SHORTCUTS_ID => {
+                let _ = app.emit(events::MENU_SHOW_SHORTCUTS, ());
             }
             MENU_HIDE_RESOLVED_ID => {
                 // macOS auto-toggles the check state before the event
