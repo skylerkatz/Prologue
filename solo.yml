@@ -1,5 +1,5 @@
-name: Diff Viewer
-icon: null
+name: Prologue
+icon: prologue-icon.png
 processes:
   Tauri Development:
     command: npm run dev:bridge
@@ -8,18 +8,38 @@ processes:
     auto_restart: true
     restart_when_changed: []
     env: {}
-  Frontend Only:
-    command: npm run dev
-    auto_start: false
-  TypeScript Check:
-    command: npx tsc --noEmit --watch
-    auto_start: false
-  Rust Checks:
-    command: bash -lc "cd src-tauri && cargo test && cargo clippy --all-targets -- -D warnings"
-    auto_start: false
-  Frontend Build:
-    command: npm run build
-    auto_start: false
   Screenshot App:
     command: bash -c "sleep 3 && mkdir -p .solo-artifacts && screencapture -x .solo-artifacts/app.png && echo saved to .solo-artifacts/app.png"
+    working_dir: null
     auto_start: false
+    auto_restart: false
+    restart_when_changed: []
+    env: {}
+  TypeScript Check:
+    command: npx tsc --noEmit --watch
+    working_dir: null
+    auto_start: false
+    auto_restart: false
+    restart_when_changed: []
+    env: {}
+  Rust Checks:
+    command: bash -lc "cd src-tauri && cargo test && cargo clippy --all-targets -- -D warnings"
+    working_dir: null
+    auto_start: false
+    auto_restart: false
+    restart_when_changed: []
+    env: {}
+  Frontend Build:
+    command: npm run build
+    working_dir: null
+    auto_start: false
+    auto_restart: false
+    restart_when_changed: []
+    env: {}
+  Frontend Only:
+    command: npm run dev
+    working_dir: null
+    auto_start: false
+    auto_restart: false
+    restart_when_changed: []
+    env: {}
