@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTauriEvent } from "../useTauriEvent";
 import { MENU_VIEW_ARCHIVED_EVENT } from "../generated/events";
 import type { BranchList, RepoInfo, DiffMode } from "../types";
@@ -6,6 +6,7 @@ import { ArchivedReviews } from "./ArchivedReviews";
 import { BranchSelect } from "./BranchSelect";
 import { DiffView } from "./DiffView";
 import { ExportMenu, type ExportTarget } from "./ExportMenu";
+import { FileJump } from "./FileJump";
 import { FileList } from "./FileList";
 import { ModeToggle } from "./ModeToggle";
 import { OrphanedComments } from "./OrphanedComments";
@@ -82,6 +83,7 @@ export function ReviewShell({
   } = useCommentMutations(session);
 
   const [showArchive, setShowArchive] = useState(false);
+  const [showFileJump, setShowFileJump] = useState(false);
   // The click's view generation invalidates the target on refresh: DiffView
   // scrolls on mount for any non-null target (it remounts when the shell
   // swaps it out for an empty state and back), and it must never chase a
@@ -93,7 +95,49 @@ export function ReviewShell({
   } | null>(null);
 
   // View > Archived Reviews… (native menu) — replaces the old toolbar button.
-  useTauriEvent(MENU_VIEW_ARCHIVED_EVENT, () => setShowArchive(true));
+  useTauriEvent(MENU_VIEW_ARCHIVED_EVENT, () => {
+    setShowFileJump(false);
+    setShowArchive(true);
+  });
+
+  // ⌘P (or Ctrl+P) opens the file-jump palette over the diff.
+  const canJump =
+    error === null &&
+    view !== null &&
+    review !== null &&
+    !branchMerged &&
+    view.summary.files.length > 0;
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (
+        !(e.metaKey || e.ctrlKey) ||
+        e.altKey ||
+        e.shiftKey ||
+        e.key.toLowerCase() !== "p"
+      ) {
+        return;
+      }
+      // Never hijack typing: composers, branch selects, the palette itself.
+      const target = e.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.tagName === "TEXTAREA" ||
+          target.tagName === "INPUT" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (!canJump || showArchive) {
+        return;
+      }
+      // Swallow the webview's print shortcut even when already open.
+      e.preventDefault();
+      setShowFileJump(true);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [canJump, showArchive]);
 
   /** What the Export menu would export: the displayed diff's pinned params
    * plus its active review; null (disabled) when there is neither. */
@@ -253,6 +297,20 @@ export function ReviewShell({
           </div>
         )}
       </main>
+      {showFileJump && view !== null && (
+        <FileJump
+          files={view.summary.files}
+          onSelect={(path) => {
+            setShowFileJump(false);
+            setScrollTarget((prev) => ({
+              path,
+              nonce: (prev?.nonce ?? 0) + 1,
+              generation: view.generation,
+            }));
+          }}
+          onClose={() => setShowFileJump(false)}
+        />
+      )}
       {showArchive && (
         <ArchivedReviews
           repoPath={repo.path}
