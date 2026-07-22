@@ -6,6 +6,7 @@ import type {
   FileSummary,
 } from "../types";
 import type { ResolvedGuideSection } from "../diff/guideOrder";
+import { splitInlineCode } from "../diff/inlineCode";
 import { useCopyPath } from "./useCopyPath";
 
 const STATUS_LABELS: Record<FileStatus, string> = {
@@ -33,6 +34,22 @@ interface FileListProps {
   onToggleGrouped: () => void;
   /** Batch mark/unmark backing a section's Reviewed checkbox. */
   onSetFilesReviewed: (paths: readonly string[], reviewed: boolean) => void;
+}
+
+/** Guide prose with `backticked` identifiers rendered as <code> spans.
+ * Text nodes only — model output never reaches an HTML parser. */
+function InlineCode({ text }: { text: string }) {
+  return (
+    <>
+      {splitInlineCode(text).map((segment, index) =>
+        segment.code ? (
+          <code key={index}>{segment.text}</code>
+        ) : (
+          segment.text
+        ),
+      )}
+    </>
+  );
 }
 
 function FileRow({
@@ -214,7 +231,9 @@ export function FileList({
                       {section.ordinal}
                     </span>
                   )}
-                  <h3 className="guide-section-title">{section.title}</h3>
+                  <h3 className="guide-section-title">
+                    <InlineCode text={section.title} />
+                  </h3>
                   {/* Reviewed is DERIVED: checked iff every file is Viewed;
                       toggling writes the per-file marks, nothing else. */}
                   <input
@@ -231,7 +250,9 @@ export function FileList({
                   />
                 </div>
                 {section.summary !== null && (
-                  <p className="guide-section-summary">{section.summary}</p>
+                  <p className="guide-section-summary">
+                    <InlineCode text={section.summary} />
+                  </p>
                 )}
                 <ul>{section.files.map(renderRow)}</ul>
               </li>

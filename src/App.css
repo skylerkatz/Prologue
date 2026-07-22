@@ -864,6 +864,17 @@ body.sidebar-resizing * {
   color: var(--text-muted);
 }
 
+/* Backticked identifiers in the summary: the global bordered code chip
+   shouts in muted 13px prose, so keep just the mono voice and a faint
+   tint one step below the cream sidebar. */
+.guide-section-summary code {
+  font-size: 0.95em;
+  background: var(--bg-subtle);
+  border: none;
+  border-radius: 3px;
+  padding: 0.1em 0.25em;
+}
+
 .file-binary {
   color: var(--text-muted);
 }

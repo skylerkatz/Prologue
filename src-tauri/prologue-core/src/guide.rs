@@ -247,6 +247,9 @@ pub fn build_prompt(files: &[GuideFileInput]) -> GuidePrompt {
          types, or jobs involved; when the change follows an existing pattern in the \
          codebase, say which one; when something is deleted or replaced, say so \
          explicitly (\"the old X job is removed entirely\").\n\
+         - Summaries are plain prose. Backticks around code identifiers (`likeThis()`) \
+         are the only formatting allowed; never use any other markdown (no bold, \
+         lists, or links).\n\
          - End each summary with the one thing a careful reviewer should verify in that \
          section.\n\
          - Every sentence must tell the reviewer something the file list doesn't — never \
