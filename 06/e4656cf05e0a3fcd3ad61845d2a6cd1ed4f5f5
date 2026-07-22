@@ -1,0 +1,21 @@
+src-tauri/prologue-core/src/export.rs
+  s_bb163241636251::t_3251344bf861f1 371-373
+src-tauri/prologue/src/main.rs
+  s_bb163241636251::t_f582c97a53143b 423-425
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "06e4656cf05e0a3fcd3ad61845d2a6cd1ed4f5f5",
+  "prompts": {},
+  "sessions": {
+    "s_bb163241636251": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6b0daf9e-a53b-4e65-b3db-3fbc62d6498d",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
