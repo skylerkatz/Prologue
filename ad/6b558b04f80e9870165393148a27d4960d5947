@@ -1,0 +1,19 @@
+src-tauri/prologue-core/src/guide.rs
+  s_23ecaef37c82ea::t_7041216346b996 241-253
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "ad6b558b04f80e9870165393148a27d4960d5947",
+  "prompts": {},
+  "sessions": {
+    "s_23ecaef37c82ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b586854a-871f-40e8-a36a-585876916b36",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
