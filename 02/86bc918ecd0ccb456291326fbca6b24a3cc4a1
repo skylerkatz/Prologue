@@ -1,0 +1,30 @@
+src/components/DiffView.tsx
+  s_2a3e0b4a4a4143::t_91d61632e1d2e4 332-378
+  s_2a3e0b4a4a4143::t_4d3442c3ef129a 1000,1011
+  s_2a3e0b4a4a4143::t_6a8742b44ec909 31
+  s_2a3e0b4a4a4143::t_a99b1ac9878ad2 1075
+src/diff/rows.ts
+  s_2a3e0b4a4a4143::t_81cdde368e55c7 6
+  s_2a3e0b4a4a4143::t_fc9335006374b8 39-61
+src/App.css
+  s_2a3e0b4a4a4143::t_af0e7b01e41530 857-858,860,862-863
+src/diff/rows.test.ts
+  s_2a3e0b4a4a4143::t_ce0e5c3281be04 6,19
+  s_2a3e0b4a4a4143::t_e536fc6ed1d32a 480-538
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "0286bc918ecd0ccb456291326fbca6b24a3cc4a1",
+  "prompts": {},
+  "sessions": {
+    "s_2a3e0b4a4a4143": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0cf32b1e-c82f-4fa8-94e1-757054a99b96",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
