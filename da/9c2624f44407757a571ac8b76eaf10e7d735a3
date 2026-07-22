@@ -1,0 +1,28 @@
+src/diff/guideStale.ts
+  s_76e1366a2b9106::t_86a24cd8216da3 1-18
+src/App.css
+  s_76e1366a2b9106::t_f5c03cda965f1a 561-591
+src/components/GuideMenu.tsx
+  s_76e1366a2b9106::t_ef0e4e2c7f7883 73-75,77-85
+  s_76e1366a2b9106::t_8bfdc46931be84 115-147
+  s_76e1366a2b9106::t_4df9a12f829601 97-99
+  s_76e1366a2b9106::t_cb020ebff9ae08 21
+src/diff/guideStale.test.ts
+  s_76e1366a2b9106::t_d3aefbaa1c2f9f 1-72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "da9c2624f44407757a571ac8b76eaf10e7d735a3",
+  "prompts": {},
+  "sessions": {
+    "s_76e1366a2b9106": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3f8984dd-5a45-4d46-8e3d-ccecf1bf5e6e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
