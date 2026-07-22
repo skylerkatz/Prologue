@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type {
   DiffSummary,
   FileReviewState,
   FileStatus,
   FileSummary,
+  Guide,
 } from "../types";
 import { useCopyPath } from "./useCopyPath";
 
@@ -23,6 +24,23 @@ interface FileListProps {
   /** Per-file reviewed state; reviewed rows dim, "changed" rows get a dot. */
   reviewStates: ReadonlyMap<string, FileReviewState>;
   onSelect: (path: string) => void;
+  /** The stored guide for this diff, if any; enables the grouped view. */
+  guide: Guide | null;
+  /** Group by guide section (true) vs the flat A–Z list. */
+  grouped: boolean;
+  onToggleGrouped: () => void;
+  /** Batch mark/unmark backing a section's Reviewed checkbox. */
+  onSetFilesReviewed: (paths: readonly string[], reviewed: boolean) => void;
+}
+
+/** A guide section resolved against the displayed summary's files. */
+interface SidebarSection {
+  title: string;
+  summary: string | null;
+  /** `01/05`-style position among the guide's sections; null for the
+   * catch-all bucket of files the guide doesn't know. */
+  ordinal: string | null;
+  files: FileSummary[];
 }
 
 function FileRow({
@@ -116,6 +134,10 @@ export function FileList({
   openCounts,
   reviewStates,
   onSelect,
+  guide,
+  grouped,
+  onToggleGrouped,
+  onSetFilesReviewed,
 }: FileListProps) {
   // Purely visual: the ribbon bookmark on the row last clicked.
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
@@ -123,6 +145,64 @@ export function FileList({
   const reviewedCount = summary.files.filter(
     (f) => reviewStates.get(f.path) === "reviewed",
   ).length;
+
+  /** Guide sections resolved against the displayed files. The guide was
+   * validated exact-once against ITS diff, but the summary may have drifted
+   * since (staleness UX is a later phase), so: paths the diff no longer has
+   * drop out, empty sections vanish, and files the guide doesn't know land
+   * in a trailing unnumbered bucket — every displayed file stays reachable. */
+  const sections = useMemo<SidebarSection[] | null>(() => {
+    if (guide === null) {
+      return null;
+    }
+    const byPath = new Map(summary.files.map((f) => [f.path, f]));
+    const claimed = new Set<string>();
+    const resolved: Omit<SidebarSection, "ordinal">[] = [];
+    for (const section of guide.sections) {
+      const files: FileSummary[] = [];
+      for (const path of section.files) {
+        const file = byPath.get(path);
+        if (file !== undefined && !claimed.has(path)) {
+          claimed.add(path);
+          files.push(file);
+        }
+      }
+      if (files.length > 0) {
+        resolved.push({ title: section.title, summary: section.summary, files });
+      }
+    }
+    const total = String(resolved.length).padStart(2, "0");
+    const out: SidebarSection[] = resolved.map((section, i) => ({
+      ...section,
+      ordinal: `${String(i + 1).padStart(2, "0")}/${total}`,
+    }));
+    const leftover = summary.files.filter((f) => !claimed.has(f.path));
+    if (leftover.length > 0) {
+      out.push({
+        title: "Not in guide",
+        summary: null,
+        ordinal: null,
+        files: leftover,
+      });
+    }
+    return out;
+  }, [guide, summary]);
+
+  const renderRow = (file: FileSummary) => (
+    <FileRow
+      key={file.path}
+      file={file}
+      openCount={openCounts.get(file.path) ?? 0}
+      selected={selectedPath === file.path}
+      reviewState={reviewStates.get(file.path)}
+      onSelect={(path) => {
+        setSelectedPath(path);
+        onSelect(path);
+      }}
+      onCopyPath={(absolute) => copyPath(file.path, absolute)}
+    />
+  );
+
   return (
     <div className="file-list">
       <div className="file-list-header">
@@ -141,22 +221,76 @@ export function FileList({
           <span className="count-deleted">−{summary.totalDeletions}</span>
         </span>
       </div>
-      <ul>
-        {summary.files.map((file) => (
-          <FileRow
-            key={file.path}
-            file={file}
-            openCount={openCounts.get(file.path) ?? 0}
-            selected={selectedPath === file.path}
-            reviewState={reviewStates.get(file.path)}
-            onSelect={(path) => {
-              setSelectedPath(path);
-              onSelect(path);
-            }}
-            onCopyPath={(absolute) => copyPath(file.path, absolute)}
-          />
-        ))}
-      </ul>
+      {sections !== null && (
+        <div
+          className="mode-toggle guide-view-toggle"
+          role="radiogroup"
+          aria-label="Sidebar view"
+        >
+          <button
+            type="button"
+            role="radio"
+            aria-checked={grouped}
+            className={grouped ? "mode-option selected" : "mode-option"}
+            onClick={() => !grouped && onToggleGrouped()}
+          >
+            Guide
+          </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={!grouped}
+            className={grouped ? "mode-option" : "mode-option selected"}
+            onClick={() => grouped && onToggleGrouped()}
+          >
+            A–Z
+          </button>
+        </div>
+      )}
+      {sections !== null && grouped ? (
+        <ol className="guide-sections">
+          {sections.map((section, index) => {
+            const paths = section.files.map((f) => f.path);
+            const allViewed = section.files.every(
+              (f) => reviewStates.get(f.path) === "reviewed",
+            );
+            // Index keys are safe: sections only ever swap wholesale with
+            // their guide, and model-written titles may collide.
+            return (
+              <li key={index} className="guide-section">
+                <div className="guide-section-header">
+                  {section.ordinal !== null && (
+                    <span className="guide-section-ordinal">
+                      {section.ordinal}
+                    </span>
+                  )}
+                  <h3 className="guide-section-title">{section.title}</h3>
+                  {/* Reviewed is DERIVED: checked iff every file is Viewed;
+                      toggling writes the per-file marks, nothing else. */}
+                  <input
+                    type="checkbox"
+                    className="guide-section-check"
+                    checked={allViewed}
+                    title={
+                      allViewed
+                        ? "Reviewed — uncheck to clear this section's Viewed marks"
+                        : "Mark all files in this section viewed"
+                    }
+                    aria-label={`Mark section “${section.title}” reviewed`}
+                    onChange={() => onSetFilesReviewed(paths, !allViewed)}
+                  />
+                </div>
+                {section.summary !== null && (
+                  <p className="guide-section-summary">{section.summary}</p>
+                )}
+                <ul>{section.files.map(renderRow)}</ul>
+              </li>
+            );
+          })}
+        </ol>
+      ) : (
+        <ul>{summary.files.map(renderRow)}</ul>
+      )}
       {copied && (
         <div className="copy-toast" role="status">
           {copied === "absolute"

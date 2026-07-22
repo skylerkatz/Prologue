@@ -8,6 +8,7 @@ import type {
   DiffSummary,
   ExportFormat,
   FileDiff,
+  Guide,
   NewCommentInput,
   OpenReviewResult,
   ReanchorResult,
@@ -221,6 +222,49 @@ export function startWatching(repoPath: string): Promise<void> {
 /** Drop the active repo watch (repo closed). */
 export function stopWatching(): Promise<void> {
   return invoke("stop_watching");
+}
+
+/** Whether the `claude` CLI is reachable; app-crate type, mirrored here. */
+export interface GuideCliStatus {
+  available: boolean;
+  /** Resolved absolute path, for display and debugging. */
+  path: string | null;
+}
+
+/** Probe for the `claude` CLI so the Guide button can disable itself. */
+export function guideCliStatus(): Promise<GuideCliStatus> {
+  return invoke("guide_cli_status");
+}
+
+/**
+ * Generate a review guide by running the user's `claude` CLI over the
+ * diff; validates, persists (replacing any previous guide for the same
+ * coordinates), and resolves with the stored guide. Long-running (~120s
+ * ceiling); rejects with a user-readable message.
+ */
+export function generateGuide(
+  repoPath: string,
+  base: string,
+  head: string,
+  mode: DiffMode,
+  reviewId: number,
+): Promise<Guide> {
+  return invoke("generate_guide", { repoPath, base, head, mode, reviewId });
+}
+
+/** Kill a running guide generation; resolves whether one was running. */
+export function cancelGuide(): Promise<boolean> {
+  return invoke("cancel_guide");
+}
+
+/** The stored guide for the review's diff coordinates, if any. */
+export function findGuide(
+  reviewId: number,
+  base: string,
+  head: string,
+  mode: DiffMode,
+): Promise<Guide | null> {
+  return invoke("find_guide", { reviewId, base, head, mode });
 }
 
 /** New-side lines `start..=end` (1-based, clamped) for expand-context. */

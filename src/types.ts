@@ -20,6 +20,8 @@ export type {
   FileDiff,
   FileStatus,
   FileSummary,
+  Guide,
+  GuideSection,
   Hunk,
   IntralineRange,
   LineKind,

@@ -100,3 +100,20 @@ author?: string, };
 export type AnchorStatus = "anchored" | "changed" | "orphaned";
 export type ReanchorResult = { commentId: number, status: AnchorStatus, startLine: number | null, endLine: number | null, };
 export type ExportFormat = "markdown" | "json" | "prompt-markdown" | "prompt-json";
+export type GuideSection = { title: string, summary: string, files: Array<string>, };
+export type Guide = { 
+/**
+ * SQLite rowid — far below 2^53, a plain JS number on the wire.
+ */
+id: number, reviewId: number, baseRef: string, headRef: string, mode: DiffMode, 
+/**
+ * File path → [`FileSummary`] fingerprint at generation time; comparing
+ * against the current summary detects files "changed since the guide".
+ *
+ * [`FileSummary`]: crate::diff::FileSummary
+ */
+fingerprints: { [key in string]?: string }, model: string, 
+/**
+ * Logged for the record only; no UI surfaces it.
+ */
+costUsd: number | null, createdAt: string, sections: Array<GuideSection>, };

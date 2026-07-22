@@ -11,12 +11,14 @@ import { DiffView } from "./DiffView";
 import { ExportMenu, type ExportTarget } from "./ExportMenu";
 import { FileJump } from "./FileJump";
 import { FileList } from "./FileList";
+import { GuideMenu } from "./GuideMenu";
 import { ModeToggle } from "./ModeToggle";
 import { OrphanedComments } from "./OrphanedComments";
 import { ReviewCommentsPanel } from "./ReviewCommentsPanel";
 import { ShortcutHelp } from "./ShortcutHelp";
 import { WhitespaceToggle } from "./WhitespaceToggle";
 import { useCommentMutations } from "./useCommentMutations";
+import { useGuide } from "./useGuide";
 import { useReviewDerived } from "./useReviewDerived";
 import { useReviewSession } from "./useReviewSession";
 
@@ -76,8 +78,10 @@ export function ReviewShell({
     openCount,
     openCounts,
   } = useReviewDerived(session, hideResolved);
+  const guideState = useGuide(session);
   const {
     onToggleReviewed,
+    onSetFilesReviewed,
     onCreate,
     onUpdate,
     onDelete,
@@ -241,6 +245,11 @@ export function ReviewShell({
           hidden={hideWhitespace}
           onChange={onHideWhitespaceChange}
         />
+        <GuideMenu
+          {...guideState}
+          hasTarget={exportTarget !== null}
+          emptyDiff={view !== null && view.summary.files.length === 0}
+        />
         <ExportMenu target={exportTarget} openCount={openCount} />
       </header>
       <main className="diff-main">
@@ -289,6 +298,10 @@ export function ReviewShell({
                 repoPath={repo.path}
                 openCounts={openCounts}
                 reviewStates={reviewStates}
+                guide={guideState.guide}
+                grouped={guideState.grouped}
+                onToggleGrouped={guideState.onToggleGrouped}
+                onSetFilesReviewed={onSetFilesReviewed}
                 onSelect={(path) =>
                   setScrollTarget((prev) => ({
                     path,

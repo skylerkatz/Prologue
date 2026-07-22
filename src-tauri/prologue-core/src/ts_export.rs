@@ -44,6 +44,8 @@ fn bindings() -> String {
         crate::anchor::AnchorStatus::decl(),
         crate::comment::ReanchorResult::decl(),
         crate::export::ExportFormat::decl(),
+        crate::guide::GuideSection::decl(),
+        crate::guide::Guide::decl(),
     ];
     let mut out = String::from(HEADER);
     for decl in decls {
