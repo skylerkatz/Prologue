@@ -1,11 +1,11 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import type {
   DiffSummary,
   FileReviewState,
   FileStatus,
   FileSummary,
-  Guide,
 } from "../types";
+import type { ResolvedGuideSection } from "../diff/guideOrder";
 import { useCopyPath } from "./useCopyPath";
 
 const STATUS_LABELS: Record<FileStatus, string> = {
@@ -24,23 +24,15 @@ interface FileListProps {
   /** Per-file reviewed state; reviewed rows dim, "changed" rows get a dot. */
   reviewStates: ReadonlyMap<string, FileReviewState>;
   onSelect: (path: string) => void;
-  /** The stored guide for this diff, if any; enables the grouped view. */
-  guide: Guide | null;
+  /** The guide resolved against the displayed files (useGuide's shared
+   * ordering source of truth); null when no guide exists. Enables the
+   * grouped view. */
+  sections: ResolvedGuideSection[] | null;
   /** Group by guide section (true) vs the flat A–Z list. */
   grouped: boolean;
   onToggleGrouped: () => void;
   /** Batch mark/unmark backing a section's Reviewed checkbox. */
   onSetFilesReviewed: (paths: readonly string[], reviewed: boolean) => void;
-}
-
-/** A guide section resolved against the displayed summary's files. */
-interface SidebarSection {
-  title: string;
-  summary: string | null;
-  /** `01/05`-style position among the guide's sections; null for the
-   * catch-all bucket of files the guide doesn't know. */
-  ordinal: string | null;
-  files: FileSummary[];
 }
 
 function FileRow({
@@ -134,7 +126,7 @@ export function FileList({
   openCounts,
   reviewStates,
   onSelect,
-  guide,
+  sections,
   grouped,
   onToggleGrouped,
   onSetFilesReviewed,
@@ -145,48 +137,6 @@ export function FileList({
   const reviewedCount = summary.files.filter(
     (f) => reviewStates.get(f.path) === "reviewed",
   ).length;
-
-  /** Guide sections resolved against the displayed files. The guide was
-   * validated exact-once against ITS diff, but the summary may have drifted
-   * since (staleness UX is a later phase), so: paths the diff no longer has
-   * drop out, empty sections vanish, and files the guide doesn't know land
-   * in a trailing unnumbered bucket — every displayed file stays reachable. */
-  const sections = useMemo<SidebarSection[] | null>(() => {
-    if (guide === null) {
-      return null;
-    }
-    const byPath = new Map(summary.files.map((f) => [f.path, f]));
-    const claimed = new Set<string>();
-    const resolved: Omit<SidebarSection, "ordinal">[] = [];
-    for (const section of guide.sections) {
-      const files: FileSummary[] = [];
-      for (const path of section.files) {
-        const file = byPath.get(path);
-        if (file !== undefined && !claimed.has(path)) {
-          claimed.add(path);
-          files.push(file);
-        }
-      }
-      if (files.length > 0) {
-        resolved.push({ title: section.title, summary: section.summary, files });
-      }
-    }
-    const total = String(resolved.length).padStart(2, "0");
-    const out: SidebarSection[] = resolved.map((section, i) => ({
-      ...section,
-      ordinal: `${String(i + 1).padStart(2, "0")}/${total}`,
-    }));
-    const leftover = summary.files.filter((f) => !claimed.has(f.path));
-    if (leftover.length > 0) {
-      out.push({
-        title: "Not in guide",
-        summary: null,
-        ordinal: null,
-        files: leftover,
-      });
-    }
-    return out;
-  }, [guide, summary]);
 
   const renderRow = (file: FileSummary) => (
     <FileRow

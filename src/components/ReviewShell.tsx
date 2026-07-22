@@ -17,6 +17,7 @@ import { OrphanedComments } from "./OrphanedComments";
 import { ReviewCommentsPanel } from "./ReviewCommentsPanel";
 import { ShortcutHelp } from "./ShortcutHelp";
 import { WhitespaceToggle } from "./WhitespaceToggle";
+import { guideOrderedFiles } from "../diff/guideOrder";
 import { useCommentMutations } from "./useCommentMutations";
 import { useGuide } from "./useGuide";
 import { useReviewDerived } from "./useReviewDerived";
@@ -190,6 +191,21 @@ export function ReviewShell({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [canJump, showArchive, showHelp]);
 
+  /** The summary the diff pane (and ⌘P) displays: while the guide view is
+   * active, the same files reordered to follow the sidebar's section order —
+   * both derive from useGuide's resolved sections, so the panes can never
+   * disagree. Identical to `view.summary` (same object) otherwise, keeping
+   * the non-guide path untouched. */
+  const displaySummary = useMemo(() => {
+    if (view === null || !guideState.grouped || guideState.sections === null) {
+      return view?.summary ?? null;
+    }
+    return {
+      ...view.summary,
+      files: guideOrderedFiles(guideState.sections),
+    };
+  }, [view, guideState.grouped, guideState.sections]);
+
   /** What the Export menu would export: the displayed diff's pinned params
    * plus its active review; null (disabled) when there is neither. */
   const exportTarget = useMemo<ExportTarget | null>(
@@ -298,7 +314,7 @@ export function ReviewShell({
                 repoPath={repo.path}
                 openCounts={openCounts}
                 reviewStates={reviewStates}
-                guide={guideState.guide}
+                sections={guideState.sections}
                 grouped={guideState.grouped}
                 onToggleGrouped={guideState.onToggleGrouped}
                 onSetFilesReviewed={onSetFilesReviewed}
@@ -337,7 +353,7 @@ export function ReviewShell({
                 head={view.head}
                 mode={view.mode}
                 ignoreWhitespace={view.ignoreWhitespace}
-                summary={view.summary}
+                summary={displaySummary ?? view.summary}
                 scrollTarget={
                   scrollTarget?.generation === view.generation
                     ? scrollTarget
@@ -359,7 +375,7 @@ export function ReviewShell({
       </main>
       {showFileJump && view !== null && (
         <FileJump
-          files={view.summary.files}
+          files={(displaySummary ?? view.summary).files}
           onSelect={(path) => {
             setShowFileJump(false);
             setScrollTarget((prev) => ({

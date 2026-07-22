@@ -177,6 +177,12 @@ export function DiffView({
   const [cursorPath, setCursorPath] = useState<string | null>(null);
   const cursorPathRef = useRef<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  // The file whose rows top the scrollport, kept fresh by the sticky-header
+  // rangeExtractor; the reorder reconciliation below anchors to it.
+  const topFileRef = useRef<string | null>(null);
+  // A file header to scroll to once `rows` has rebuilt (a mark-reviewed
+  // collapse, a guide reorder); consumed by the deferred-scroll effect.
+  const pendingScrollPath = useRef<string | null>(null);
   // Dedupe set keyed by `fileKey`, kept on success: a scroll-render can
   // re-fire the load effect before React applies the loaded state, and the
   // `diff === null` guard alone would re-fetch. Entries are removed on error
@@ -302,6 +308,23 @@ export function DiffView({
         cursorPathRef.current = null;
         setCursorPath(null);
       }
+      // A pure permutation of the same files (the guide view toggling on or
+      // off, a guide arriving) moves content under the fixed scroll offset;
+      // anchor the viewport to the file it was showing. Refreshes that add
+      // or drop files keep today's behavior, and an unscrolled pane just
+      // shows the new order from the top.
+      const orderChanged =
+        prevFiles.length === summary.files.length &&
+        prevFiles.every((f) => paths.has(f.path)) &&
+        prevFiles.some((f, i) => f.path !== summary.files[i].path);
+      if (
+        orderChanged &&
+        topFileRef.current !== null &&
+        paths.has(topFileRef.current) &&
+        (scrollRef.current?.scrollTop ?? 0) > 0
+      ) {
+        pendingScrollPath.current = topFileRef.current;
+      }
     }
   }
 
@@ -371,7 +394,6 @@ export function DiffView({
   // Marking collapses the card and unmarking re-expands it; the caret
   // (`toggleFile`) stays independent, so peeking at a reviewed file never
   // unmarks it.
-  const pendingScrollPath = useRef<string | null>(null);
   const toggleReviewed = useCallback(
     (path: string) => {
       const isReviewed = reviewStates.get(path) === "reviewed";
@@ -643,6 +665,8 @@ export function DiffView({
   const rangeExtractor = useCallback(
     (range: Range) => {
       const top = rows[range.startIndex];
+      topFileRef.current =
+        top === undefined ? null : summary.files[top.fi].path;
       const active =
         top !== undefined && top.kind !== "file"
           ? (headerIndexByFi.get(top.fi) ?? -1)
@@ -654,7 +678,7 @@ export function DiffView({
       }
       return [...next].sort((a, b) => a - b);
     },
-    [rows, headerIndexByFi],
+    [rows, headerIndexByFi, summary.files],
   );
 
   const virtualizer = useVirtualizer({
