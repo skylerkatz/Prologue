@@ -1,0 +1,27 @@
+src/components/useReviewSession.ts
+  s_4b1462adc0267a::t_a6f5323b6ef8b0 1-243
+src/components/useReviewDerived.ts
+  s_4b1462adc0267a::t_3c846b95bc2438 1-118
+src/components/useCommentMutations.ts
+  s_4b1462adc0267a::t_98d15137a730be 1-129
+src/components/ReviewShell.tsx
+  s_4b1462adc0267a::t_a42049fd0b237c 1,5,13,15,34-37,54-61,64,73-82,84-86,90,98-113,203,212-216,224-227,236-240,245-249
+  s_4b1462adc0267a::t_c7c4ab728bd313 62-63,65-72
+  s_4b1462adc0267a::t_93bf26ed1cf97d 3,14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "70f75da28eb0dc43522ab530dd30d07a33d95491",
+  "prompts": {},
+  "sessions": {
+    "s_4b1462adc0267a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "da8f3974-8218-4b77-8293-f91e1099e2b2",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
