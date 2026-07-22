@@ -1,0 +1,25 @@
+src/diff/keyboardNav.ts
+  s_6556ec9ea4007c::t_5e4986a8bda039 1-83
+src/components/DiffView.tsx
+  s_6556ec9ea4007c::t_0bc81b2a1a5ed0 36-40
+  s_6556ec9ea4007c::t_7723ebefcc2486 925-936,950-956
+  s_6556ec9ea4007c::t_76f6d124b45135 839-878
+src/diff/keyboardNav.test.ts
+  s_6556ec9ea4007c::t_5d426cdf6d8824 1-159
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "58f2d62d3453940a25d6b1e5c4fe107860a84627",
+  "prompts": {},
+  "sessions": {
+    "s_6556ec9ea4007c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "37a01eab-1c8c-43a2-a9a6-1b353dadef89",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
