@@ -51,3 +51,6 @@ mcp-bridge = ["dep:tauri-plugin-mcp-bridge"]
 
 [dev-dependencies]
 tempfile = "3"
+# FixtureRepo for the watcher's ignore-filter tests; the testutil feature
+# only ever ships in test builds.
+prologue-core = { path = "prologue-core", features = ["testutil"] }

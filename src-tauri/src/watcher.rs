@@ -32,6 +32,8 @@ impl Default for RepoWatcher {
 
 /// Watch `repo_path` (working tree + `.git`, recursively) and emit a
 /// debounced `repo-changed` event on activity. Replaces any previous watch.
+/// Gitignored paths (node_modules/, target/, …) are filtered out, so builds
+/// and installs running in the reviewed repo don't trigger refreshes.
 ///
 /// The app's own SQLite writes cannot trigger this: reviews.db lives in the
 /// app data dir, never inside the watched repository.
@@ -43,16 +45,8 @@ pub fn start_watching(
 ) -> Result<(), String> {
     let (tx, rx): (Sender<()>, Receiver<()>) = std::sync::mpsc::channel();
 
-    let mut watcher = notify::recommended_watcher(move |res: notify::Result<Event>| {
-        if let Ok(event) = res {
-            if is_change(&event.kind) {
-                // A full channel or hung receiver is not this thread's
-                // problem; the debounce loop drains everything anyway.
-                let _ = tx.send(());
-            }
-        }
-    })
-    .map_err(|e| format!("Failed to create file watcher: {e}"))?;
+    let filter = prologue_core::repo::RepoEventFilter::new(&repo_path)?;
+    let mut watcher = change_watcher(tx, move |path| filter.is_relevant(path), "file")?;
 
     watcher
         .watch(std::path::Path::new(&repo_path), RecursiveMode::Recursive)
@@ -88,14 +82,7 @@ pub fn stop_watching(state: State<RepoWatcher>) -> Result<(), String> {
 pub fn start_db_watching(app: AppHandle, dir: std::path::PathBuf) -> Result<(), String> {
     let (tx, rx): (Sender<()>, Receiver<()>) = std::sync::mpsc::channel();
 
-    let mut watcher = notify::recommended_watcher(move |res: notify::Result<Event>| {
-        if let Ok(event) = res {
-            if is_change(&event.kind) {
-                let _ = tx.send(());
-            }
-        }
-    })
-    .map_err(|e| format!("Failed to create database watcher: {e}"))?;
+    let mut watcher = change_watcher(tx, |_| true, "database")?;
 
     watcher
         .watch(&dir, RecursiveMode::NonRecursive)
@@ -124,6 +111,33 @@ fn data_version(app: &AppHandle) -> Option<i64> {
     let db = app.state::<prologue_core::db::Db>();
     let conn = db.0.lock().ok()?;
     conn.pragma_query_value(None, "data_version", |r| r.get(0)).ok()
+}
+
+/// A watcher forwarding change events to `tx`, keeping only events with at
+/// least one path `relevant` accepts. `context` names the watcher in the
+/// creation error ("file", "database").
+fn change_watcher(
+    tx: Sender<()>,
+    relevant: impl Fn(&std::path::Path) -> bool + Send + 'static,
+    context: &'static str,
+) -> Result<RecommendedWatcher, String> {
+    notify::recommended_watcher(move |res: notify::Result<Event>| {
+        if let Ok(event) = res {
+            if is_change(&event.kind) && event_is_relevant(&event, &relevant) {
+                // A full channel or hung receiver is not this thread's
+                // problem; the debounce loop drains everything anyway.
+                let _ = tx.send(());
+            }
+        }
+    })
+    .map_err(|e| format!("Failed to create {context} watcher: {e}"))
+}
+
+/// Whether any of the event's paths passes `relevant`. Events without paths
+/// stay relevant — some backends omit them, and a spurious refresh is
+/// cheaper than a missed one.
+fn event_is_relevant(event: &Event, relevant: &impl Fn(&std::path::Path) -> bool) -> bool {
+    event.paths.is_empty() || event.paths.iter().any(|p| relevant(p))
 }
 
 /// Filesystem events that can change a diff. Access (reads) are noise —
@@ -259,5 +273,50 @@ mod tests {
             // Sender drops immediately — shutdown wins over the pending emit.
         });
         assert_eq!(emits, 0);
+    }
+
+    /// A repo with ignore rules, plus the filter `start_watching` builds
+    /// for it — the exact wiring the repo watch runs events through.
+    fn ignore_fixture() -> (prologue_core::testutil::FixtureRepo, prologue_core::repo::RepoEventFilter)
+    {
+        let fixture = prologue_core::testutil::FixtureRepo::new();
+        fixture.commit_file(".gitignore", "node_modules/\ntarget/\n", "ignore rules");
+        fixture.commit_file("src/main.rs", "fn main() {}\n", "code");
+        let filter = prologue_core::repo::RepoEventFilter::new(&fixture.path()).unwrap();
+        (fixture, filter)
+    }
+
+    fn change_event(path: std::path::PathBuf) -> Event {
+        Event::new(EventKind::Create(notify::event::CreateKind::File)).add_path(path)
+    }
+
+    #[test]
+    fn gitignored_paths_do_not_forward_repo_events() {
+        let (fixture, filter) = ignore_fixture();
+        let root = std::path::PathBuf::from(fixture.path());
+        let relevant = |p: &std::path::Path| filter.is_relevant(p);
+
+        let ignored = change_event(root.join("node_modules/pkg/index.js"));
+        assert!(!event_is_relevant(&ignored, &relevant));
+        let build_output = change_event(root.join("target/debug/deps/foo.o"));
+        assert!(!event_is_relevant(&build_output, &relevant));
+        // One relevant path among ignored ones is enough to forward.
+        let mixed = change_event(root.join("node_modules/x.js")).add_path(root.join("src/main.rs"));
+        assert!(event_is_relevant(&mixed, &relevant));
+    }
+
+    #[test]
+    fn tracked_files_and_git_head_still_forward_repo_events() {
+        let (fixture, filter) = ignore_fixture();
+        let root = std::path::PathBuf::from(fixture.path());
+        let relevant = |p: &std::path::Path| filter.is_relevant(p);
+
+        let tracked = change_event(root.join("src/main.rs"));
+        assert!(event_is_relevant(&tracked, &relevant));
+        let commit = change_event(root.join(".git/HEAD"));
+        assert!(event_is_relevant(&commit, &relevant));
+        // Pathless events (some backends omit paths) stay conservative.
+        let pathless = Event::new(EventKind::Any);
+        assert!(event_is_relevant(&pathless, &relevant));
     }
 }
