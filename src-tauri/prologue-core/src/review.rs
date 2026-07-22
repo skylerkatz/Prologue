@@ -1,7 +1,7 @@
 use git2::{BranchType, Repository};
 use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::anchor::{self, AnchorStatus};
 use crate::db::NOW;
@@ -969,6 +969,92 @@ pub fn reanchor_comments_impl(
         results.push(result);
     }
     Ok(results)
+}
+
+/// One resolved thread: the root with current (possibly relocated) line
+/// ranges, whether it is orphaned in the current diff (its anchor no longer
+/// matches, or its file left the diff entirely; `None` when anchors were
+/// not recomputed), and the root's replies in chronological (id) order.
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Thread {
+    pub root: Comment,
+    pub orphaned: Option<bool>,
+    pub replies: Vec<Comment>,
+}
+
+/// Re-locate the review's line comments in the current diff and group its
+/// comments into threads — the shared pipeline behind exports and the CLI's
+/// show. Relocated ranges are patched onto the returned comments; with
+/// `persist` they are also written back (as the app's refresh does), without
+/// it nothing is written and the result is identical.
+pub fn resolve_threads(
+    conn: &Connection,
+    spec: &DiffSpec,
+    review_id: i64,
+    persist: bool,
+) -> Result<Vec<Thread>, String> {
+    let reanchored = reanchor_comments_impl(conn, spec, review_id, persist)?;
+    let orphaned_anchors: HashSet<i64> = reanchored
+        .iter()
+        .filter(|r| r.status == AnchorStatus::Orphaned)
+        .map(|r| r.comment_id)
+        .collect();
+    let relocated: HashMap<i64, (Option<u32>, Option<u32>)> = reanchored
+        .iter()
+        .map(|r| (r.comment_id, (r.start_line, r.end_line)))
+        .collect();
+    // Orphaning also covers files with no delta left; always the canonical
+    // full diff, never a whitespace-filtered view.
+    let summary = diff::get_diff_summary(spec, false)?;
+    let diff_paths: HashSet<String> = summary.files.into_iter().map(|f| f.path).collect();
+
+    // Present the computed ranges, not the stored ones — a no-op when they
+    // were just persisted, the whole point when they were not.
+    let mut comments = list_comments_impl(conn, review_id)?;
+    for comment in &mut comments {
+        if let Some(&(start, end)) = relocated.get(&comment.id) {
+            comment.start_line = start;
+            comment.end_line = end;
+        }
+    }
+    Ok(group_threads(comments, |root| {
+        Some(
+            orphaned_anchors.contains(&root.id)
+                || root.file_path.as_deref().is_some_and(|p| !diff_paths.contains(p)),
+        )
+    }))
+}
+
+/// Threads from stored values alone: stored line ranges, no orphan flags.
+/// The fallback when the current diff is unavailable (e.g. an archived
+/// review whose branch is gone).
+pub fn stored_threads(conn: &Connection, review_id: i64) -> Result<Vec<Thread>, String> {
+    Ok(group_threads(list_comments_impl(conn, review_id)?, |_| None))
+}
+
+/// Split comments into roots and replies grouped under their root, keeping
+/// the incoming (id) order on both.
+fn group_threads(
+    comments: Vec<Comment>,
+    orphaned: impl Fn(&Comment) -> Option<bool>,
+) -> Vec<Thread> {
+    let mut replies_by_root: HashMap<i64, Vec<Comment>> = HashMap::new();
+    let mut roots = Vec::new();
+    for comment in comments {
+        match comment.parent_id {
+            Some(root_id) => replies_by_root.entry(root_id).or_default().push(comment),
+            None => roots.push(comment),
+        }
+    }
+    roots
+        .into_iter()
+        .map(|root| Thread {
+            orphaned: orphaned(&root),
+            replies: replies_by_root.remove(&root.id).unwrap_or_default(),
+            root,
+        })
+        .collect()
 }
 
 /// Build the code anchor for a line selection: the selected lines verbatim

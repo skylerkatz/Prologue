@@ -2,22 +2,10 @@
 //! anchors, orphan flags) and the per-file hunk view.
 
 use prologue_core::diff::{self, DiffLine, DiffMode, DiffSpec, FileDiff, LineKind};
-use prologue_core::review::{self, Comment, CommentLevel, CommentSide, CommentState, Review};
+use prologue_core::review::{self, CommentLevel, CommentSide, CommentState, Review, Thread};
 use prologue_core::rusqlite::Connection;
 use serde::Serialize;
-use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
-
-/// One thread: its root, the root's replies in chronological order, and
-/// whether the root's anchor is orphaned in the current diff. `orphaned` is
-/// `None` when anchors could not be recomputed (e.g. the branch is gone).
-#[derive(Serialize, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct Thread {
-    pub root: Comment,
-    pub orphaned: Option<bool>,
-    pub replies: Vec<Comment>,
-}
 
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -32,70 +20,20 @@ pub struct ShowData {
 /// Assemble the review's threads with current line numbers and orphan flags,
 /// exactly as the app computes them — but without writing anything back.
 pub fn show_data(conn: &Connection, review: Review) -> Result<ShowData, String> {
-    let mut comments = review::list_comments_impl(conn, review.id)?;
-
-    // Recompute anchors against the diff as it stands right now. This can
-    // legitimately fail (archived review whose branch is gone); degrade to
-    // stored positions rather than refusing to show anything.
-    let recomputed = recompute_anchors(conn, &review);
-    let (anchors_current, orphaned_ids, diff_paths) = match recomputed {
-        Ok((relocations, diff_paths)) => {
-            let orphaned: HashSet<i64> = relocations
-                .iter()
-                .filter(|r| r.status == prologue_core::anchor::AnchorStatus::Orphaned)
-                .map(|r| r.comment_id)
-                .collect();
-            let moved: HashMap<i64, (Option<u32>, Option<u32>)> = relocations
-                .iter()
-                .map(|r| (r.comment_id, (r.start_line, r.end_line)))
-                .collect();
-            for comment in &mut comments {
-                if let Some(&(start, end)) = moved.get(&comment.id) {
-                    comment.start_line = start;
-                    comment.end_line = end;
-                }
+    // Resolving against the current diff can legitimately fail (archived
+    // review whose branch is gone); degrade to stored positions rather than
+    // refusing to show anything.
+    let (anchors_current, threads) =
+        match review::resolve_threads(conn, &DiffSpec::from(&review), review.id, false) {
+            Ok(threads) => (true, threads),
+            Err(e) => {
+                eprintln!(
+                    "warning: could not recompute anchors ({e}); showing stored line numbers"
+                );
+                (false, review::stored_threads(conn, review.id)?)
             }
-            (true, orphaned, Some(diff_paths))
-        }
-        Err(e) => {
-            eprintln!("warning: could not recompute anchors ({e}); showing stored line numbers");
-            (false, HashSet::new(), None)
-        }
-    };
-
-    let mut replies_by_root: HashMap<i64, Vec<Comment>> = HashMap::new();
-    let mut roots = Vec::new();
-    for comment in comments {
-        match comment.parent_id {
-            Some(root_id) => replies_by_root.entry(root_id).or_default().push(comment),
-            None => roots.push(comment),
-        }
-    }
-    let threads = roots
-        .into_iter()
-        .map(|root| {
-            let orphaned = diff_paths.as_ref().map(|paths| {
-                orphaned_ids.contains(&root.id)
-                    || root.file_path.as_deref().is_some_and(|p| !paths.contains(p))
-            });
-            Thread {
-                replies: replies_by_root.remove(&root.id).unwrap_or_default(),
-                orphaned,
-                root,
-            }
-        })
-        .collect();
+        };
     Ok(ShowData { review, anchors_current, threads })
-}
-
-type Recomputed = (Vec<review::ReanchorResult>, HashSet<String>);
-
-fn recompute_anchors(conn: &Connection, review: &Review) -> Result<Recomputed, String> {
-    let spec = DiffSpec::from(review);
-    let relocations = review::reanchor_comments_impl(conn, &spec, review.id, false)?;
-    let summary = diff::get_diff_summary(&spec, false)?;
-    let paths = summary.files.into_iter().map(|f| f.path).collect();
-    Ok((relocations, paths))
 }
 
 /// `code.txt:6-7 (new side; orphaned)` — where a thread lives, or

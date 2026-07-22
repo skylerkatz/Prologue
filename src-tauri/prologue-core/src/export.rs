@@ -1,11 +1,9 @@
-use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
 use std::path::Path;
 
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
-use crate::anchor::AnchorStatus;
 use crate::diff::{self, DiffMode, DiffSpec};
 use crate::repo::open_git_repo;
 use crate::review::{self, CodeAnchor, Comment, CommentLevel, CommentSide, CommentState};
@@ -62,51 +60,16 @@ pub fn export_review_impl(
 ) -> Result<String, String> {
     // Re-locate line comments first so exported ranges and orphan status
     // match the diff being exported.
-    let reanchored = review::reanchor_comments_impl(conn, spec, review_id, persist)?;
-    let orphaned_anchors: HashSet<i64> = reanchored
-        .iter()
-        .filter(|r| r.status == AnchorStatus::Orphaned)
-        .map(|r| r.comment_id)
-        .collect();
-    let summary =
-        // Exports always describe the canonical full diff, never a
-        // whitespace-filtered view.
-        diff::get_diff_summary(spec, false)?;
-    let diff_paths: HashSet<&str> = summary.files.iter().map(|f| f.path.as_str()).collect();
-
-    let mut comments = review::list_comments_impl(conn, review_id)?;
-    // Render from the computed ranges, not the stored ones — a no-op when
-    // they were just persisted, the whole point when they were not.
-    let relocated: HashMap<i64, (Option<u32>, Option<u32>)> = reanchored
-        .iter()
-        .map(|r| (r.comment_id, (r.start_line, r.end_line)))
-        .collect();
-    for comment in &mut comments {
-        if let Some(&(start, end)) = relocated.get(&comment.id) {
-            comment.start_line = start;
-            comment.end_line = end;
-        }
-    }
-    let comments = comments;
-    // Replies grouped under their root, already in chronological (id) order.
-    let mut replies_by_root: HashMap<i64, Vec<&Comment>> = HashMap::new();
-    for c in &comments {
-        if let Some(root_id) = c.parent_id {
-            replies_by_root.entry(root_id).or_default().push(c);
-        }
-    }
+    let threads = review::resolve_threads(conn, spec, review_id, persist)?;
     // Only open THREADS export: the root's state governs; a reply's own
     // `state` column is meaningless.
-    let open: Vec<ExportComment> = comments
+    let open: Vec<ExportComment> = threads
         .iter()
-        .filter(|c| c.parent_id.is_none() && c.state == CommentState::Open)
-        .map(|c| ExportComment {
-            comment: c,
-            orphaned: orphaned_anchors.contains(&c.id)
-                || c.file_path
-                    .as_deref()
-                    .is_some_and(|p| !diff_paths.contains(p)),
-            replies: replies_by_root.remove(&c.id).unwrap_or_default(),
+        .filter(|t| t.root.state == CommentState::Open)
+        .map(|t| ExportComment {
+            comment: &t.root,
+            orphaned: t.orphaned == Some(true),
+            replies: t.replies.iter().collect(),
         })
         .collect();
     if open.is_empty() {
