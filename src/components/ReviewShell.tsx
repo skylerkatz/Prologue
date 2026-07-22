@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import type { CSSProperties } from "react";
 import { useTauriEvent } from "../useTauriEvent";
 import {
   MENU_SHOW_SHORTCUTS_EVENT,
@@ -20,6 +21,7 @@ import { WhitespaceToggle } from "./WhitespaceToggle";
 import { guideOrderedFiles } from "../diff/guideOrder";
 import { useCommentMutations } from "./useCommentMutations";
 import { useGuide } from "./useGuide";
+import { useResizableSidebar } from "./useResizableSidebar";
 import { useReviewDerived } from "./useReviewDerived";
 import { useReviewSession } from "./useReviewSession";
 
@@ -90,6 +92,7 @@ export function ReviewShell({
     onSetState,
     onCreateReviewComment,
   } = useCommentMutations(session);
+  const sidebar = useResizableSidebar();
 
   const [showArchive, setShowArchive] = useState(false);
   const [showFileJump, setShowFileJump] = useState(false);
@@ -307,7 +310,13 @@ export function ReviewShell({
             </p>
           </div>
         ) : (
-          <div className="review-body">
+          <div
+            className="review-body"
+            ref={sidebar.containerRef}
+            style={
+              { "--sidebar-width": `${sidebar.width}px` } as CSSProperties
+            }
+          >
             <aside className="file-sidebar">
               <FileList
                 summary={view.summary}
@@ -327,6 +336,17 @@ export function ReviewShell({
                 }
               />
             </aside>
+            <div
+              className={
+                sidebar.dragging
+                  ? "sidebar-divider dragging"
+                  : "sidebar-divider"
+              }
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize sidebar"
+              {...sidebar.dividerProps}
+            />
             <div className="diff-pane">
               <ReviewCommentsPanel
                 comments={reviewComments}

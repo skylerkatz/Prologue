@@ -636,10 +636,44 @@ button.primary:hover {
 
 .file-sidebar {
   flex: none;
-  width: 288px;
+  /* Drag-adjustable via the divider; the CSS clamp also catches a persisted
+     width that no longer fits after the window shrinks. */
+  width: clamp(200px, var(--sidebar-width, 288px), 50vw);
   overflow-y: auto;
   border-right: 1px solid var(--border);
   background: var(--bg-app);
+}
+
+/* Invisible 9px grab strip straddling the sidebar's 1px border-right, which
+   stays the visual line. z-index lifts it above both panes' content. */
+.sidebar-divider {
+  flex: none;
+  width: 9px;
+  margin: 0 -4px;
+  position: relative;
+  z-index: 5;
+  cursor: col-resize;
+}
+
+/* Accent hairline over the border while hovering or dragging. */
+.sidebar-divider::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 1px;
+}
+
+.sidebar-divider:hover::after,
+.sidebar-divider.dragging::after {
+  background: var(--accent);
+}
+
+/* Keep the resize cursor no matter what the pointer crosses mid-drag. */
+body.sidebar-resizing,
+body.sidebar-resizing * {
+  cursor: col-resize !important;
 }
 
 .file-list {
@@ -649,9 +683,12 @@ button.primary:hover {
 /* Uppercase mono micro-header: "3 FILES CHANGED". */
 .file-list-header {
   display: flex;
+  /* Wraps at the 200px minimum sidebar width, where "N files changed ·
+     N/N viewed" plus the +/− counts no longer fit on one line. */
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: baseline;
-  gap: 8px;
+  gap: 2px 8px;
   padding: 0 10px 10px;
   color: var(--text-muted);
   font-family: var(--font-mono);
