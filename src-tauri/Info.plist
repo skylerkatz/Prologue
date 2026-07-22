@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Embedded into the unbundled dev binary by tauri-build (and merged into
+	     the .app at bundle time) so the Dock and app switcher show the product
+	     name instead of a name inferred from the executable. -->
+	<key>CFBundleName</key>
+	<string>Prologue</string>
+	<key>CFBundleDisplayName</key>
+	<string>Prologue</string>
+</dict>
+</plist>

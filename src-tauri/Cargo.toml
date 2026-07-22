@@ -12,7 +12,13 @@ authors = ["Skyler Katz"]
 edition = "2021"
 # The workspace has a second binary (prologue, the CLI); `tauri dev`'s bare
 # `cargo run` needs to know this one is the app.
-default-run = "prologue-app"
+default-run = "Prologue"
+
+# macOS shows the executable's file name in the Dock for unbundled dev builds,
+# so the bin target must carry the user-facing name, not the crate name.
+[[bin]]
+name = "Prologue"
+path = "src/main.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
