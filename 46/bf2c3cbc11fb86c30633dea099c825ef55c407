@@ -1,0 +1,33 @@
+src/components/FileJump.tsx
+  s_7fee5b96805fe5::t_7f754cd16ab50c 1-130
+src/components/ReviewShell.tsx
+  s_7fee5b96805fe5::t_08bd829936143c 1
+  s_7fee5b96805fe5::t_bc6df1f6672662 86
+  s_7fee5b96805fe5::t_8446e7346d9799 300-313
+  s_7fee5b96805fe5::t_0839325bc4fb16 9
+  s_7fee5b96805fe5::t_d4acacd03a9f36 98-101
+  s_7fee5b96805fe5::t_0e65d3636bda12 103-140
+  s_7fee5b96805fe5::t_bedb70dc24d75d 102
+src/App.css
+  s_7fee5b96805fe5::t_6d99f90403a2c9 1632-1700
+src/diff/fileMatch.ts
+  s_7fee5b96805fe5::t_69f109f3d8fc68 1-52
+src/diff/fileMatch.test.ts
+  s_7fee5b96805fe5::t_9cd0869919b0c4 1-81
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "46bf2c3cbc11fb86c30633dea099c825ef55c407",
+  "prompts": {},
+  "sessions": {
+    "s_7fee5b96805fe5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9c420f1a-ccd6-47cf-8e23-f793f46746a6",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
