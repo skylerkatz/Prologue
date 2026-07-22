@@ -1,0 +1,28 @@
+src-tauri/prologue/src/resolve.rs
+  s_f98fc3bf2ac9f8::t_8458494fafd791 147
+  s_f98fc3bf2ac9f8::t_a4041e526b0d2c 69-87
+  s_f98fc3bf2ac9f8::t_99e967496db2e7 244-312
+.claude/skills/prologue-review/SKILL.md
+  s_f98fc3bf2ac9f8::t_f3d0ae96960ed3 22
+  s_f98fc3bf2ac9f8::t_7225d421b5a8de 15-17
+src-tauri/prologue/src/main.rs
+  s_f98fc3bf2ac9f8::t_845ddfe6782c74 473-476
+  s_f98fc3bf2ac9f8::t_37c9e9b09ace1b 31,34,36-38
+  s_f98fc3bf2ac9f8::t_6b8acb00671cb9 214-221,224,229-236
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "57cdf8f7c743a2b0e4e4ff29e8b88cc0b9226799",
+  "prompts": {},
+  "sessions": {
+    "s_f98fc3bf2ac9f8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8cb6c5c5-a9c6-4eea-a513-2b67704b3db1",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
