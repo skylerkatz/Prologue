@@ -73,6 +73,33 @@ const MIGRATIONS: &[&str] = &[
         reviewed_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
         PRIMARY KEY (review_id, file_path)
     );",
+    // v5: review guides — AI-generated grouping of a review's changed files
+    // into ordered sections. One guide per (review, base, head, mode);
+    // regeneration replaces the row. `fingerprint_json` maps file path →
+    // FileSummary fingerprint at generation time, for detecting files that
+    // changed since the guide. `cost_usd` is logged for the record only.
+    "CREATE TABLE guides (
+        id INTEGER PRIMARY KEY,
+        review_id INTEGER NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+        base_ref TEXT NOT NULL,
+        head_ref TEXT NOT NULL,
+        mode TEXT NOT NULL CHECK (mode IN ('committed','staged','all')),
+        fingerprint_json TEXT NOT NULL,
+        model TEXT NOT NULL,
+        cost_usd REAL,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE UNIQUE INDEX guides_one_per_diff
+        ON guides (review_id, base_ref, head_ref, mode);
+    CREATE TABLE guide_sections (
+        id INTEGER PRIMARY KEY,
+        guide_id INTEGER NOT NULL REFERENCES guides(id) ON DELETE CASCADE,
+        position INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        files_json TEXT NOT NULL
+    );
+    CREATE INDEX guide_sections_by_guide ON guide_sections (guide_id, position);",
 ];
 
 /// The newest schema version this build knows how to read and migrate to.
@@ -397,6 +424,100 @@ mod tests {
             [],
         )
         .unwrap();
+    }
+
+    #[test]
+    fn v5_migration_applies_in_place_to_a_v4_database_with_rows() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("reviews.db");
+        v1_database_with_rows(&path);
+        {
+            let conn = Connection::open(&path).unwrap();
+            for (i, sql) in MIGRATIONS[1..4].iter().enumerate() {
+                conn.execute_batch(sql).unwrap();
+                conn.execute(
+                    "INSERT INTO schema_migrations (version) VALUES (?1)",
+                    [i as i64 + 2],
+                )
+                .unwrap();
+            }
+        }
+
+        let conn = open(&path).unwrap();
+        let version: i64 = conn
+            .query_row("SELECT MAX(version) FROM schema_migrations", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, MIGRATIONS.len() as i64);
+
+        // Existing rows survive and the new tables are usable.
+        let body: String = conn
+            .query_row("SELECT body FROM comments WHERE id = 1", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(body, "existing note");
+        conn.execute(
+            "INSERT INTO guides (review_id, base_ref, head_ref, mode, fingerprint_json, model)
+             VALUES (1, 'main', 'feature', 'committed', '{}', 'sonnet')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO guide_sections (guide_id, position, title, summary, files_json)
+             VALUES (1, 0, 'Core', 'The change.', '[\"src/a.rs\"]')",
+            [],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn one_guide_per_review_base_head_and_mode() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = open(&dir.path().join("reviews.db")).unwrap();
+        conn.execute(
+            "INSERT INTO reviews (repo_path, branch, base_ref, mode)
+             VALUES ('/repo', 'feature', 'main', 'committed')",
+            [],
+        )
+        .unwrap();
+        let insert = "INSERT INTO guides (review_id, base_ref, head_ref, mode, fingerprint_json, model)
+                      VALUES (1, ?1, ?2, ?3, '{}', 'sonnet')";
+        conn.execute(insert, ["main", "feature", "committed"]).unwrap();
+        // A second guide at the same coordinates is rejected...
+        assert!(conn.execute(insert, ["main", "feature", "committed"]).is_err());
+        // ...but other modes and refs are fine.
+        conn.execute(insert, ["main", "feature", "all"]).unwrap();
+        conn.execute(insert, ["develop", "feature", "committed"]).unwrap();
+    }
+
+    #[test]
+    fn deleting_a_review_cascades_to_its_guide_and_sections() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = open(&dir.path().join("reviews.db")).unwrap();
+        conn.execute(
+            "INSERT INTO reviews (repo_path, branch, base_ref, mode)
+             VALUES ('/repo', 'feature', 'main', 'committed')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO guides (review_id, base_ref, head_ref, mode, fingerprint_json, model)
+             VALUES (1, 'main', 'feature', 'committed', '{}', 'sonnet')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO guide_sections (guide_id, position, title, summary, files_json)
+             VALUES (1, 0, 'Core', 'The change.', '[]')",
+            [],
+        )
+        .unwrap();
+        conn.execute("DELETE FROM reviews WHERE id = 1", []).unwrap();
+        let guides: i64 = conn
+            .query_row("SELECT COUNT(*) FROM guides", [], |r| r.get(0))
+            .unwrap();
+        let sections: i64 = conn
+            .query_row("SELECT COUNT(*) FROM guide_sections", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!((guides, sections), (0, 0));
     }
 
     #[test]
