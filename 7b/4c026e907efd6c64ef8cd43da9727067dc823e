@@ -1,0 +1,29 @@
+src-tauri/prologue/src/main.rs
+  s_c0bab089386a4d::t_78ef0852a054f9 8
+  s_c0bab089386a4d::t_bbb381327635e5 66-76
+  s_c0bab089386a4d::t_78b5f090c2c56a 277-286
+  s_c0bab089386a4d::t_0a24cab03b1c37 493-499
+src-tauri/prologue/src/guide.rs
+  s_c0bab089386a4d::t_c1105cd890648f 1-239
+src-tauri/prologue/tests/cli.rs
+  s_c0bab089386a4d::t_31fbb12be3f5c0 6,8,11
+  s_c0bab089386a4d::t_9366eea94f7d0f 67-193
+src-tauri/prologue/src/show.rs
+  s_c0bab089386a4d::t_bda584f453ead6 114
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "7b4c026e907efd6c64ef8cd43da9727067dc823e",
+  "prompts": {},
+  "sessions": {
+    "s_c0bab089386a4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ae551945-5a25-4374-ab65-4338cf1440ff",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
