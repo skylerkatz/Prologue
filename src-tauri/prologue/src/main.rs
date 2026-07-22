@@ -28,11 +28,14 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// List reviews, active first
+    /// List reviews, active first (scoped to the cwd's repository by default)
     Reviews {
         /// Only reviews of this repository (a path, or a name like "my-app")
-        #[arg(long, value_name = "REPO")]
+        #[arg(long, value_name = "REPO", conflicts_with = "all")]
         repo: Option<String>,
+        /// Every repository's reviews, not just the cwd's
+        #[arg(long)]
+        all: bool,
         /// Include archived reviews
         #[arg(long)]
         archived: bool,
@@ -208,15 +211,29 @@ fn run(cli: Cli) -> Result<(), String> {
         .map_err(|e| format!("Cannot determine the working directory: {e}"))?;
 
     match cli.command {
-        Command::Reviews { repo, archived, json } => {
+        Command::Reviews { repo, all, archived, json } => {
+            let cwd_repo =
+                if all || repo.is_some() { None } else { resolve::containing_workdir(&cwd) };
+            // A cwd outside any repository falls back to the unscoped list:
+            // this command is the discovery escape hatch other errors point at.
+            if !json && !all && repo.is_none() && cwd_repo.is_none() {
+                eprintln!("note: not inside a git repository — listing every repository's reviews");
+            }
             let reviews: Vec<Review> = review::list_reviews_impl(&conn, None, archived)?
                 .into_iter()
-                .filter(|r| repo.as_deref().is_none_or(|q| resolve::repo_matches(r, q)))
+                .filter(|r| resolve::review_in_scope(r, repo.as_deref(), cwd_repo.as_deref()))
                 .collect();
             if json {
                 println!("{}", to_json(&reviews)?);
             } else if reviews.is_empty() {
-                println!("No reviews found");
+                if repo.is_some() || cwd_repo.is_some() {
+                    println!(
+                        "No reviews found for this repository — `prologue reviews --all` \
+                         lists every repository"
+                    );
+                } else {
+                    println!("No reviews found");
+                }
             } else {
                 print!("{}", reviews_table(&conn, &reviews)?);
             }
@@ -453,6 +470,10 @@ mod tests {
         Cli::try_parse_from(["prologue", "reviews"]).unwrap();
         Cli::try_parse_from(["prologue", "reviews", "--repo", "my-app", "--archived", "--json"])
             .unwrap();
+        Cli::try_parse_from(["prologue", "reviews", "--all"]).unwrap();
+        Cli::try_parse_from(["prologue", "reviews", "--all", "--archived", "--json"]).unwrap();
+        // --all and --repo are competing scopes.
+        assert!(Cli::try_parse_from(["prologue", "reviews", "--repo", "my-app", "--all"]).is_err());
         Cli::try_parse_from(["prologue", "show"]).unwrap();
         Cli::try_parse_from(["prologue", "show", "7", "--json"]).unwrap();
         Cli::try_parse_from(["prologue", "show", "my-app@main"]).unwrap();

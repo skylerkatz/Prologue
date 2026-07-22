@@ -12,13 +12,14 @@ dismisses, reopens, or deletes anything — closing a thread is the human
 reviewer's act, in the app. Don't look for a workaround; there isn't one.
 
 Run it from inside the repository being reviewed: the review is inferred
-from the cwd's repo and checked-out branch. Anywhere else, pass a review id
-or `repo@branch` (find ids with `prologue reviews`).
+from the cwd's repo and checked-out branch, and `prologue reviews` lists
+only that repo's reviews. Anywhere else, pass a review id or `repo@branch`
+(find ids with `prologue reviews --all`).
 
 ## Read the review
 
 ```sh
-prologue reviews                 # all active reviews (add --archived for closed ones)
+prologue reviews                 # this repo's active reviews (--all for every repo, --archived for closed ones)
 prologue show                    # current branch's threads: roots, replies, states, anchors
 prologue show --json             # same, machine-readable
 prologue show --file src/a.rs    # only threads on that file

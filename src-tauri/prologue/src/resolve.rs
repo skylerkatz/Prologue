@@ -66,6 +66,25 @@ fn paths_match(stored: &str, query: &Path) -> bool {
     }
 }
 
+/// The working tree of the repository containing `start`, if any. Unlike
+/// `repo_and_branch`, an empty repository or a detached HEAD still counts —
+/// listing needs no branch. Bare repositories and paths outside any
+/// repository yield None.
+pub fn containing_workdir(start: &Path) -> Option<PathBuf> {
+    git2::Repository::discover(start).ok()?.workdir().map(Path::to_path_buf)
+}
+
+/// Whether a review belongs in a `reviews` listing: an explicit `--repo`
+/// query wins, otherwise the repository containing the cwd (when there is
+/// one), otherwise everything is in scope.
+pub fn review_in_scope(review: &Review, repo: Option<&str>, cwd_repo: Option<&Path>) -> bool {
+    match (repo, cwd_repo) {
+        (Some(query), _) => repo_matches(review, query),
+        (None, Some(workdir)) => paths_match(&review.repo_path, workdir),
+        (None, None) => true,
+    }
+}
+
 /// Whether a review belongs to the repo named by `query`: a path (contains
 /// `/`) matches the stored path, a bare name matches the stored path's
 /// final component.
@@ -125,7 +144,7 @@ fn pick_one(mut matches: Vec<Review>, wanted: &str) -> Result<Review, String> {
         matches = active;
     }
     match matches.len() {
-        0 => Err(format!("No review matches {wanted} (see `prologue reviews --archived`)")),
+        0 => Err(format!("No review matches {wanted} (see `prologue reviews --all --archived`)")),
         1 => Ok(matches.into_iter().next().unwrap()),
         _ => {
             let ids: Vec<String> = matches
@@ -222,7 +241,75 @@ mod tests {
         let by_name = format!("{name}@main");
         assert_eq!(resolve_review(&conn, Some(&by_name), cwd).unwrap().id, review.id);
 
-        assert!(resolve_review(&conn, Some("no-such-repo@main"), cwd).is_err());
+        let err = resolve_review(&conn, Some("no-such-repo@main"), cwd).unwrap_err();
+        assert!(err.contains("`prologue reviews --all --archived`"), "{err}");
+    }
+
+    #[test]
+    fn containing_workdir_tolerates_head_states_repo_and_branch_rejects() {
+        let fixture = FixtureRepo::new();
+        let head = fixture.commit_file("src/deep/f.txt", "x\n", "initial");
+
+        // Nested directories resolve to the repository root.
+        let nested = fixture.dir.path().join("src/deep");
+        let workdir = containing_workdir(&nested).unwrap();
+        assert_eq!(workdir.canonicalize().unwrap(), fixture.dir.path().canonicalize().unwrap());
+
+        // Outside any repository: no scope, not an error.
+        let outside = tempfile::tempdir().unwrap();
+        assert_eq!(containing_workdir(outside.path()), None);
+
+        // An empty repository still scopes (repo_and_branch would error).
+        let empty = FixtureRepo::new();
+        assert!(containing_workdir(empty.dir.path()).is_some());
+        assert!(repo_and_branch(empty.dir.path()).is_err());
+
+        // A detached HEAD still scopes (repo_and_branch would error).
+        fixture.repo.set_head_detached(head).unwrap();
+        assert!(containing_workdir(fixture.dir.path()).is_some());
+        assert!(repo_and_branch(fixture.dir.path()).is_err());
+    }
+
+    #[test]
+    fn review_in_scope_prefers_explicit_repo_then_cwd_repo() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = test_db(&dir);
+        let fixture_a = FixtureRepo::new();
+        fixture_a.commit_file("a.txt", "one\n", "initial");
+        let fixture_b = FixtureRepo::new();
+        fixture_b.commit_file("b.txt", "one\n", "initial");
+        let review_a = open_review_impl(
+            &conn,
+            &fixture_a.dir.path().to_string_lossy(),
+            "main",
+            "origin/main",
+            DiffMode::Committed,
+        )
+        .unwrap();
+        let review_b = open_review_impl(
+            &conn,
+            &fixture_b.dir.path().to_string_lossy(),
+            "main",
+            "origin/main",
+            DiffMode::Committed,
+        )
+        .unwrap();
+
+        // An explicit --repo query wins even when the cwd is another repo.
+        let name_a = fixture_a.dir.path().file_name().unwrap().to_string_lossy().into_owned();
+        assert!(review_in_scope(&review_a, Some(&name_a), Some(fixture_b.dir.path())));
+        assert!(!review_in_scope(&review_b, Some(&name_a), Some(fixture_b.dir.path())));
+
+        // The cwd's repo scopes when no --repo is given, including through
+        // canonicalization (e.g. /tmp vs /private/tmp).
+        assert!(review_in_scope(&review_a, None, Some(fixture_a.dir.path())));
+        assert!(!review_in_scope(&review_b, None, Some(fixture_a.dir.path())));
+        let canonical = fixture_a.dir.path().canonicalize().unwrap();
+        assert!(review_in_scope(&review_a, None, Some(&canonical)));
+
+        // No query and no cwd repo: everything is in scope.
+        assert!(review_in_scope(&review_a, None, None));
+        assert!(review_in_scope(&review_b, None, None));
     }
 
     #[test]
