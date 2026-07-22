@@ -1,0 +1,41 @@
+src/App.tsx
+  s_bb163241636251::t_8cead625fb11d7 8
+  s_bb163241636251::t_23a98ee2ad4a51 159,161,181
+  s_bb163241636251::t_759f7977a50e2e 157-158,160,162-180
+  s_bb163241636251::t_c1da39b733702e 80
+  s_bb163241636251::t_4b2d34d2dec296 132
+src/ipc.ts
+  s_bb163241636251::t_a0d7afa959b421 147-148
+  s_bb163241636251::t_ac79e3c0c2f0bb 144-146
+src-tauri/src/lib.rs
+  s_bb163241636251::t_ea23ec689f6e1d 103-104,116-120,124
+  s_bb163241636251::t_a366db5073e633 7,9-12,34,36-37,40-41,51-56,60,68-69,71-73
+  s_bb163241636251::t_b16f2d844024cb 25-26,31-33,78
+  s_bb163241636251::t_d075fbb752c84c 100
+  s_bb163241636251::t_5373036f4a2b3c 35
+  s_bb163241636251::t_14b0751a6e0341 70
+  s_bb163241636251::t_464577b464c68f 13-24,27-30
+  s_bb163241636251::t_32ae2b3ca2cec0 121-123
+  s_bb163241636251::t_130ec8b8773527 160
+  s_bb163241636251::t_0773e263bf4bca 161
+  s_bb163241636251::t_45b196b29fbc57 57-59,61-67,74-77
+src/components/ReviewShell.tsx
+  s_bb163241636251::t_776b961b6e994f 243-259
+  s_bb163241636251::t_ca358aff5a8c75 227-228
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "64cf4ee79123da6a27afb106aa57442454c1a8b8",
+  "prompts": {},
+  "sessions": {
+    "s_bb163241636251": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6b0daf9e-a53b-4e65-b3db-3fbc62d6498d",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
