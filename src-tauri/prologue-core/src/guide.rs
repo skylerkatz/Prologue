@@ -238,10 +238,19 @@ pub fn build_prompt(files: &[GuideFileInput]) -> GuidePrompt {
          Rules:\n\
          - Use exact file paths from the changed-file list below; never invent paths.\n\
          - Every file belongs to exactly one section.\n\
-         - Order sections by review priority: core behavior changes first, then supporting \
-         work, then mechanical churn (config, lockfiles, generated files) last.\n\
-         - Each section needs a short title and a summary (1-3 sentences) of what that \
-         group does and what a reviewer should look for.\n\
+         - Order sections as the work was reasoned through: the core change first, then \
+         its consequences, then supporting work, with mechanical churn (config, \
+         lockfiles, generated files) last.\n\
+         - Title each section by what the change accomplishes (\"New retry queue for \
+         webhook jobs\"), never by layer or file type (\"Model changes\", \"Tests\").\n\
+         - Each summary is 1-3 sentences of specific prose: name the key functions, \
+         types, or jobs involved; when the change follows an existing pattern in the \
+         codebase, say which one; when something is deleted or replaced, say so \
+         explicitly (\"the old X job is removed entirely\").\n\
+         - End each summary with the one thing a careful reviewer should verify in that \
+         section.\n\
+         - Every sentence must tell the reviewer something the file list doesn't — never \
+         write \"this section contains changes to…\".\n\
          - Most changes want 2-6 sections; never one section per file.\n\
          \n\
          ## Changed files\n\n",
