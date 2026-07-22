@@ -420,7 +420,9 @@ fn print_created(comment: &Comment, json: bool) -> Result<(), String> {
 }
 
 fn to_json<T: serde::Serialize>(value: &T) -> Result<String, String> {
-    serde_json::to_string_pretty(value).map_err(|e| format!("Failed to serialize output: {e}"))
+    // Compact on purpose: the output is read by agents, where pretty
+    // printing only spends tokens on whitespace.
+    serde_json::to_string(value).map_err(|e| format!("Failed to serialize output: {e}"))
 }
 
 fn reviews_table(conn: &Connection, reviews: &[Review]) -> Result<String, String> {

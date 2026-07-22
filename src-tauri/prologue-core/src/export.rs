@@ -368,7 +368,9 @@ fn render_json(data: &ExportData) -> Result<String, String> {
         .chain(data.files.iter().flat_map(|(_, group)| group))
         .map(JsonComment::from)
         .collect();
-    serde_json::to_string_pretty(&JsonExport {
+    // Compact on purpose: JSON exports feed agents (directly or embedded
+    // in prompt-json), where pretty printing only spends tokens.
+    serde_json::to_string(&JsonExport {
         repo: &data.repo,
         branch: data.branch,
         base_ref: data.base_ref,
