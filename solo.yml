@@ -2,7 +2,7 @@ name: Diff Viewer
 icon: null
 processes:
   Tauri Development:
-    command: npm run tauri dev -- --features mcp-bridge --config src-tauri/tauri.mcp-bridge.conf.json
+    command: npm run dev:bridge
     working_dir: null
     auto_start: false
     auto_restart: true

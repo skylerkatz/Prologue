@@ -11,7 +11,14 @@ Built with Tauri 2, React, and TypeScript.
 ## Development
 
 - `npm run tauri dev` — run the app (builds the CLI sidecar first)
-- `npm run build` — type-check + production frontend build
+- `npm run dev:bridge` — run the app with the MCP bridge: `--features mcp-bridge`
+  compiles the bridge plugin and `--config src-tauri/tauri.mcp-bridge.conf.json`
+  grants its capability. The two flags must travel together — one without the
+  other yields a capability referencing an uncompiled plugin, or a bridge with
+  no permission. `solo.yml`'s Tauri Development process uses this script.
+- `npm run build` — type-check + production frontend build. The script pins
+  `NODE_ENV=production` because a shell exporting `NODE_ENV=development` would
+  otherwise make `vite build` ship the development React build.
 - `cargo test` / `cargo clippy --all-targets` from `src-tauri/` — Rust checks
   across the workspace (app, `prologue-core`, `prologue`)
 

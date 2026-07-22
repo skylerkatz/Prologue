@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:bridge": "tauri dev --features mcp-bridge --config src-tauri/tauri.mcp-bridge.conf.json",
     "build": "tsc && NODE_ENV=production vite build",
     "preview": "vite preview",
     "tauri": "tauri"
