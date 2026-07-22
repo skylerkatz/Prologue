@@ -4,6 +4,7 @@
 use prologue_core::db::Db;
 use prologue_core::diff::{self, ContextLines, DiffMode, DiffSpec, DiffSummary, FileDiff};
 use prologue_core::export::{self, ExportFormat};
+use prologue_core::guide::{self, Guide};
 use prologue_core::repo::{self, open_git_repo, BranchList, RepoInfo};
 use prologue_core::review::{
     self, ArchivedReview, Comment, CommentState, NewComment, OpenReviewResult, ReanchorResult,
@@ -11,7 +12,9 @@ use prologue_core::review::{
 };
 use prologue_core::rusqlite::Connection;
 
-fn lock<'a>(db: &'a tauri::State<'_, Db>) -> Result<std::sync::MutexGuard<'a, Connection>, String> {
+pub(crate) fn lock<'a>(
+    db: &'a tauri::State<'_, Db>,
+) -> Result<std::sync::MutexGuard<'a, Connection>, String> {
     db.0.lock().map_err(|_| "Review database is unavailable".to_owned())
 }
 
@@ -236,4 +239,19 @@ pub fn export_review(
 ) -> Result<String, String> {
     let conn = lock(&db)?;
     export::export_review_impl(&conn, &DiffSpec { repo_path, base, head, mode }, review_id, format, true)
+}
+
+/// The stored guide for one diff's coordinates, if any (generation lives in
+/// `guide_engine`). Sections arrive in order; staleness is the frontend's
+/// call, by comparing stored fingerprints against the current summary.
+#[tauri::command]
+pub fn find_guide(
+    db: tauri::State<'_, Db>,
+    review_id: i64,
+    base: String,
+    head: String,
+    mode: DiffMode,
+) -> Result<Option<Guide>, String> {
+    let conn = lock(&db)?;
+    guide::find_guide_impl(&conn, review_id, &base, &head, mode)
 }

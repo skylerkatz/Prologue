@@ -1,6 +1,7 @@
 mod cli_install;
 mod commands;
 mod events;
+mod guide_engine;
 mod watcher;
 
 use prologue_core::db;
@@ -162,6 +163,7 @@ pub fn run() {
             let conn = db::open(&dir.join("reviews.db"))?;
             app.manage(db::Db(Mutex::new(conn)));
             app.manage(watcher::RepoWatcher::default());
+            app.manage(guide_engine::GuideRuntime::default());
             // External writers (the prologue CLI) commit to reviews.db
             // behind the app's back; surface them as `comments-changed`.
             watcher::start_db_watching(app.handle().clone(), dir)?;
@@ -235,6 +237,10 @@ pub fn run() {
             commands::archive_stale_reviews,
             commands::list_archived_reviews,
             commands::export_review,
+            commands::find_guide,
+            guide_engine::generate_guide,
+            guide_engine::cancel_guide,
+            guide_engine::guide_cli_status,
             cli_install::install_cli,
             watcher::start_watching,
             watcher::stop_watching,
