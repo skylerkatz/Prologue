@@ -5,6 +5,7 @@
 use git2::{BranchType, Repository};
 use rusqlite::{Connection, OptionalExtension};
 use serde::Serialize;
+use std::path::Path;
 
 use crate::db::{db_err, NOW};
 use crate::diff::{self, DiffMode, DiffSpec};
@@ -105,6 +106,17 @@ pub struct OpenReviewResult {
     pub branch_merged: bool,
 }
 
+/// The canonical spelling of a repo path — symlinks resolved, so every
+/// spelling of one directory (macOS /tmp vs /private/tmp) keys one review.
+/// Uncanonicalizable paths (repo deleted since) keep the caller's spelling,
+/// so archived reviews stay addressable.
+fn canonical_repo_path(repo_path: &str) -> String {
+    Path::new(repo_path)
+        .canonicalize()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| repo_path.to_owned())
+}
+
 pub fn open_review_impl(
     conn: &Connection,
     repo_path: &str,
@@ -112,11 +124,16 @@ pub fn open_review_impl(
     base_ref: &str,
     mode: DiffMode,
 ) -> Result<Review, String> {
+    // Reviews key on the canonical path, but rows written before
+    // canonicalization may carry the caller's spelling — match either, and
+    // refresh the stored path on every open so legacy rows converge.
+    let canonical = canonical_repo_path(repo_path);
     let existing: Option<i64> = conn
         .query_row(
             "SELECT id FROM reviews
-             WHERE repo_path = ?1 AND branch = ?2 AND status = 'active'",
-            [repo_path, branch],
+             WHERE repo_path IN (?1, ?2) AND branch = ?3 AND status = 'active'
+             ORDER BY (repo_path = ?1) DESC, id",
+            [canonical.as_str(), repo_path, branch],
             |r| r.get(0),
         )
         .optional()
@@ -126,10 +143,11 @@ pub fn open_review_impl(
         Some(id) => {
             conn.execute(
                 &format!(
-                    "UPDATE reviews SET base_ref = ?1, mode = ?2, updated_at = {NOW}
-                     WHERE id = ?3"
+                    "UPDATE reviews
+                     SET repo_path = ?1, base_ref = ?2, mode = ?3, updated_at = {NOW}
+                     WHERE id = ?4"
                 ),
-                (base_ref, mode.as_str(), id),
+                (&canonical, base_ref, mode.as_str(), id),
             )
             .map_err(db_err)?;
             id
@@ -138,7 +156,7 @@ pub fn open_review_impl(
             conn.execute(
                 "INSERT INTO reviews (repo_path, branch, base_ref, mode)
                  VALUES (?1, ?2, ?3, ?4)",
-                (repo_path, branch, base_ref, mode.as_str()),
+                (&canonical, branch, base_ref, mode.as_str()),
             )
             .map_err(db_err)?;
             conn.last_insert_rowid()
@@ -263,11 +281,13 @@ pub fn open_review_checked_impl(
     // Merged (or somehow deleted) branch: close out any active review and
     // surface the newest archived one read-only instead of creating a fresh
     // active review that the next refresh would archive again.
+    let canonical = canonical_repo_path(repo_path);
     let active: Option<i64> = conn
         .query_row(
             "SELECT id FROM reviews
-             WHERE repo_path = ?1 AND branch = ?2 AND status = 'active'",
-            [repo_path, branch],
+             WHERE repo_path IN (?1, ?2) AND branch = ?3 AND status = 'active'
+             ORDER BY (repo_path = ?1) DESC, id",
+            [canonical.as_str(), repo_path, branch],
             |r| r.get(0),
         )
         .optional()
@@ -278,9 +298,9 @@ pub fn open_review_checked_impl(
     let latest_archived: Option<i64> = conn
         .query_row(
             "SELECT id FROM reviews
-             WHERE repo_path = ?1 AND branch = ?2 AND status = 'archived'
+             WHERE repo_path IN (?1, ?2) AND branch = ?3 AND status = 'archived'
              ORDER BY id DESC LIMIT 1",
-            [repo_path, branch],
+            [canonical.as_str(), repo_path, branch],
             |r| r.get(0),
         )
         .optional()
@@ -296,14 +316,15 @@ pub fn archive_stale_reviews_impl(
     repo: &Repository,
     repo_path: &str,
 ) -> Result<Vec<Review>, String> {
+    let canonical = canonical_repo_path(repo_path);
     let mut stmt = conn
         .prepare(
             "SELECT id, branch, base_ref FROM reviews
-             WHERE repo_path = ?1 AND status = 'active' ORDER BY id",
+             WHERE repo_path IN (?1, ?2) AND status = 'active' ORDER BY id",
         )
         .map_err(db_err)?;
     let active: Vec<(i64, String, String)> = stmt
-        .query_map([repo_path], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .query_map([canonical.as_str(), repo_path], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
         .map_err(db_err)?
         .collect::<Result<Vec<_>, _>>()
         .map_err(db_err)?;
@@ -331,15 +352,16 @@ pub fn list_archived_reviews_impl(
     conn: &Connection,
     repo_path: &str,
 ) -> Result<Vec<ArchivedReview>, String> {
+    let canonical = canonical_repo_path(repo_path);
     let mut stmt = conn
         .prepare(
             "SELECT id, (SELECT COUNT(*) FROM comments c WHERE c.review_id = reviews.id)
-             FROM reviews WHERE repo_path = ?1 AND status = 'archived'
+             FROM reviews WHERE repo_path IN (?1, ?2) AND status = 'archived'
              ORDER BY updated_at DESC, id DESC",
         )
         .map_err(db_err)?;
     let rows: Vec<(i64, i64)> = stmt
-        .query_map([repo_path], |r| Ok((r.get(0)?, r.get(1)?)))
+        .query_map([canonical.as_str(), repo_path], |r| Ok((r.get(0)?, r.get(1)?)))
         .map_err(db_err)?
         .collect::<Result<Vec<_>, _>>()
         .map_err(db_err)?;
@@ -386,11 +408,13 @@ pub fn find_active_review_impl(
     repo_path: &str,
     branch: &str,
 ) -> Result<Option<Review>, String> {
+    let canonical = canonical_repo_path(repo_path);
     let id: Option<i64> = conn
         .query_row(
             "SELECT id FROM reviews
-             WHERE repo_path = ?1 AND branch = ?2 AND status = 'active'",
-            [repo_path, branch],
+             WHERE repo_path IN (?1, ?2) AND branch = ?3 AND status = 'active'
+             ORDER BY (repo_path = ?1) DESC, id",
+            [canonical.as_str(), repo_path, branch],
             |r| r.get(0),
         )
         .optional()
@@ -569,6 +593,68 @@ mod tests {
         // Other branches and repos get their own reviews.
         let other = open_review_impl(&conn, "/repo", "fix", "main", DiffMode::Committed).unwrap();
         assert_ne!(other.id, created.id);
+    }
+
+    /// The /tmp vs /private/tmp situation, reproduced deterministically: a
+    /// symlinked spelling of the repo and the real one must key one review.
+    #[test]
+    fn alternate_spellings_of_the_repo_path_resolve_to_the_same_review() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = test_db(&dir);
+        let fixture = fixture();
+        let link = dir.path().join("repo-link");
+        std::os::unix::fs::symlink(fixture.dir.path(), &link).unwrap();
+        let link_path = link.to_string_lossy().into_owned();
+
+        let via_real =
+            open_review_impl(&conn, &fixture.path(), "feature", "main", DiffMode::Committed)
+                .unwrap();
+        let via_link =
+            open_review_impl(&conn, &link_path, "feature", "main", DiffMode::Committed).unwrap();
+        assert_eq!(via_link.id, via_real.id, "one review per physical repo+branch");
+        // Both spellings store the same canonical path.
+        assert_eq!(via_link.repo_path, via_real.repo_path);
+
+        // Reads resolve through either spelling as well.
+        let by_link = find_active_review_impl(&conn, &link_path, "feature").unwrap().unwrap();
+        assert_eq!(by_link.id, via_real.id);
+        let by_real =
+            find_active_review_impl(&conn, &fixture.path(), "feature").unwrap().unwrap();
+        assert_eq!(by_real.id, via_real.id);
+    }
+
+    /// Rows written before canonicalization carry whatever spelling the
+    /// caller used; opening through that spelling must resume them (not
+    /// duplicate) and converge the stored path.
+    #[test]
+    fn legacy_uncanonical_rows_are_adopted_on_open() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = test_db(&dir);
+        let fixture = fixture();
+        let link = dir.path().join("repo-link");
+        std::os::unix::fs::symlink(fixture.dir.path(), &link).unwrap();
+        let link_path = link.to_string_lossy().into_owned();
+
+        // A pre-canonicalization row, stored under the symlinked spelling.
+        conn.execute(
+            "INSERT INTO reviews (repo_path, branch, base_ref, mode)
+             VALUES (?1, 'feature', 'main', 'committed')",
+            [link_path.as_str()],
+        )
+        .unwrap();
+
+        let resumed =
+            open_review_impl(&conn, &link_path, "feature", "main", DiffMode::Committed).unwrap();
+        let count: i64 =
+            conn.query_row("SELECT COUNT(*) FROM reviews", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 1, "the legacy row is resumed, not duplicated");
+        assert_eq!(resumed.repo_path, canonical_repo_path(&link_path), "path converged");
+
+        // After adoption the real spelling reaches the same review too.
+        let via_real =
+            open_review_impl(&conn, &fixture.path(), "feature", "main", DiffMode::Committed)
+                .unwrap();
+        assert_eq!(via_real.id, resumed.id);
     }
 
     #[test]
