@@ -59,6 +59,31 @@ import { useCopyPath } from "./useCopyPath";
 /** Parallel `get_file_diff` calls; each recomputes the repo diff in Rust. */
 const MAX_CONCURRENT_LOADS = 3;
 
+/** Dedupe/cache keys tied to a file's content identity, so a refresh that
+ * changes the file naturally invalidates its entries. `\u0000` cannot appear
+ * in paths. */
+const fileKey = (file: FileSummary): string =>
+  `${file.path}\u0000${file.fingerprint}`;
+const hunkKey = (file: FileSummary, hi: number): string =>
+  `${fileKey(file)}\u0000${hi}`;
+/** The `fileKey` prefix of a `hunkKey`. */
+const hunkKeyFile = (key: string): string =>
+  key.slice(0, key.lastIndexOf("\u0000"));
+
+/** Reviewed files start collapsed; "changed since review" files start
+ * expanded — they need re-reviewing. */
+function initialStates(
+  files: FileSummary[],
+  reviewStates: ReadonlyMap<string, FileReviewState>,
+): Map<string, FileViewState> {
+  return new Map(
+    files.map((f) => [
+      f.path,
+      initialFileState(reviewStates.get(f.path) !== "reviewed"),
+    ]),
+  );
+}
+
 const STATUS_LABELS: Record<FileStatus, string> = {
   added: "A",
   modified: "M",
@@ -98,9 +123,10 @@ interface DiffViewProps {
 
 type ExpandDirection = "top" | "bottom" | "all";
 
-/** A gutter-drag / shift-click line selection, confined to one hunk + side. */
+/** A gutter-drag / shift-click line selection, confined to one hunk + side.
+ * Keyed by file path so it can survive refreshes of other files. */
 interface LineSelection {
-  fi: number;
+  path: string;
   hi: number;
   side: CommentSide;
   start: number;
@@ -126,15 +152,13 @@ export function DiffView({
   onDeleteComment,
   onSetCommentState,
 }: DiffViewProps) {
-  // Initializer only: DiffView remounts per diff generation, so reviewed
-  // files start collapsed on every refresh/reload. "Changed since review"
-  // files start expanded — they need re-reviewing.
-  const [states, setStates] = useState<FileViewState[]>(() =>
-    summary.files.map((f) =>
-      initialFileState(reviewStates.get(f.path) !== "reviewed"),
-    ),
+  // Keyed by file PATH, not display index, and reconciled across refreshes
+  // (see the block below) instead of remounting — so scroll position,
+  // expansions, and the keyboard cursor survive a watcher-driven refresh.
+  const [states, setStates] = useState<ReadonlyMap<string, FileViewState>>(
+    () => initialStates(summary.files, reviewStates),
   );
-  // Syntax tokens per visible hunk, keyed `${fi}:${hi}`; rows render plain
+  // Syntax tokens per visible hunk, keyed by `hunkKey`; rows render plain
   // until their hunk's entry appears, so highlighting never gates paint.
   const [highlights, setHighlights] = useState<
     ReadonlyMap<string, LineTokens[]>
@@ -145,21 +169,25 @@ export function DiffView({
   const [editingId, setEditingId] = useState<number | null>(null);
   // Keyboard cursor: the file whose header j/k landed on. A ref mirror so
   // the window keydown handler always sees the latest position.
-  const [cursorFi, setCursorFi] = useState<number | null>(null);
-  const cursorFiRef = useRef<number | null>(null);
+  const [cursorPath, setCursorPath] = useState<string | null>(null);
+  const cursorPathRef = useRef<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  // Dedupe set, kept on success: a scroll-render can re-fire the load effect
-  // before React applies the loaded state, and the `diff === null` guard
-  // alone would re-fetch. Entries are only removed to allow error retries.
-  const requested = useRef(new Set<number>());
+  // Dedupe set keyed by `fileKey`, kept on success: a scroll-render can
+  // re-fire the load effect before React applies the loaded state, and the
+  // `diff === null` guard alone would re-fetch. Entries are removed on error
+  // to allow retries, and pruned when a refresh changes a file's content; a
+  // resolved fetch whose key was pruned is stale and never applied.
+  const requested = useRef(new Set<string>());
   const activeLoads = useRef(0);
   // In-progress comment text; survives virtualized rows unmounting.
   const drafts = useRef<DraftStore>(new Map());
   // Live drag state + the fixed end of the selection; refs so the gutter
   // handlers stay referentially stable for RowContent's memo.
-  const dragRef = useRef<{ fi: number; hi: number; side: CommentSide } | null>(
-    null,
-  );
+  const dragRef = useRef<{
+    path: string;
+    hi: number;
+    side: CommentSide;
+  } | null>(null);
   const anchorRef = useRef<number | null>(null);
   // Written wherever the state is set (not at render) so the window mouseup
   // handler sees the latest selection even before React re-renders.
@@ -172,30 +200,142 @@ export function DiffView({
     setSelection(sel);
   }, []);
 
+  // ── Refresh reconciliation ─────────────────────────────────────────────
+  // A new summary adjusts state during render (React's derived-state
+  // pattern) instead of remounting, so rows never see a mix of new files
+  // and stale state. A params change (branch/mode/whitespace/repo switch)
+  // resets everything, like the old remount-by-generation did; a same-params
+  // refresh (the watcher, ⌘R) reconciles per file by content fingerprint.
+  // Idempotent by construction — StrictMode may run it twice.
+  const params = { repoPath, base, head, mode, ignoreWhitespace };
+  const [synced, setSynced] = useState({ summary, params });
+  if (synced.summary !== summary) {
+    const paramsChanged =
+      synced.params.repoPath !== repoPath ||
+      synced.params.base !== base ||
+      synced.params.head !== head ||
+      synced.params.mode !== mode ||
+      synced.params.ignoreWhitespace !== ignoreWhitespace;
+    const prevFiles = synced.summary.files;
+    setSynced({ summary, params });
+    if (paramsChanged) {
+      requested.current = new Set();
+      highlightRequested.current = new Set();
+      drafts.current = new Map();
+      dragRef.current = null;
+      anchorRef.current = null;
+      cursorPathRef.current = null;
+      setStates(initialStates(summary.files, reviewStates));
+      setHighlights(new Map());
+      applySelection(null);
+      setComposer(null);
+      setEditingId(null);
+      setCursorPath(null);
+    } else {
+      // Keep state only for files whose content identity is unchanged;
+      // changed files reset (their diff, reveals, and context describe old
+      // content) and re-expand for re-review; vanished files drop out.
+      const prevFingerprints = new Map(
+        prevFiles.map((f) => [f.path, f.fingerprint]),
+      );
+      const kept = new Set<string>();
+      const nextStates = new Map<string, FileViewState>();
+      for (const file of summary.files) {
+        const existing = states.get(file.path);
+        if (
+          existing !== undefined &&
+          prevFingerprints.get(file.path) === file.fingerprint
+        ) {
+          nextStates.set(file.path, existing);
+          kept.add(file.path);
+        } else {
+          nextStates.set(
+            file.path,
+            initialFileState(reviewStates.get(file.path) !== "reviewed"),
+          );
+        }
+      }
+      setStates(nextStates);
+      const valid = new Set(summary.files.map(fileKey));
+      requested.current = new Set(
+        [...requested.current].filter((k) => valid.has(k)),
+      );
+      highlightRequested.current = new Set(
+        [...highlightRequested.current].filter((k) =>
+          valid.has(hunkKeyFile(k)),
+        ),
+      );
+      setHighlights(
+        (prev) =>
+          new Map([...prev].filter(([k]) => valid.has(hunkKeyFile(k)))),
+      );
+      // Line selections/composers bind to hunk line numbers, so they only
+      // survive on files whose diff is unchanged; file/reply composers just
+      // need their file to still be in the diff. The cursor likewise.
+      const paths = new Set(summary.files.map((f) => f.path));
+      if (
+        selectionRef.current !== null &&
+        !kept.has(selectionRef.current.path)
+      ) {
+        dragRef.current = null;
+        anchorRef.current = null;
+        applySelection(null);
+      }
+      const pinned = composerRef.current;
+      if (
+        pinned !== null &&
+        (pinned.level === "line"
+          ? !kept.has(pinned.path)
+          : !paths.has(pinned.path))
+      ) {
+        setComposer(null);
+      }
+      if (
+        cursorPathRef.current !== null &&
+        !paths.has(cursorPathRef.current)
+      ) {
+        cursorPathRef.current = null;
+        setCursorPath(null);
+      }
+    }
+  }
+
+  const fileByPath = useMemo(
+    () => new Map(summary.files.map((f) => [f.path, f])),
+    [summary.files],
+  );
+
   const updateState = useCallback(
-    (fi: number, update: (state: FileViewState) => FileViewState) => {
-      setStates((prev) => prev.map((s, i) => (i === fi ? update(s) : s)));
+    (path: string, update: (state: FileViewState) => FileViewState) => {
+      setStates((prev) => {
+        const state = prev.get(path);
+        if (state === undefined) {
+          return prev;
+        }
+        const next = new Map(prev);
+        next.set(path, update(state));
+        return next;
+      });
     },
     [],
   );
 
   const loadFile = useCallback(
-    (fi: number) => {
-      if (requested.current.has(fi)) {
+    (file: FileSummary) => {
+      const key = fileKey(file);
+      if (requested.current.has(key)) {
         return;
       }
-      requested.current.add(fi);
+      requested.current.add(key);
       activeLoads.current += 1;
-      getFileDiff(
-        repoPath,
-        base,
-        head,
-        mode,
-        ignoreWhitespace,
-        summary.files[fi].path,
-      )
+      getFileDiff(repoPath, base, head, mode, ignoreWhitespace, file.path)
         .then((diff) => {
-          updateState(fi, (s) => ({
+          // A pruned key means a refresh changed (or dropped) the file while
+          // this fetch was in flight; the result describes old content.
+          if (!requested.current.has(key)) {
+            return;
+          }
+          updateState(file.path, (s) => ({
             ...s,
             diff,
             error: null,
@@ -206,19 +346,19 @@ export function DiffView({
           }));
         })
         .catch((e: unknown) => {
-          requested.current.delete(fi);
-          updateState(fi, (s) => ({ ...s, error: errorText(e) }));
+          requested.current.delete(key);
+          updateState(file.path, (s) => ({ ...s, error: errorText(e) }));
         })
         .finally(() => {
           activeLoads.current -= 1;
         });
     },
-    [repoPath, base, head, mode, ignoreWhitespace, summary, updateState],
+    [repoPath, base, head, mode, ignoreWhitespace, updateState],
   );
 
   const toggleFile = useCallback(
-    (fi: number) => {
-      updateState(fi, (s) => ({ ...s, expanded: !s.expanded }));
+    (path: string) => {
+      updateState(path, (s) => ({ ...s, expanded: !s.expanded }));
     },
     [updateState],
   );
@@ -226,36 +366,38 @@ export function DiffView({
   // Marking collapses the card and unmarking re-expands it; the caret
   // (`toggleFile`) stays independent, so peeking at a reviewed file never
   // unmarks it.
-  const pendingScrollFi = useRef<number | null>(null);
+  const pendingScrollPath = useRef<string | null>(null);
   const toggleReviewed = useCallback(
-    (fi: number) => {
-      const path = summary.files[fi].path;
+    (path: string) => {
       const isReviewed = reviewStates.get(path) === "reviewed";
-      updateState(fi, (s) => ({ ...s, expanded: isReviewed }));
+      updateState(path, (s) => ({ ...s, expanded: isReviewed }));
       if (!isReviewed) {
         // Collapsing removes the file's rows; without a correction the
         // viewport would land mid-way through a later file. Scroll the
         // collapsed header to the top instead — the next file sits right
         // below it. (Runs from an effect once the row model has rebuilt.)
-        pendingScrollFi.current = fi;
+        pendingScrollPath.current = path;
       }
       onToggleReviewed(path);
     },
-    [summary.files, reviewStates, onToggleReviewed, updateState],
+    [reviewStates, onToggleReviewed, updateState],
   );
 
   const forceLoadFile = useCallback(
-    (fi: number) => {
-      updateState(fi, (s) => ({ ...s, forceLoad: true }));
-      loadFile(fi);
+    (path: string) => {
+      updateState(path, (s) => ({ ...s, forceLoad: true }));
+      const file = fileByPath.get(path);
+      if (file !== undefined) {
+        loadFile(file);
+      }
     },
-    [updateState, loadFile],
+    [updateState, fileByPath, loadFile],
   );
 
   const expandGap = useCallback(
-    (fi: number, gi: number, direction: ExpandDirection) => {
-      const state = states[fi];
-      if (state.diff === null) {
+    (path: string, gi: number, direction: ExpandDirection) => {
+      const state = states.get(path);
+      if (state === undefined || state.diff === null) {
         return;
       }
       const gap = computeGaps(state.diff)[gi];
@@ -273,9 +415,9 @@ export function DiffView({
         from = Math.max(lastHidden - CONTEXT_CHUNK + 1, firstHidden);
       }
       const count = to - from + 1;
-      getContextLines(repoPath, head, mode, summary.files[fi].path, from, to)
+      getContextLines(repoPath, head, mode, path, from, to)
         .then((ctx) => {
-          updateState(fi, (s) => {
+          updateState(path, (s) => {
             const context = new Map(s.context);
             ctx.lines.forEach((content, i) => context.set(ctx.start + i, content));
             const reveals = s.reveals.map((r, i) => {
@@ -290,27 +432,27 @@ export function DiffView({
           });
         })
         .catch((e: unknown) => {
-          updateState(fi, (s) => ({ ...s, error: errorText(e) }));
+          updateState(path, (s) => ({ ...s, error: errorText(e) }));
         });
     },
-    [states, repoPath, head, mode, summary, updateState],
+    [states, repoPath, head, mode, updateState],
   );
 
   // Gutter mousedown: start (or shift-extend) a selection.
-  const gutterDown = useCallback((fi: number, hi: number, line: DiffLine, shiftKey: boolean) => {
+  const gutterDown = useCallback((path: string, hi: number, line: DiffLine, shiftKey: boolean) => {
     const side = lineSide(line);
     const n = lineNumber(line);
     const prev = selectionRef.current;
     if (
       shiftKey &&
       prev !== null &&
-      prev.fi === fi &&
+      prev.path === path &&
       prev.hi === hi &&
       prev.side === side
     ) {
       const anchor = anchorRef.current ?? prev.start;
       const next = {
-        fi,
+        path,
         hi,
         side,
         start: Math.min(anchor, n),
@@ -319,7 +461,7 @@ export function DiffView({
       applySelection(next);
       setComposer({
         level: "line",
-        fi,
+        path,
         side,
         startLine: next.start,
         endLine: next.end,
@@ -327,15 +469,15 @@ export function DiffView({
       return;
     }
     anchorRef.current = n;
-    dragRef.current = { fi, hi, side };
-    applySelection({ fi, hi, side, start: n, end: n });
+    dragRef.current = { path, hi, side };
+    applySelection({ path, hi, side, start: n, end: n });
     setComposer(null);
   }, []);
 
   // Extend an in-progress drag; ignores rows outside the anchor's hunk/side.
-  const rowEnter = useCallback((fi: number, hi: number, line: DiffLine) => {
+  const rowEnter = useCallback((path: string, hi: number, line: DiffLine) => {
     const drag = dragRef.current;
-    if (drag === null || drag.fi !== fi || drag.hi !== hi) {
+    if (drag === null || drag.path !== path || drag.hi !== hi) {
       return;
     }
     const side = lineSide(line);
@@ -345,7 +487,7 @@ export function DiffView({
     const n = lineNumber(line);
     const anchor = anchorRef.current ?? n;
     applySelection({
-      fi,
+      path,
       hi,
       side,
       start: Math.min(anchor, n),
@@ -364,7 +506,7 @@ export function DiffView({
       if (sel !== null) {
         setComposer({
           level: "line",
-          fi: sel.fi,
+          path: sel.path,
           side: sel.side,
           startLine: sel.start,
           endLine: sel.end,
@@ -376,19 +518,19 @@ export function DiffView({
   }, []);
 
   const addFileComment = useCallback(
-    (fi: number) => {
-      updateState(fi, (s) => (s.expanded ? s : { ...s, expanded: true }));
+    (path: string) => {
+      updateState(path, (s) => (s.expanded ? s : { ...s, expanded: true }));
       applySelection(null);
-      setComposer({ level: "file", fi });
+      setComposer({ level: "file", path });
     },
     [updateState],
   );
 
   // Open the reply composer under a thread root's last reply.
   const startReply = useCallback(
-    (fi: number, rootId: number) => {
+    (path: string, rootId: number) => {
       applySelection(null);
-      setComposer({ level: "reply", fi, rootId });
+      setComposer({ level: "reply", path, rootId });
     },
     [applySelection],
   );
@@ -408,12 +550,11 @@ export function DiffView({
         // positional fields; the level is passed through for shape only.
         await onCreateComment({ level: root.level, parentId: root.id, body });
       } else if (target.level === "file") {
-        const filePath = summary.files[target.fi].path;
-        await onCreateComment({ level: "file", filePath, body });
+        await onCreateComment({ level: "file", filePath: target.path, body });
       } else {
         await onCreateComment({
           level: "line",
-          filePath: summary.files[target.fi].path,
+          filePath: target.path,
           side: target.side,
           startLine: target.startLine,
           endLine: target.endLine,
@@ -423,7 +564,7 @@ export function DiffView({
       setComposer(null);
       applySelection(null);
     },
-    [onCreateComment, summary, comments],
+    [onCreateComment, comments],
   );
 
   const cancelComposer = useCallback(() => {
@@ -442,11 +583,6 @@ export function DiffView({
   // Double-click on a file card's name copies its repo-relative path;
   // ⌥ double-click copies the absolute path.
   const { copied, copyPath } = useCopyPath(repoPath);
-  const copyFilePath = useCallback(
-    (fi: number, absolute: boolean) =>
-      copyPath(summary.files[fi].path, absolute),
-    [copyPath, summary.files],
-  );
 
   const commentIndex = useMemo(
     () => indexComments(summary.files, comments),
@@ -520,7 +656,7 @@ export function DiffView({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: (index) => estimateRowHeight(rows[index]),
-    getItemKey: (index) => rowKey(rows[index]),
+    getItemKey: (index) => rowKey(rows[index], summary.files),
     overscan: 12,
     scrollMargin: topHeight,
     rangeExtractor,
@@ -595,14 +731,20 @@ export function DiffView({
       if (row.kind !== "file" && row.kind !== "skeleton") {
         continue;
       }
-      const state = states[row.fi];
-      if (!state.expanded || state.diff !== null || state.error !== null) {
+      const file = summary.files[row.fi];
+      const state = states.get(file.path);
+      if (
+        state === undefined ||
+        !state.expanded ||
+        state.diff !== null ||
+        state.error !== null
+      ) {
         continue;
       }
-      if (guardReason(summary.files[row.fi]) !== null && !state.forceLoad) {
+      if (guardReason(file) !== null && !state.forceLoad) {
         continue;
       }
-      loadFile(row.fi);
+      loadFile(file);
     }
   });
 
@@ -618,12 +760,12 @@ export function DiffView({
       if (lang === null) {
         continue;
       }
-      const key = `${row.fi}:${row.hi}`;
+      const key = hunkKey(summary.files[row.fi], row.hi);
       if (highlightRequested.current.has(key)) {
         continue;
       }
-      const diff = states[row.fi].diff;
-      if (diff === null) {
+      const diff = states.get(summary.files[row.fi].path)?.diff;
+      if (diff === undefined || diff === null) {
         continue;
       }
       highlightRequested.current.add(key);
@@ -640,48 +782,53 @@ export function DiffView({
     }
   });
 
-  const scrollToFile = useCallback(
-    (fi: number) => {
+  const scrollToPath = useCallback(
+    (path: string) => {
       const index = rows.findIndex(
-        (row) => row.kind === "file" && row.fi === fi,
+        (row) => row.kind === "file" && summary.files[row.fi].path === path,
       );
       if (index >= 0) {
         virtualizer.scrollToIndex(index, { align: "start" });
       }
     },
-    [rows, virtualizer],
+    [rows, summary.files, virtualizer],
   );
 
   // Deferred scroll after a mark-reviewed collapse: waits for `rows` to
   // rebuild without the collapsed file's body so the header's new index
   // (and the shrunken offsets) are what gets scrolled to.
   useEffect(() => {
-    const fi = pendingScrollFi.current;
-    if (fi !== null) {
-      pendingScrollFi.current = null;
-      scrollToFile(fi);
+    const path = pendingScrollPath.current;
+    if (path !== null) {
+      pendingScrollPath.current = null;
+      scrollToPath(path);
     }
-  }, [rows, scrollToFile]);
+  }, [rows, scrollToPath]);
 
   const moveCursor = useCallback(
     (delta: number) => {
-      const count = summary.files.length;
-      if (count === 0) {
+      const files = summary.files;
+      if (files.length === 0) {
         return;
       }
-      const prev = cursorFiRef.current;
-      // From nowhere, j lands on the first file and k on the last.
+      const prev =
+        cursorPathRef.current === null
+          ? -1
+          : files.findIndex((f) => f.path === cursorPathRef.current);
+      // From nowhere (or a vanished file), j lands on the first file and k
+      // on the last.
       const next =
-        prev === null
+        prev === -1
           ? delta > 0
             ? 0
-            : count - 1
-          : Math.min(Math.max(prev + delta, 0), count - 1);
-      cursorFiRef.current = next;
-      setCursorFi(next);
-      scrollToFile(next);
+            : files.length - 1
+          : Math.min(Math.max(prev + delta, 0), files.length - 1);
+      const path = files[next].path;
+      cursorPathRef.current = path;
+      setCursorPath(path);
+      scrollToPath(path);
     },
-    [summary.files.length, scrollToFile],
+    [summary.files, scrollToPath],
   );
 
   // `c` comments on the current line selection if there is one, else on the
@@ -691,16 +838,16 @@ export function DiffView({
     if (sel !== null) {
       setComposer({
         level: "line",
-        fi: sel.fi,
+        path: sel.path,
         side: sel.side,
         startLine: sel.start,
         endLine: sel.end,
       });
       return;
     }
-    const fi = cursorFiRef.current;
-    if (fi !== null) {
-      addFileComment(fi);
+    const path = cursorPathRef.current;
+    if (path !== null) {
+      addFileComment(path);
     }
   }, [addFileComment]);
 
@@ -735,9 +882,9 @@ export function DiffView({
         composeAtCursor();
       } else if (e.key === "v") {
         e.preventDefault();
-        const fi = cursorFiRef.current;
-        if (fi !== null) {
-          toggleReviewed(fi);
+        const path = cursorPathRef.current;
+        if (path !== null) {
+          toggleReviewed(path);
         }
       }
     };
@@ -797,7 +944,7 @@ export function DiffView({
               files={summary.files}
               states={states}
               highlights={highlights}
-              cursorFi={cursorFi}
+              cursorPath={cursorPath}
               selection={selection}
               composer={composer}
               editingId={editingId}
@@ -808,7 +955,7 @@ export function DiffView({
               onToggle={toggleFile}
               onToggleReviewed={toggleReviewed}
               onLoad={forceLoadFile}
-              onCopyPath={copyFilePath}
+              onCopyPath={copyPath}
               onExpand={expandGap}
               onGutterDown={gutterDown}
               onRowEnter={rowEnter}
@@ -840,9 +987,9 @@ export function DiffView({
 interface RowContentProps {
   row: Row;
   files: FileSummary[];
-  states: FileViewState[];
+  states: ReadonlyMap<string, FileViewState>;
   highlights: ReadonlyMap<string, LineTokens[]>;
-  cursorFi: number | null;
+  cursorPath: string | null;
   selection: LineSelection | null;
   composer: ComposerLocation | null;
   editingId: number | null;
@@ -850,15 +997,15 @@ interface RowContentProps {
   replies: RepliesByRoot;
   anchorStatuses: ReadonlyMap<number, AnchorStatus>;
   reviewStates: ReadonlyMap<string, FileReviewState>;
-  onToggle: (fi: number) => void;
-  onToggleReviewed: (fi: number) => void;
-  onLoad: (fi: number) => void;
-  onCopyPath: (fi: number, absolute: boolean) => void;
-  onExpand: (fi: number, gi: number, direction: ExpandDirection) => void;
-  onGutterDown: (fi: number, hi: number, line: DiffLine, shiftKey: boolean) => void;
-  onRowEnter: (fi: number, hi: number, line: DiffLine) => void;
-  onAddFileComment: (fi: number) => void;
-  onStartReply: (fi: number, rootId: number) => void;
+  onToggle: (path: string) => void;
+  onToggleReviewed: (path: string) => void;
+  onLoad: (path: string) => void;
+  onCopyPath: (path: string, absolute: boolean) => void;
+  onExpand: (path: string, gi: number, direction: ExpandDirection) => void;
+  onGutterDown: (path: string, hi: number, line: DiffLine, shiftKey: boolean) => void;
+  onRowEnter: (path: string, hi: number, line: DiffLine) => void;
+  onAddFileComment: (path: string) => void;
+  onStartReply: (path: string, rootId: number) => void;
   onComposerSubmit: (body: string) => Promise<void>;
   onComposerCancel: () => void;
   onEditStart: (id: number) => void;
@@ -879,7 +1026,7 @@ const RowContent = memo(function RowContent({
   files,
   states,
   highlights,
-  cursorFi,
+  cursorPath,
   selection,
   composer,
   editingId,
@@ -904,18 +1051,19 @@ const RowContent = memo(function RowContent({
   onDeleteComment,
   onSetCommentState,
 }: RowContentProps) {
+  const path = files[row.fi].path;
   switch (row.kind) {
     case "file":
       return (
         <FileHeaderRow
           file={files[row.fi]}
-          expanded={states[row.fi].expanded}
-          focused={cursorFi === row.fi}
-          reviewState={reviewStates.get(files[row.fi].path)}
-          onToggle={() => onToggle(row.fi)}
-          onToggleReviewed={() => onToggleReviewed(row.fi)}
-          onAddComment={() => onAddFileComment(row.fi)}
-          onCopyPath={(absolute) => onCopyPath(row.fi, absolute)}
+          expanded={states.get(path)?.expanded ?? true}
+          focused={cursorPath === path}
+          reviewState={reviewStates.get(path)}
+          onToggle={() => onToggle(path)}
+          onToggleReviewed={() => onToggleReviewed(path)}
+          onAddComment={() => onAddFileComment(path)}
+          onCopyPath={(absolute) => onCopyPath(path, absolute)}
         />
       );
     case "notice":
@@ -923,7 +1071,7 @@ const RowContent = memo(function RowContent({
         <GuardNoticeRow
           file={files[row.fi]}
           reason={row.reason}
-          onLoad={() => onLoad(row.fi)}
+          onLoad={() => onLoad(path)}
         />
       );
     case "skeleton":
@@ -955,19 +1103,19 @@ const RowContent = memo(function RowContent({
       const selected =
         selection !== null &&
         row.hi !== undefined &&
-        selection.fi === row.fi &&
+        selection.path === path &&
         selection.hi === row.hi &&
         lineSide(row.line) === selection.side &&
         lineNumber(row.line) >= selection.start &&
         lineNumber(row.line) <= selection.end;
       const tokens =
         row.hi !== undefined && row.li !== undefined
-          ? highlights.get(`${row.fi}:${row.hi}`)?.[row.li]
+          ? highlights.get(hunkKey(files[row.fi], row.hi))?.[row.li]
           : undefined;
       return (
         <LineRow
           line={row.line}
-          fi={row.fi}
+          path={path}
           hi={row.hi}
           tokens={tokens}
           selected={selected}
@@ -994,7 +1142,7 @@ const RowContent = memo(function RowContent({
             onSetState={isReply ? undefined : onSetCommentState}
             onReply={
               !isReply && row.comment.state === "open"
-                ? () => onStartReply(row.fi, row.comment.id)
+                ? () => onStartReply(path, row.comment.id)
                 : undefined
             }
           />
@@ -1032,7 +1180,7 @@ const RowContent = memo(function RowContent({
           hidden={row.hidden}
           growTop={row.growTop}
           growBottom={row.growBottom}
-          onExpand={(direction) => onExpand(row.fi, row.gi, direction)}
+          onExpand={(direction) => onExpand(path, row.gi, direction)}
         />
       );
   }
@@ -1162,7 +1310,7 @@ function GuardNoticeRow({
 
 function LineRow({
   line,
-  fi,
+  path,
   hi,
   tokens,
   selected,
@@ -1170,14 +1318,14 @@ function LineRow({
   onRowEnter,
 }: {
   line: DiffLine;
-  fi: number;
+  path: string;
   /** Absent for expanded gap-context lines, which are not commentable. */
   hi: number | undefined;
   /** Syntax tokens for this line; absent until its hunk is tokenized. */
   tokens: LineTokens | undefined;
   selected: boolean;
-  onGutterDown: (fi: number, hi: number, line: DiffLine, shiftKey: boolean) => void;
-  onRowEnter: (fi: number, hi: number, line: DiffLine) => void;
+  onGutterDown: (path: string, hi: number, line: DiffLine, shiftKey: boolean) => void;
+  onRowEnter: (path: string, hi: number, line: DiffLine) => void;
 }) {
   const commentable = hi !== undefined;
   const gutterProps = commentable
@@ -1187,7 +1335,7 @@ function LineRow({
           if (e.button === 0) {
             // Keep the drag from starting a text selection.
             e.preventDefault();
-            onGutterDown(fi, hi, line, e.shiftKey);
+            onGutterDown(path, hi, line, e.shiftKey);
           }
         },
       }
@@ -1195,7 +1343,7 @@ function LineRow({
   return (
     <div
       className={`diff-line diff-line-${line.kind}${selected ? " diff-line-selected" : ""}`}
-      onMouseEnter={commentable ? () => onRowEnter(fi, hi, line) : undefined}
+      onMouseEnter={commentable ? () => onRowEnter(path, hi, line) : undefined}
     >
       <span {...gutterProps}>{line.oldLineno ?? ""}</span>
       <span {...gutterProps}>{line.newLineno ?? ""}</span>

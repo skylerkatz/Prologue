@@ -81,9 +81,10 @@ export function ReviewShell({
   } = useCommentMutations(session);
 
   const [showArchive, setShowArchive] = useState(false);
-  // The click's view generation invalidates the target on refresh — the
-  // remounted DiffView scrolls on mount for any non-null target, and it
-  // must never chase a click made against a previous diff.
+  // The click's view generation invalidates the target on refresh: DiffView
+  // scrolls on mount for any non-null target (it remounts when the shell
+  // swaps it out for an empty state and back), and it must never chase a
+  // click made against a previous diff.
   const [scrollTarget, setScrollTarget] = useState<{
     path: string;
     nonce: number;
@@ -216,7 +217,6 @@ export function ReviewShell({
                 onSetState={onSetState}
               />
               <DiffView
-                key={view.generation}
                 topContent={
                   <OrphanedComments
                     comments={orphanedComments}

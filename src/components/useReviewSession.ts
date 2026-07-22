@@ -34,7 +34,9 @@ export interface DiffViewState {
   mode: WorkingTreeMode;
   /** The summary was computed with whitespace changes ignored (git `-w`). */
   ignoreWhitespace: boolean;
-  /** Bumped per fetch; remounts DiffView so lazy-loaded hunks reset too. */
+  /** Bumped per fetch; stamps scroll targets so a click made against a
+   * previous diff is never replayed. DiffView itself reconciles across
+   * fetches instead of remounting. */
   generation: number;
 }
 
@@ -170,8 +172,8 @@ export function useReviewSession(
       setReview(opened.review);
       setBranchMerged(opened.branchMerged);
       setComments(data.comments);
-      // Same commit as setView, so the remounted DiffView initializes its
-      // collapse state against the fresh reviewed map.
+      // Same commit as setView, so DiffView reconciles its collapse state
+      // against the fresh reviewed map, never a stale one.
       setReviewedFiles(data.reviewedFiles);
       setAnchorStatuses(data.anchors);
     })()

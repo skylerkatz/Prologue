@@ -119,18 +119,19 @@ export type Row =
 /**
  * Where the single open comment composer sits: after a file's header, below
  * the selection's last line, or under a thread root's last reply.
- * Review-level composing lives outside the virtualized list.
+ * Review-level composing lives outside the virtualized list. Keyed by file
+ * path (not display index) so it survives refreshes that reorder files.
  */
 export type ComposerLocation =
-  | { level: "file"; fi: number }
+  | { level: "file"; path: string }
   | {
       level: "line";
-      fi: number;
+      path: string;
       side: CommentSide;
       startLine: number;
       endLine: number;
     }
-  | { level: "reply"; fi: number; rootId: number };
+  | { level: "reply"; path: string; rootId: number };
 
 const ROW_HEIGHTS: Record<Exclude<Row["kind"], "skeleton">, number> = {
   file: 42,
@@ -149,32 +150,35 @@ export function estimateRowHeight(row: Row): number {
   return row.kind === "skeleton" ? row.height : ROW_HEIGHTS[row.kind];
 }
 
-/** Stable identity so measurements survive rows shifting on load/expand. */
-export function rowKey(row: Row): string {
+/** Stable identity so measurements survive rows shifting on load/expand —
+ * and across refreshes: keys are path-based, so files added or removed by a
+ * new diff never shift another file's row identities. */
+export function rowKey(row: Row, files: FileSummary[]): string {
+  const path = files[row.fi].path;
   switch (row.kind) {
     case "file":
-      return `f${row.fi}`;
+      return `f${path}`;
     case "notice":
-      return `n${row.fi}`;
+      return `n${path}`;
     case "skeleton":
-      return `s${row.fi}`;
+      return `s${path}`;
     case "error":
-      return `e${row.fi}`;
+      return `e${path}`;
     case "empty":
-      return `m${row.fi}`;
+      return `m${path}`;
     case "hiddenComments":
-      return `w${row.fi}`;
+      return `w${path}`;
     case "hunk":
-      return `h${row.fi}:${row.hi}`;
+      return `h${path}:${row.hi}`;
     case "comment":
       return `c${row.comment.id}`;
     // Only one composer exists at a time.
     case "composer":
       return "composer";
     case "expand":
-      return `x${row.fi}:${row.gi}`;
+      return `x${path}:${row.gi}`;
     case "line":
-      return `l${row.fi}:${row.line.oldLineno ?? ""}:${row.line.newLineno ?? ""}`;
+      return `l${path}:${row.line.oldLineno ?? ""}:${row.line.newLineno ?? ""}`;
   }
 }
 
@@ -263,7 +267,7 @@ function skeletonHeight(file: FileSummary): number {
  */
 export function buildRows(
   files: FileSummary[],
-  states: FileViewState[],
+  states: ReadonlyMap<string, FileViewState>,
   comments: Map<number, FileComments>,
   replies: RepliesByRoot,
   composer: ComposerLocation | null,
@@ -289,15 +293,15 @@ export function buildRows(
   };
   files.forEach((file, fi) => {
     rows.push({ kind: "file", fi });
-    const state = states[fi];
-    if (!state.expanded) {
+    const state = states.get(file.path);
+    if (state === undefined || !state.expanded) {
       return;
     }
     const fileComments = comments.get(fi);
     for (const comment of fileComments?.file ?? []) {
       pushThread(fi, comment);
     }
-    if (composer?.level === "file" && composer.fi === fi) {
+    if (composer?.level === "file" && composer.path === file.path) {
       rows.push({ kind: "composer", fi });
     }
     const guard = guardReason(file);
@@ -351,7 +355,9 @@ export function buildRows(
       rows.push({ kind: "hiddenComments", fi, count: hiddenComments });
     }
     const lineComposer =
-      composer?.level === "line" && composer.fi === fi ? composer : null;
+      composer?.level === "line" && composer.path === file.path
+        ? composer
+        : null;
     const gaps = computeGaps(diff);
     diff.hunks.forEach((hunk, hi) => {
       if (gaps.length > 0) {
