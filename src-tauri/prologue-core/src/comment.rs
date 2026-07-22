@@ -451,12 +451,31 @@ pub fn reanchor_comments_impl(
     persist: bool,
 ) -> Result<Vec<ReanchorResult>, String> {
     let comments = list_comments_impl(conn, review_id)?;
-    // One file-diff fetch per distinct commented file; None = the file has
-    // no changes in the current diff (all its line comments orphan).
+    // Nothing anchored means nothing to relocate — don't touch the repo.
+    if !comments.iter().any(|c| c.code_anchor.is_some()) {
+        return Ok(Vec::new());
+    }
+    let repo = open_git_repo(&spec.repo_path)?;
+    let repo_diff = diff::RepoDiff::compute(&repo, spec, false)?;
+    reanchor_listed(conn, &repo_diff, &comments, persist)
+}
+
+/// The re-anchoring loop over already-listed comments, extracting every
+/// file's hunks from ONE computed diff. Runs against the canonical full
+/// diff (`RepoDiff` computed with `ignore_whitespace = false`) so orphan
+/// status never depends on the whitespace view preference.
+fn reanchor_listed(
+    conn: &Connection,
+    repo_diff: &diff::RepoDiff<'_>,
+    comments: &[Comment],
+    persist: bool,
+) -> Result<Vec<ReanchorResult>, String> {
+    // One file-diff extraction per distinct commented file; None = the file
+    // has no changes in the current diff (all its line comments orphan).
     let mut diffs: HashMap<String, Option<FileDiff>> = HashMap::new();
 
     let mut results = Vec::new();
-    for comment in &comments {
+    for comment in comments {
         let (Some(path), Some(side), Some(anchor), Some(prev_start)) = (
             comment.file_path.as_deref(),
             comment.side,
@@ -468,9 +487,7 @@ pub fn reanchor_comments_impl(
         let diff = match diffs.get(path) {
             Some(cached) => cached,
             None => {
-                // Re-anchoring runs against the canonical full diff so orphan
-                // status never depends on the whitespace view preference.
-                let fetched = match diff::try_get_file_diff(spec, false, path) {
+                let fetched = match repo_diff.file_diff(path) {
                     Ok(d) => Some(d),
                     // The file left the diff entirely; anything else is a
                     // real failure worth surfacing.
@@ -543,7 +560,22 @@ pub fn resolve_threads(
     review_id: i64,
     persist: bool,
 ) -> Result<Vec<Thread>, String> {
-    let reanchored = reanchor_comments_impl(conn, spec, review_id, persist)?;
+    let repo = open_git_repo(&spec.repo_path)?;
+    let repo_diff = diff::RepoDiff::compute(&repo, spec, false)?;
+    resolve_threads_with(conn, &repo_diff, review_id, persist)
+}
+
+/// [`resolve_threads`] against an already-computed diff, for callers (the
+/// export) that also read the diff themselves — the whole operation costs
+/// one diff computation.
+pub fn resolve_threads_with(
+    conn: &Connection,
+    repo_diff: &diff::RepoDiff<'_>,
+    review_id: i64,
+    persist: bool,
+) -> Result<Vec<Thread>, String> {
+    let mut comments = list_comments_impl(conn, review_id)?;
+    let reanchored = reanchor_listed(conn, repo_diff, &comments, persist)?;
     let orphaned_anchors: HashSet<i64> = reanchored
         .iter()
         .filter(|r| r.status == AnchorStatus::Orphaned)
@@ -553,14 +585,12 @@ pub fn resolve_threads(
         .iter()
         .map(|r| (r.comment_id, (r.start_line, r.end_line)))
         .collect();
-    // Orphaning also covers files with no delta left; always the canonical
-    // full diff, never a whitespace-filtered view.
-    let summary = diff::get_diff_summary(spec, false)?;
+    // Orphaning also covers files with no delta left in the diff.
+    let summary = repo_diff.summary()?;
     let diff_paths: HashSet<String> = summary.files.into_iter().map(|f| f.path).collect();
 
     // Present the computed ranges, not the stored ones — a no-op when they
     // were just persisted, the whole point when they were not.
-    let mut comments = list_comments_impl(conn, review_id)?;
     for comment in &mut comments {
         if let Some(&(start, end)) = relocated.get(&comment.id) {
             comment.start_line = start;

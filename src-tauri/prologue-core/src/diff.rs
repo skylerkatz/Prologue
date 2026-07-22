@@ -172,18 +172,58 @@ pub struct FileDiff {
 /// listed (deltas are detected by blob OID) with 0/0 stats.
 pub fn get_diff_summary(spec: &DiffSpec, ignore_whitespace: bool) -> Result<DiffSummary, String> {
     let repo = open_git_repo(&spec.repo_path)?;
-    let (diff, merge_base) =
-        build_diff(&repo, &spec.base, &spec.head, spec.mode, ignore_whitespace)?;
+    let repo_diff = RepoDiff::compute(&repo, spec, ignore_whitespace)?;
+    repo_diff.summary()
+}
 
-    let mut files = Vec::new();
-    let mut total_additions = 0;
-    let mut total_deletions = 0;
-    for (idx, delta) in diff.deltas().enumerate() {
-        let Some(status) = file_status(delta.status()) else {
-            continue;
-        };
-        let (additions, deletions, binary) =
-            match Patch::from_diff(&diff, idx).map_err(git_err("Failed to read file patch"))? {
+/// One computed repo diff. Re-anchoring and export need several files'
+/// hunks plus the summary from the SAME diff; computing it once here and
+/// extracting from it replaces one full-diff recomputation per file.
+pub struct RepoDiff<'a> {
+    repo: &'a Repository,
+    spec: &'a DiffSpec,
+    diff: Diff<'a>,
+    merge_base: Oid,
+    head_id: Oid,
+}
+
+impl<'a> RepoDiff<'a> {
+    /// Compute the diff for `spec` once; every extraction below reads from
+    /// it without touching libgit2's diff machinery again.
+    pub fn compute(
+        repo: &'a Repository,
+        spec: &'a DiffSpec,
+        ignore_whitespace: bool,
+    ) -> Result<Self, String> {
+        let (diff, merge_base, head_id) =
+            build_diff(repo, &spec.base, &spec.head, spec.mode, ignore_whitespace)?;
+        Ok(RepoDiff { repo, spec, diff, merge_base, head_id })
+    }
+
+    /// SHA of merge-base(base, head) — the commit the diff is computed
+    /// against.
+    pub fn merge_base(&self) -> Oid {
+        self.merge_base
+    }
+
+    /// The resolved head commit (the branch tip in every mode — working-tree
+    /// modes have no SHA for uncommitted content).
+    pub fn head_id(&self) -> Oid {
+        self.head_id
+    }
+
+    /// The per-file summary of this diff (see [`get_diff_summary`]).
+    pub fn summary(&self) -> Result<DiffSummary, String> {
+        let mut files = Vec::new();
+        let mut total_additions = 0;
+        let mut total_deletions = 0;
+        for (idx, delta) in self.diff.deltas().enumerate() {
+            let Some(status) = file_status(delta.status()) else {
+                continue;
+            };
+            let (additions, deletions, binary) = match Patch::from_diff(&self.diff, idx)
+                .map_err(git_err("Failed to read file patch"))?
+            {
                 Some(patch) => {
                     let (_context, adds, dels) = patch
                         .line_stats()
@@ -193,29 +233,31 @@ pub fn get_diff_summary(spec: &DiffSpec, ignore_whitespace: bool) -> Result<Diff
                 // Binary deltas produce no text patch.
                 None => (0, 0, true),
             };
-        total_additions += additions;
-        total_deletions += deletions;
-        let path = new_path(&delta)?;
-        let fingerprint = file_fingerprint(&repo, &spec.head, spec.mode, &delta, status, &path);
-        files.push(FileSummary {
-            path,
-            old_path: rename_old_path(&delta, status),
-            status,
-            additions,
-            deletions,
-            binary,
-            fingerprint,
-        });
-    }
+            total_additions += additions;
+            total_deletions += deletions;
+            let path = new_path(&delta)?;
+            let fingerprint =
+                file_fingerprint(self.repo, &self.spec.head, self.spec.mode, &delta, status, &path);
+            files.push(FileSummary {
+                path,
+                old_path: rename_old_path(&delta, status),
+                status,
+                additions,
+                deletions,
+                binary,
+                fingerprint,
+            });
+        }
 
-    Ok(DiffSummary {
-        base_ref: spec.base.clone(),
-        head_ref: spec.head.clone(),
-        merge_base: merge_base.to_string(),
-        files,
-        total_additions,
-        total_deletions,
-    })
+        Ok(DiffSummary {
+            base_ref: self.spec.base.clone(),
+            head_ref: self.spec.head.clone(),
+            merge_base: self.merge_base.to_string(),
+            files,
+            total_additions,
+            total_deletions,
+        })
+    }
 }
 
 /// Hunks for a single file from the same diff `get_diff_summary` computes;
@@ -236,90 +278,101 @@ pub fn try_get_file_diff(
     path: &str,
 ) -> Result<FileDiff, CoreError> {
     let repo = open_git_repo(&spec.repo_path)?;
-    let (diff, _) = build_diff(&repo, &spec.base, &spec.head, spec.mode, ignore_whitespace)?;
+    let repo_diff = RepoDiff::compute(&repo, spec, ignore_whitespace)?;
+    repo_diff.file_diff(path)
+}
 
-    let (idx, status) = diff
-        .deltas()
-        .enumerate()
-        .find_map(|(idx, delta)| {
-            let matches = delta_path_matches(&delta, path);
-            file_status(delta.status()).filter(|_| matches).map(|s| (idx, s))
-        })
-        .ok_or_else(|| CoreError::NoChangesForFile(path.to_owned()))?;
-    let delta = diff
-        .get_delta(idx)
-        .ok_or_else(|| CoreError::NoChangesForFile(path.to_owned()))?;
-    let file_path = new_path(&delta)?;
-    let old_path = rename_old_path(&delta, status);
-    let binary = delta.flags().is_binary();
+impl RepoDiff<'_> {
+    /// One file's hunks from this diff (see [`get_file_diff`]);
+    /// [`CoreError::NoChangesForFile`] when the file has no delta in it.
+    pub fn file_diff(&self, path: &str) -> Result<FileDiff, CoreError> {
+        let (idx, status) = self
+            .diff
+            .deltas()
+            .enumerate()
+            .find_map(|(idx, delta)| {
+                let matches = delta_path_matches(&delta, path);
+                file_status(delta.status()).filter(|_| matches).map(|s| (idx, s))
+            })
+            .ok_or_else(|| CoreError::NoChangesForFile(path.to_owned()))?;
+        let delta = self
+            .diff
+            .get_delta(idx)
+            .ok_or_else(|| CoreError::NoChangesForFile(path.to_owned()))?;
+        let file_path = new_path(&delta)?;
+        let old_path = rename_old_path(&delta, status);
+        let binary = delta.flags().is_binary();
 
-    let mut hunks = Vec::new();
-    if let Some(patch) =
-        Patch::from_diff(&diff, idx).map_err(git_err("Failed to read file patch"))?
-    {
-        for h in 0..patch.num_hunks() {
-            let (header, old_start, old_lines, new_start, new_lines, line_count) = {
-                let (hunk, line_count) = patch
-                    .hunk(h)
-                    .map_err(git_err("Failed to read diff hunk"))?;
-                (
-                    text_of(hunk.header()).trim_end().to_owned(),
-                    hunk.old_start(),
-                    hunk.old_lines(),
-                    hunk.new_start(),
-                    hunk.new_lines(),
-                    line_count,
-                )
-            };
-            let mut lines = Vec::with_capacity(line_count);
-            for l in 0..line_count {
-                let line = patch
-                    .line_in_hunk(h, l)
-                    .map_err(git_err("Failed to read diff line"))?;
-                let kind = match line.origin_value() {
-                    DiffLineType::Context => LineKind::Context,
-                    DiffLineType::Addition => LineKind::Addition,
-                    DiffLineType::Deletion => LineKind::Deletion,
-                    // EOF-newline markers and file/hunk headers are not
-                    // content lines.
-                    _ => continue,
+        let mut hunks = Vec::new();
+        if let Some(patch) =
+            Patch::from_diff(&self.diff, idx).map_err(git_err("Failed to read file patch"))?
+        {
+            for h in 0..patch.num_hunks() {
+                let (header, old_start, old_lines, new_start, new_lines, line_count) = {
+                    let (hunk, line_count) = patch
+                        .hunk(h)
+                        .map_err(git_err("Failed to read diff hunk"))?;
+                    (
+                        text_of(hunk.header()).trim_end().to_owned(),
+                        hunk.old_start(),
+                        hunk.old_lines(),
+                        hunk.new_start(),
+                        hunk.new_lines(),
+                        line_count,
+                    )
                 };
-                lines.push(DiffLine {
-                    kind,
-                    old_lineno: line.old_lineno(),
-                    new_lineno: line.new_lineno(),
-                    content: line_text(line.content()),
-                    intraline: None,
+                let mut lines = Vec::with_capacity(line_count);
+                for l in 0..line_count {
+                    let line = patch
+                        .line_in_hunk(h, l)
+                        .map_err(git_err("Failed to read diff line"))?;
+                    let kind = match line.origin_value() {
+                        DiffLineType::Context => LineKind::Context,
+                        DiffLineType::Addition => LineKind::Addition,
+                        DiffLineType::Deletion => LineKind::Deletion,
+                        // EOF-newline markers and file/hunk headers are not
+                        // content lines.
+                        _ => continue,
+                    };
+                    lines.push(DiffLine {
+                        kind,
+                        old_lineno: line.old_lineno(),
+                        new_lineno: line.new_lineno(),
+                        content: line_text(line.content()),
+                        intraline: None,
+                    });
+                }
+                crate::intraline::apply_intraline(&mut lines);
+                hunks.push(Hunk {
+                    header,
+                    old_start,
+                    old_lines,
+                    new_start,
+                    new_lines,
+                    lines,
                 });
             }
-            crate::intraline::apply_intraline(&mut lines);
-            hunks.push(Hunk {
-                header,
-                old_start,
-                old_lines,
-                new_start,
-                new_lines,
-                lines,
-            });
         }
+
+        let new_total_lines = if binary || status == FileStatus::Deleted {
+            None
+        } else {
+            new_side_content(self.repo, &self.spec.head, self.spec.mode, &file_path)
+                .ok()
+                .map(|content| {
+                    u32::try_from(text_of(&content).lines().count()).unwrap_or(u32::MAX)
+                })
+        };
+
+        Ok(FileDiff {
+            path: file_path,
+            old_path,
+            status,
+            binary,
+            hunks,
+            new_total_lines,
+        })
     }
-
-    let new_total_lines = if binary || status == FileStatus::Deleted {
-        None
-    } else {
-        new_side_content(&repo, &spec.head, spec.mode, &file_path)
-            .ok()
-            .map(|content| u32::try_from(text_of(&content).lines().count()).unwrap_or(u32::MAX))
-    };
-
-    Ok(FileDiff {
-        path: file_path,
-        old_path,
-        status,
-        binary,
-        hunks,
-        new_total_lines,
-    })
 }
 
 /// Unchanged lines around hunks, fetched on expand-context clicks so they
@@ -445,7 +498,7 @@ fn build_diff<'r>(
     head: &str,
     mode: DiffMode,
     ignore_whitespace: bool,
-) -> Result<(Diff<'r>, Oid), String> {
+) -> Result<(Diff<'r>, Oid, Oid), String> {
     let base_commit = resolve_commit(repo, base)?;
     let head_commit = resolve_commit(repo, head)?;
     let merge_base = repo
@@ -482,7 +535,7 @@ fn build_diff<'r>(
 
     diff.find_similar(Some(DiffFindOptions::new().renames(true)))
         .map_err(git_err("Failed to detect renames"))?;
-    Ok((diff, merge_base))
+    Ok((diff, merge_base, head_commit.id()))
 }
 
 pub(crate) fn resolve_commit<'r>(

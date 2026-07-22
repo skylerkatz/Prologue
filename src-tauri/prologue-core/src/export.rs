@@ -58,9 +58,13 @@ pub fn export_review_impl(
     format: ExportFormat,
     persist: bool,
 ) -> Result<String, String> {
+    // One diff computation serves re-anchoring, orphan detection, and the
+    // header SHAs alike.
+    let repo = open_git_repo(&spec.repo_path)?;
+    let repo_diff = diff::RepoDiff::compute(&repo, spec, false)?;
     // Re-locate line comments first so exported ranges and orphan status
     // match the diff being exported.
-    let threads = review::resolve_threads(conn, spec, review_id, persist)?;
+    let threads = review::resolve_threads_with(conn, &repo_diff, review_id, persist)?;
     // Only open THREADS export: the root's state governs; a reply's own
     // `state` column is meaningless.
     let open: Vec<ExportComment> = threads
@@ -75,14 +79,6 @@ pub fn export_review_impl(
     if open.is_empty() {
         return Err("This review has no open comments to export".to_owned());
     }
-
-    let repo = open_git_repo(&spec.repo_path)?;
-    let base_commit = diff::resolve_commit(&repo, &spec.base)?;
-    let head_commit = diff::resolve_commit(&repo, &spec.head)?;
-    let base_sha = repo
-        .merge_base(base_commit.id(), head_commit.id())
-        .map_err(|_| format!("No merge base between '{}' and '{}'", spec.base, spec.head))?
-        .to_string();
 
     let mut review_level = Vec::new();
     let mut by_file: Vec<(String, Vec<ExportComment>)> = Vec::new();
@@ -109,8 +105,9 @@ pub fn export_review_impl(
             .unwrap_or_else(|| spec.repo_path.clone()),
         branch: &spec.head,
         base_ref: &spec.base,
-        base_sha,
-        head_sha: head_commit.id().to_string(),
+        // The diff's own merge-base and resolved head — no re-resolution.
+        base_sha: repo_diff.merge_base().to_string(),
+        head_sha: repo_diff.head_id().to_string(),
         mode: spec.mode,
         review_level,
         files: by_file,
