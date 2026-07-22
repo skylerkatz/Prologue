@@ -9,6 +9,7 @@ mod resolve;
 mod show;
 
 use clap::{Parser, Subcommand, ValueEnum};
+use prologue_core::error::CoreError;
 use prologue_core::export::{self, ExportFormat};
 use prologue_core::review::{self, Comment, CommentLevel, CommentSide, NewComment, Review};
 use prologue_core::rusqlite::Connection;
@@ -289,7 +290,7 @@ fn run(cli: Cli) -> Result<(), String> {
                 // clap's `requires` keeps --line from appearing without --file.
                 (None, _) => (CommentLevel::Review, None, None, None),
             };
-            let created = review::create_comment_impl(
+            let created = review::try_create_comment(
                 &conn,
                 &review.repo_path,
                 &review.base_ref,
@@ -377,15 +378,15 @@ fn review_of_comment(conn: &Connection, comment_id: i64) -> Result<Review, Strin
 
 /// Anchor-capture failures usually mean the caller's view of the diff is
 /// stale; point at the re-read helper.
-fn with_anchor_hint(err: String, file: Option<&str>) -> String {
+fn with_anchor_hint(err: CoreError, file: Option<&str>) -> String {
     let anchor_error =
-        err.contains("cannot cross hunk boundaries") || err.contains("No diff lines at");
+        matches!(err, CoreError::SelectionCrossesHunks | CoreError::NoDiffLines { .. });
     match (anchor_error, file) {
         (true, Some(path)) => format!(
             "{err}\nThe diff may have changed since you read it — re-read current line \
              numbers with `prologue show --file {path} --diff` and try again"
         ),
-        _ => err,
+        _ => err.to_string(),
     }
 }
 
@@ -591,10 +592,13 @@ mod tests {
 
     #[test]
     fn anchor_errors_carry_the_reread_hint() {
-        let hinted = with_anchor_hint("No diff lines at a.rs:5-6 (new) to comment on".into(), Some("a.rs"));
+        let no_lines =
+            CoreError::NoDiffLines { path: "a.rs".to_owned(), start: 5, end: 6, side: "new" };
+        let hinted = with_anchor_hint(no_lines, Some("a.rs"));
+        assert!(hinted.contains("No diff lines at a.rs:5-6 (new) to comment on"), "{hinted}");
         assert!(hinted.contains("prologue show --file a.rs --diff"), "{hinted}");
-        let hinted =
-            with_anchor_hint("A comment selection cannot cross hunk boundaries".into(), Some("a.rs"));
+        let hinted = with_anchor_hint(CoreError::SelectionCrossesHunks, Some("a.rs"));
+        assert!(hinted.contains("cannot cross hunk boundaries"), "{hinted}");
         assert!(hinted.contains("try again"), "{hinted}");
         // Non-anchor failures pass through untouched.
         let plain = with_anchor_hint("Comment text cannot be empty".into(), Some("a.rs"));

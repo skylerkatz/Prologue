@@ -3,6 +3,7 @@ use git2::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::error::CoreError;
 use crate::repo::open_git_repo;
 
 /// Which working-tree state is diffed against the merge base.
@@ -193,6 +194,20 @@ pub fn get_file_diff(
     ignore_whitespace: bool,
     path: String,
 ) -> Result<FileDiff, String> {
+    try_get_file_diff(repo_path, base, head, mode, ignore_whitespace, path)
+        .map_err(String::from)
+}
+
+/// [`get_file_diff`] with a typed error, for callers that branch on
+/// [`CoreError::NoChangesForFile`] instead of parsing the message.
+pub fn try_get_file_diff(
+    repo_path: String,
+    base: String,
+    head: String,
+    mode: DiffMode,
+    ignore_whitespace: bool,
+    path: String,
+) -> Result<FileDiff, CoreError> {
     let repo = open_git_repo(&repo_path)?;
     let (diff, _) = build_diff(&repo, &base, &head, mode, ignore_whitespace)?;
 
@@ -203,10 +218,10 @@ pub fn get_file_diff(
             let matches = delta_path_matches(&delta, &path);
             file_status(delta.status()).filter(|_| matches).map(|s| (idx, s))
         })
-        .ok_or_else(|| format!("No changes for file: {path}"))?;
+        .ok_or_else(|| CoreError::NoChangesForFile(path.clone()))?;
     let delta = diff
         .get_delta(idx)
-        .ok_or_else(|| format!("No changes for file: {path}"))?;
+        .ok_or(CoreError::NoChangesForFile(path))?;
     let file_path = new_path(&delta)?;
     let old_path = rename_old_path(&delta, status);
     let binary = delta.flags().is_binary();

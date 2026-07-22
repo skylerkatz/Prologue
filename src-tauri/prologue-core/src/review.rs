@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use crate::anchor::{self, AnchorStatus};
 use crate::db::NOW;
 use crate::diff::{self, DiffLine, DiffMode, FileDiff};
+use crate::error::CoreError;
 use crate::repo::open_git_repo;
 
 /// How many unchanged same-side lines the code anchor keeps on each side of
@@ -687,8 +688,21 @@ pub fn create_comment_impl(
     mode: DiffMode,
     comment: NewComment,
 ) -> Result<Comment, String> {
+    try_create_comment(conn, repo_path, base, head, mode, comment).map_err(String::from)
+}
+
+/// [`create_comment_impl`] with a typed error, for callers that branch on
+/// specific failures (the CLI appends a re-read hint to anchor errors).
+pub fn try_create_comment(
+    conn: &Connection,
+    repo_path: &str,
+    base: &str,
+    head: &str,
+    mode: DiffMode,
+    comment: NewComment,
+) -> Result<Comment, CoreError> {
     if comment.body.trim().is_empty() {
-        return Err("Comment text cannot be empty".to_owned());
+        return Err("Comment text cannot be empty".into());
     }
     ensure_review_active(conn, comment.review_id)?;
     let author = comment.author.as_deref().unwrap_or("reviewer");
@@ -701,7 +715,8 @@ pub fn create_comment_impl(
             parent_id,
             &comment.body,
             author,
-        );
+        )
+        .map_err(CoreError::from);
     }
     let (file_path, side, start_line, end_line, anchor) = match comment.level {
         CommentLevel::Review => (None, None, None, None, None),
@@ -720,11 +735,11 @@ pub fn create_comment_impl(
             let side = comment.side.ok_or("A line comment needs a side")?;
             let (start, end) = match (comment.start_line, comment.end_line) {
                 (Some(s), Some(e)) if s >= 1 && s <= e => (s, e),
-                _ => return Err("Invalid line range for comment".to_owned()),
+                _ => return Err("Invalid line range for comment".into()),
             };
             // Anchors are always extracted from the canonical full diff,
             // never a whitespace-filtered view.
-            let file_diff = diff::get_file_diff(
+            let file_diff = diff::try_get_file_diff(
                 repo_path.to_owned(),
                 base.to_owned(),
                 head.to_owned(),
@@ -761,7 +776,7 @@ pub fn create_comment_impl(
         ),
     )
     .map_err(db_err)?;
-    get_comment(conn, conn.last_insert_rowid())
+    get_comment(conn, conn.last_insert_rowid()).map_err(CoreError::from)
 }
 
 /// Append a reply to the thread containing `parent_id`. The reply attaches
@@ -909,7 +924,7 @@ pub fn reanchor_comments_impl(
             None => {
                 // Re-anchoring runs against the canonical full diff so orphan
                 // status never depends on the whitespace view preference.
-                let fetched = match diff::get_file_diff(
+                let fetched = match diff::try_get_file_diff(
                     repo_path.to_owned(),
                     base.to_owned(),
                     head.to_owned(),
@@ -920,8 +935,8 @@ pub fn reanchor_comments_impl(
                     Ok(d) => Some(d),
                     // The file left the diff entirely; anything else is a
                     // real failure worth surfacing.
-                    Err(e) if e.starts_with("No changes for file") => None,
-                    Err(e) => return Err(e),
+                    Err(CoreError::NoChangesForFile(_)) => None,
+                    Err(e) => return Err(e.to_string()),
                 };
                 diffs.entry(path.to_owned()).or_insert(fetched)
             }
@@ -975,7 +990,7 @@ fn extract_anchor(
     side: CommentSide,
     start: u32,
     end: u32,
-) -> Result<CodeAnchor, String> {
+) -> Result<CodeAnchor, CoreError> {
     let lineno = |line: &DiffLine| match side {
         CommentSide::Old => line.old_lineno,
         CommentSide::New => line.new_lineno,
@@ -995,7 +1010,7 @@ fn extract_anchor(
         }
         let Some(first) = first else { continue };
         if selected.len() as u32 != end - start + 1 {
-            return Err("A comment selection cannot cross hunk boundaries".to_owned());
+            return Err(CoreError::SelectionCrossesHunks);
         }
         let mut context_before: Vec<String> = hunk.lines[..first]
             .iter()
@@ -1018,11 +1033,12 @@ fn extract_anchor(
             context_after,
         });
     }
-    Err(format!(
-        "No diff lines at {}:{start}-{end} ({}) to comment on",
-        diff.path,
-        side.as_str()
-    ))
+    Err(CoreError::NoDiffLines {
+        path: diff.path.clone(),
+        start,
+        end,
+        side: side.as_str(),
+    })
 }
 
 #[cfg(test)]

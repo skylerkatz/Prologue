@@ -5,6 +5,7 @@
 pub mod anchor;
 pub mod db;
 pub mod diff;
+pub mod error;
 pub mod export;
 pub mod intraline;
 pub mod repo;
