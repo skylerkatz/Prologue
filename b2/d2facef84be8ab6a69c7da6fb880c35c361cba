@@ -1,0 +1,21 @@
+src-tauri/tauri.conf.json
+  s_7489222dc71636::t_ec4d6c06b37e6f 25-35
+src-tauri/tauri.mcp-bridge.conf.json
+  s_7489222dc71636::t_4be086000c3af4 6-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "b2d2facef84be8ab6a69c7da6fb880c35c361cba",
+  "prompts": {},
+  "sessions": {
+    "s_7489222dc71636": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5bdadece-a5d4-4edd-89f0-c7bb88074f3a",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
