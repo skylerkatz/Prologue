@@ -1,0 +1,23 @@
+solo.yml
+  s_fa026fa37105b8::t_96f2656ba43246 5
+package.json
+  s_fa026fa37105b8::t_4e0d2b894d1505 8
+README.md
+  s_fa026fa37105b8::t_444552cdd4d43c 14-21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "624e65a7c97e1b945b5122aa5eca76e8101fc9d4",
+  "prompts": {},
+  "sessions": {
+    "s_fa026fa37105b8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3b6c19bb-63e7-41ab-907b-272c464799e1",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
