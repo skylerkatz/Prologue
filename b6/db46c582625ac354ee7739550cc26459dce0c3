@@ -1,0 +1,39 @@
+src-tauri/prologue/src/main.rs
+  s_3b48bffa7ad3a3::t_d7bf2d0cb2252f 293
+  s_3b48bffa7ad3a3::t_72dd5e27a32994 381,383,389
+  s_3b48bffa7ad3a3::t_0a346abe8a2e94 595-598,600-601
+  s_3b48bffa7ad3a3::t_e23364b8e383fe 12
+src-tauri/prologue-core/src/diff.rs
+  s_3b48bffa7ad3a3::t_430a1d446af360 197-210,221
+  s_3b48bffa7ad3a3::t_75e732b60e3ac8 6
+  s_3b48bffa7ad3a3::t_f53bf8ae1c807b 224
+src-tauri/prologue-core/src/lib.rs
+  s_3b48bffa7ad3a3::t_354f3ac612cd70 8
+src-tauri/prologue-core/src/error.rs
+  s_3b48bffa7ad3a3::t_018261c7afbd29 1-65
+src-tauri/prologue-core/src/review.rs
+  s_3b48bffa7ad3a3::t_ac562f4798ac5f 1013
+  s_3b48bffa7ad3a3::t_4a2f75bcf6950b 1036-1041
+  s_3b48bffa7ad3a3::t_a1edf3c10dbb49 779
+  s_3b48bffa7ad3a3::t_485ac0c64797df 9
+  s_3b48bffa7ad3a3::t_ab80d36696b02b 691-703,705,718-719
+  s_3b48bffa7ad3a3::t_d7e1b2b518c1d2 993
+  s_3b48bffa7ad3a3::t_018f7c15110ce5 927,938-939
+  s_3b48bffa7ad3a3::t_c4827c6c84fa4e 738,742
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "b6db46c582625ac354ee7739550cc26459dce0c3",
+  "prompts": {},
+  "sessions": {
+    "s_3b48bffa7ad3a3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84ef92c4-9999-4e48-a54d-b5cb50c5743e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
