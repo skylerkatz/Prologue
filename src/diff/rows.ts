@@ -3,6 +3,7 @@ import type {
   CommentSide,
   DiffLine,
   FileDiff,
+  FileReviewState,
   FileSummary,
   RepliesByRoot,
 } from "../types";
@@ -33,6 +34,29 @@ export interface FileViewState {
   reveals: GapReveal[];
   /** Fetched unchanged new-side lines, keyed by new line number. */
   context: Map<number, string>;
+}
+
+/**
+ * Files whose reviewed-ness flipped between two review-state maps, with the
+ * `expanded` value each card should take: marking collapses, unmarking
+ * re-expands, and "changed since review" counts as unreviewed (the file
+ * needs re-reviewing). In `files` order, so the first collapsed entry is
+ * the scroll anchor for a batch mark.
+ */
+export function reviewedFlips(
+  files: readonly FileSummary[],
+  prev: ReadonlyMap<string, FileReviewState>,
+  next: ReadonlyMap<string, FileReviewState>,
+): { path: string; expanded: boolean }[] {
+  const flips: { path: string; expanded: boolean }[] = [];
+  for (const file of files) {
+    const was = prev.get(file.path) === "reviewed";
+    const is = next.get(file.path) === "reviewed";
+    if (was !== is) {
+      flips.push({ path: file.path, expanded: !is });
+    }
+  }
+  return flips;
 }
 
 /** Reviewed files start collapsed (`expanded: false`); everything else open. */

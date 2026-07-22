@@ -3,6 +3,7 @@ import type {
   Comment,
   DiffLine,
   FileDiff,
+  FileReviewState,
   FileSummary,
   Hunk,
   LineKind,
@@ -15,6 +16,7 @@ import {
   initialFileState,
   lineNumber,
   lineSide,
+  reviewedFlips,
   rowKey,
   type FileViewState,
   type Row,
@@ -473,5 +475,64 @@ describe("estimateRowHeight", () => {
     expect(estimateRowHeight({ kind: "file", fi: 0 })).toBe(42);
     expect(estimateRowHeight({ kind: "line", fi: 0, line: line("context", 1, 1) })).toBe(21);
     expect(estimateRowHeight({ kind: "skeleton", fi: 0, height: 777 })).toBe(777);
+  });
+});
+
+describe("reviewedFlips", () => {
+  const files = [
+    file({ path: "src/a.ts" }),
+    file({ path: "src/b.ts", fingerprint: "fp-b" }),
+    file({ path: "src/c.ts", fingerprint: "fp-c" }),
+  ];
+  const marks = (
+    entries: [string, FileReviewState][],
+  ): Map<string, FileReviewState> => new Map(entries);
+
+  it("collapses newly reviewed files and expands unmarked ones", () => {
+    expect(
+      reviewedFlips(
+        files,
+        marks([["src/a.ts", "reviewed"]]),
+        marks([
+          ["src/b.ts", "reviewed"],
+          ["src/c.ts", "reviewed"],
+        ]),
+      ),
+    ).toEqual([
+      { path: "src/a.ts", expanded: true },
+      { path: "src/b.ts", expanded: false },
+      { path: "src/c.ts", expanded: false },
+    ]);
+  });
+
+  it("ignores files whose reviewed-ness did not change", () => {
+    const same = marks([["src/a.ts", "reviewed"]]);
+    expect(reviewedFlips(files, same, marks([...same]))).toEqual([]);
+  });
+
+  it("treats a changed-since-review transition as un-reviewing", () => {
+    expect(
+      reviewedFlips(
+        files,
+        marks([["src/a.ts", "reviewed"]]),
+        marks([["src/a.ts", "changed"]]),
+      ),
+    ).toEqual([{ path: "src/a.ts", expanded: true }]);
+    // Unmarked → changed never flips: the card was never collapsed.
+    expect(
+      reviewedFlips(files, marks([]), marks([["src/b.ts", "changed"]])),
+    ).toEqual([]);
+  });
+
+  it("keeps display order so the first collapse is the scroll anchor", () => {
+    const flips = reviewedFlips(
+      files,
+      marks([]),
+      marks([
+        ["src/c.ts", "reviewed"],
+        ["src/b.ts", "reviewed"],
+      ]),
+    );
+    expect(flips.map((f) => f.path)).toEqual(["src/b.ts", "src/c.ts"]);
   });
 });

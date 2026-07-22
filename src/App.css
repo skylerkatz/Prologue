@@ -854,11 +854,13 @@ body.sidebar-resizing * {
   cursor: pointer;
 }
 
+/* Real prose (often 4-5 lines): app base size with generous leading, kept
+   quiet under the Lora section title by the muted color. */
 .guide-section-summary {
-  margin: 3px 0 6px;
+  margin: 3px 0 10px;
   padding: 0 10px;
-  font-size: 12px;
-  line-height: 1.45;
+  font-size: 13px;
+  line-height: 1.6;
   color: var(--text-muted);
 }
 

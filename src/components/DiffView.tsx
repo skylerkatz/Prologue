@@ -28,6 +28,7 @@ import {
   initialFileState,
   lineNumber,
   lineSide,
+  reviewedFlips,
   rowKey,
   type ComposerLocation,
   type FileViewState,
@@ -328,6 +329,53 @@ export function DiffView({
     }
   }
 
+  // ── Reviewed-mark reconciliation ───────────────────────────────────────
+  // Collapse follows reviewed-ness itself, not the checkbox that changed
+  // it — the file header's Viewed toggle, the `v` key, a guide section's
+  // batch mark, and an optimistic rollback all drive the cards through this
+  // one path. Marking collapses (and scrolls the first collapsed header to
+  // the top — see pendingScrollPath); unmarking re-expands. The caret
+  // (`toggleFile`) writes `expanded` without touching marks, so peeking at
+  // a reviewed file never unmarks it and survives this sync untouched.
+  // Same-commit params changes are the full reset above; skip them here.
+  const [syncedMarks, setSyncedMarks] = useState({ reviewStates, params });
+  if (syncedMarks.reviewStates !== reviewStates) {
+    const sameParams =
+      syncedMarks.params.repoPath === repoPath &&
+      syncedMarks.params.base === base &&
+      syncedMarks.params.head === head &&
+      syncedMarks.params.mode === mode &&
+      syncedMarks.params.ignoreWhitespace === ignoreWhitespace;
+    const prevMarks = syncedMarks.reviewStates;
+    setSyncedMarks({ reviewStates, params });
+    if (sameParams) {
+      const flips = reviewedFlips(summary.files, prevMarks, reviewStates);
+      if (flips.length > 0) {
+        setStates((prev) => {
+          let changed = false;
+          const next = new Map(prev);
+          for (const flip of flips) {
+            const state = next.get(flip.path);
+            if (state !== undefined && state.expanded !== flip.expanded) {
+              next.set(flip.path, { ...state, expanded: flip.expanded });
+              changed = true;
+            }
+          }
+          return changed ? next : prev;
+        });
+        // Collapsing removes the files' rows; without a correction the
+        // viewport would land mid-way through a later file. Scroll the
+        // first collapsed header to the top instead — the rest of the
+        // batch sits right below it. (Runs from an effect once the row
+        // model has rebuilt.)
+        const collapsed = flips.find((flip) => !flip.expanded);
+        if (collapsed !== undefined) {
+          pendingScrollPath.current = collapsed.path;
+        }
+      }
+    }
+  }
+
   const fileByPath = useMemo(
     () => new Map(summary.files.map((f) => [f.path, f])),
     [summary.files],
@@ -389,25 +437,6 @@ export function DiffView({
       updateState(path, (s) => ({ ...s, expanded: !s.expanded }));
     },
     [updateState],
-  );
-
-  // Marking collapses the card and unmarking re-expands it; the caret
-  // (`toggleFile`) stays independent, so peeking at a reviewed file never
-  // unmarks it.
-  const toggleReviewed = useCallback(
-    (path: string) => {
-      const isReviewed = reviewStates.get(path) === "reviewed";
-      updateState(path, (s) => ({ ...s, expanded: isReviewed }));
-      if (!isReviewed) {
-        // Collapsing removes the file's rows; without a correction the
-        // viewport would land mid-way through a later file. Scroll the
-        // collapsed header to the top instead — the next file sits right
-        // below it. (Runs from an effect once the row model has rebuilt.)
-        pendingScrollPath.current = path;
-      }
-      onToggleReviewed(path);
-    },
-    [reviewStates, onToggleReviewed, updateState],
   );
 
   const forceLoadFile = useCallback(
@@ -968,7 +997,7 @@ export function DiffView({
         e.preventDefault();
         const path = cursorPathRef.current;
         if (path !== null) {
-          toggleReviewed(path);
+          onToggleReviewed(path);
         }
       }
     };
@@ -979,7 +1008,7 @@ export function DiffView({
     moveCursorUnviewed,
     moveCommentCursor,
     composeAtCursor,
-    toggleReviewed,
+    onToggleReviewed,
   ]);
 
   useEffect(() => {
@@ -1043,7 +1072,7 @@ export function DiffView({
               anchorStatuses={anchorStatuses}
               reviewStates={reviewStates}
               onToggle={toggleFile}
-              onToggleReviewed={toggleReviewed}
+              onToggleReviewed={onToggleReviewed}
               onLoad={forceLoadFile}
               onCopyPath={copyPath}
               onExpand={expandGap}
