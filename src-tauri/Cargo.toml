@@ -38,6 +38,7 @@ serde = { version = "1", features = ["derive"] }
 tauri = { version = "2", features = [] }
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-dialog = "2"
+tauri-plugin-single-instance = "2"
 tauri-plugin-store = "2"
 # Dev-only agent automation bridge; compiled in only via the `mcp-bridge`
 # feature (see [features]) so release builds carry no WebSocket listener.
