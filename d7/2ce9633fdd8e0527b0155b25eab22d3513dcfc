@@ -1,0 +1,44 @@
+src/generated/ipc-types.ts
+  s_c595c0293759e8::t_97d116b506fc31 103-119
+src/components/ReviewShell.tsx
+  s_c595c0293759e8::t_c19520e97b2913 81,84
+  s_c595c0293759e8::t_cd0afc7616587b 248-252
+  s_c595c0293759e8::t_210ad792ebec06 301-304
+  s_c595c0293759e8::t_8863f6cf90212d 14
+  s_c595c0293759e8::t_bfd75c89205077 21
+src/components/useCommentMutations.ts
+  s_c595c0293759e8::t_6185ff9e99f185 63-104
+  s_c595c0293759e8::t_99ea0f319e3906 164
+src/components/GuideMenu.tsx
+  s_c595c0293759e8::t_2fc60799b15e5a 1-137
+src/components/FileList.tsx
+  s_c595c0293759e8::t_217e7de3856192 137-140,148-205,224-251,253-256,259,261-293
+  s_c595c0293759e8::t_c88920b93e50a7 1,7,27-43
+  s_c595c0293759e8::t_41f72ec0112755 252,257-258,260
+src/ipc.ts
+  s_c595c0293759e8::t_cd63da9ac928bd 227-269
+  s_c595c0293759e8::t_1e6c0007111316 11
+src-tauri/prologue-core/src/ts_export.rs
+  s_c595c0293759e8::t_01aff382654616 47-48
+src/App.css
+  s_c595c0293759e8::t_cd1838a66d77ed 732-796
+  s_c595c0293759e8::t_1aa7326fd0dee6 550-560
+src/types.ts
+  s_c595c0293759e8::t_24984861ecb3f1 23-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "d72ce9633fdd8e0527b0155b25eab22d3513dcfc",
+  "prompts": {},
+  "sessions": {
+    "s_c595c0293759e8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1e90b17d-d41f-4090-8f44-c52f663228d1",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
