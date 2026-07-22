@@ -53,4 +53,7 @@ friendly message unless the app runs from `/Applications` (a link into a
 Gatekeeper-translocated or build-directory path would dangle). For development
 and testing, the underlying `install_cli` command accepts `force: true` to
 skip that guard — e.g. from the dev tools console:
-`window.__TAURI__.core.invoke('install_cli', { force: true })`.
+`window.__TAURI__.core.invoke('install_cli', { force: true })`. Note the
+`window.__TAURI__` global only exists under the mcp-bridge config
+(`withGlobalTauri` is set only in `tauri.mcp-bridge.conf.json`), so run the
+app via `npm run dev:bridge` to use this tip.

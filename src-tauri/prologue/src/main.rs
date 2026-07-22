@@ -19,7 +19,7 @@ use std::io::Write as _;
 use std::path::PathBuf;
 
 #[derive(Parser)]
-#[command(name = "prologue", version, about = "Read-only access to Prologue code reviews")]
+#[command(name = "prologue", version, about = "Command-line access to Prologue code reviews")]
 struct Cli {
     /// Path to reviews.db (default: the Prologue app's database)
     #[arg(long, global = true, value_name = "PATH")]

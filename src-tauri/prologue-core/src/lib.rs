@@ -1,6 +1,6 @@
-//! Review, diff, and persistence core shared by the Prologue app and any
-//! external binaries (CLI, MCP server). No Tauri types anywhere in this
-//! crate's dependency tree.
+//! Review, diff, and persistence core shared by the Prologue app and the
+//! `prologue` CLI. No Tauri types anywhere in this crate's dependency
+//! tree.
 
 pub mod anchor;
 pub mod comment;

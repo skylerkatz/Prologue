@@ -226,8 +226,8 @@ export function indexComments(
     }
     const fi = byPath.get(comment.filePath);
     if (fi === undefined) {
-      // Not part of the current diff (e.g. other working-tree mode); the
-      // sidebar count still includes it.
+      // Not part of the current diff (e.g. other working-tree mode); it
+      // surfaces in the orphaned-comments bucket above the diff instead.
       continue;
     }
     let entry = index.get(fi);

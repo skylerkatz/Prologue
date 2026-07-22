@@ -1,5 +1,6 @@
-//! Opening the reviews database read-only. The schema-version seatbelt
-//! lives in `prologue_core::db::open`, shared with the app.
+//! Opening the reviews database: read-only for the query commands,
+//! writable for comment/reply. The schema-version seatbelt lives in
+//! `prologue_core::db::open`, shared with the app.
 
 use prologue_core::db::APP_IDENTIFIER;
 use prologue_core::rusqlite::Connection;
