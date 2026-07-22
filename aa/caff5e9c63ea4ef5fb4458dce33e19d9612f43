@@ -1,0 +1,21 @@
+src-tauri/Info.plist
+  s_1f12beac9a2e5b::t_51ffd73ab5c1e3 1-13
+src-tauri/Cargo.toml
+  s_1f12beac9a2e5b::t_4562ae9c398370 15-21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "aacaff5e9c63ea4ef5fb4458dce33e19d9612f43",
+  "prompts": {},
+  "sessions": {
+    "s_1f12beac9a2e5b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1aef1b21-2e17-40d3-aa61-bdf98e0d822b",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
