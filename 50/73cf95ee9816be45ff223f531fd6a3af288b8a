@@ -1,0 +1,42 @@
+src/App.css
+  s_6556ec9ea4007c::t_6d9f5097f296a7 1701-1774
+src/components/DiffView.tsx
+  s_6556ec9ea4007c::t_4b946c73429191 915-919
+src-tauri/src/lib.rs
+  s_6556ec9ea4007c::t_c41cfd4d37a2c9 126
+  s_6556ec9ea4007c::t_d854f1a4aa0fc4 49-50,52,66-83
+  s_6556ec9ea4007c::t_f7144cce9466d5 192-194
+  s_6556ec9ea4007c::t_3dc4344679b680 16-17,19-21,26,35
+  s_6556ec9ea4007c::t_4a425776da71a0 84
+src-tauri/src/events.rs
+  s_6556ec9ea4007c::t_8ad8e904898e57 16-17
+  s_6556ec9ea4007c::t_ea6692750d7a7a 38-40,46
+src/components/ShortcutHelp.tsx
+  s_6556ec9ea4007c::t_2c0bd25aa69e7a 1-95
+src/components/ReviewShell.tsx
+  s_6556ec9ea4007c::t_0762fd42d07d26 3-6
+  s_6556ec9ea4007c::t_ea0e51b319c9c2 91
+  s_6556ec9ea4007c::t_942bfb5c823fa0 108-149
+  s_6556ec9ea4007c::t_d8542b88d2ec0c 178
+  s_6556ec9ea4007c::t_9e11a4a2c47243 187
+  s_6556ec9ea4007c::t_9c0a407f75df55 367
+  s_6556ec9ea4007c::t_2d1d30a6db0d50 17
+src/generated/events.ts
+  s_6556ec9ea4007c::t_11d1b56c40bbdb 14-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "5073cf95ee9816be45ff223f531fd6a3af288b8a",
+  "prompts": {},
+  "sessions": {
+    "s_6556ec9ea4007c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "37a01eab-1c8c-43a2-a9a6-1b353dadef89",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
