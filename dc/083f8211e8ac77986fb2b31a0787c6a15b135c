@@ -1,0 +1,36 @@
+src/components/useResizableSidebar.test.ts
+  s_804789c3ab96c3::t_3369203a3e5c9a 9
+  s_804789c3ab96c3::t_ae152e463350ae 57-78
+  s_804789c3ab96c3::t_4c7359182c6f62 1-8,10-56,79-91
+src/components/ReviewShell.tsx
+  s_804789c3ab96c3::t_e1cb09857662fb 2
+  s_804789c3ab96c3::t_ca7df97fb56664 95
+  s_804789c3ab96c3::t_25d5bf4a1921c6 24
+  s_804789c3ab96c3::t_00602bcfaedeb9 313-316,318-319
+  s_804789c3ab96c3::t_9654d4fe85d95a 317
+  s_804789c3ab96c3::t_5742f02c91889a 339-349
+src/App.css
+  s_804789c3ab96c3::t_3a12104363dc4a 686-688,691
+  s_804789c3ab96c3::t_d83e5883676866 639-641,647-677
+  s_804789c3ab96c3::t_0e114ed06e0c5c 678
+src/components/useResizableSidebar.ts
+  s_804789c3ab96c3::t_bfc70fb4966daf 1-39,58-108,110-160
+  s_804789c3ab96c3::t_a909d04e6aafba 109
+  s_804789c3ab96c3::t_d63269c72ad401 40-57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "dc083f8211e8ac77986fb2b31a0787c6a15b135c",
+  "prompts": {},
+  "sessions": {
+    "s_804789c3ab96c3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "12ce4f6a-9255-426b-aa48-ff9ceca533e1",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
