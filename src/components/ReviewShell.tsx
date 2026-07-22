@@ -44,6 +44,7 @@ interface ReviewShellProps {
   baseBranch: string;
   mode: WorkingTreeMode;
   hideWhitespace: boolean;
+  hideResolved: boolean;
   refreshKey: number;
   onBranchChange: (branch: string) => void;
   onBaseBranchChange: (base: string) => void;
@@ -74,6 +75,7 @@ export function ReviewShell({
   baseBranch,
   mode,
   hideWhitespace,
+  hideResolved,
   refreshKey,
   onBranchChange,
   onBaseBranchChange,
@@ -355,13 +357,37 @@ export function ReviewShell({
     [handleCreate],
   );
 
+  /** What the live surfaces render: with Hide Resolved on, only open thread
+   * roots and their replies. Raw `comments` stays the source for mutations
+   * and the open-only counts. Resolving a thread while hiding is on makes
+   * it vanish immediately; uncheck View > Hide Resolved Comments to see it. */
+  const visibleComments = useMemo(() => {
+    if (!hideResolved) {
+      return comments;
+    }
+    const openRoots = new Set(
+      comments
+        .filter((c) => c.parentId === null && c.state === "open")
+        .map((c) => c.id),
+    );
+    return comments.filter((c) =>
+      c.parentId === null ? c.state === "open" : openRoots.has(c.parentId),
+    );
+  }, [comments, hideResolved]);
+
   /** Replies grouped under their thread root; threads render as a unit
    * wherever the root lands (inline, review panel, or orphaned bucket). */
-  const repliesByRoot = useMemo(() => groupReplies(comments), [comments]);
+  const repliesByRoot = useMemo(
+    () => groupReplies(visibleComments),
+    [visibleComments],
+  );
 
   const reviewComments = useMemo(
-    () => comments.filter((c) => c.level === "review" && c.parentId === null),
-    [comments],
+    () =>
+      visibleComments.filter(
+        (c) => c.level === "review" && c.parentId === null,
+      ),
+    [visibleComments],
   );
 
   /**
@@ -373,19 +399,19 @@ export function ReviewShell({
    */
   const orphanedComments = useMemo(() => {
     const paths = new Set(view?.summary.files.map((f) => f.path) ?? []);
-    return comments.filter(
+    return visibleComments.filter(
       (c) =>
         c.parentId === null &&
         c.level !== "review" &&
         (anchorStatuses.get(c.id) === "orphaned" ||
           (c.filePath !== null && !paths.has(c.filePath))),
     );
-  }, [comments, anchorStatuses, view]);
+  }, [visibleComments, anchorStatuses, view]);
 
   const diffComments = useMemo(() => {
     const orphaned = new Set(orphanedComments.map((c) => c.id));
-    return comments.filter((c) => !orphaned.has(c.id));
-  }, [comments, orphanedComments]);
+    return visibleComments.filter((c) => !orphaned.has(c.id));
+  }, [visibleComments, orphanedComments]);
 
   /** Open THREADS: lifecycle lives on roots, so replies never count. */
   const openCount = useMemo(

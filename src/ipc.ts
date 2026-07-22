@@ -146,6 +146,11 @@ export function setRepoMenuEnabled(enabled: boolean): Promise<void> {
   return invoke("set_repo_menu_enabled", { enabled });
 }
 
+/** Mirror the hide-resolved preference onto the View menu check mark. */
+export function setHideResolvedChecked(checked: boolean): Promise<void> {
+  return invoke("set_hide_resolved_checked", { checked });
+}
+
 export function listComments(reviewId: number): Promise<Comment[]> {
   return invoke("list_comments", { reviewId });
 }

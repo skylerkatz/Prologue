@@ -5,6 +5,7 @@ import {
   findActiveReview,
   listBranches,
   openRepo,
+  setHideResolvedChecked,
   setRepoMenuEnabled,
   startWatching,
   stopWatching,
@@ -27,6 +28,9 @@ const HIDE_WHITESPACE_KEY = "prologue.hideWhitespace";
 /** localStorage key for the working-tree mode preference. */
 const MODE_KEY = "prologue.mode";
 
+/** localStorage key for the "Hide Resolved Comments" preference. */
+const HIDE_RESOLVED_KEY = "prologue.hideResolvedComments";
+
 /** The stored mode, or "committed" if nothing valid is stored. */
 function readStoredMode(): WorkingTreeMode {
   const stored = localStorage.getItem(MODE_KEY);
@@ -44,6 +48,9 @@ function App() {
   const [mode, setMode] = useState<WorkingTreeMode>(readStoredMode);
   const [hideWhitespace, setHideWhitespace] = useState(
     () => localStorage.getItem(HIDE_WHITESPACE_KEY) === "true",
+  );
+  const [hideResolved, setHideResolved] = useState(
+    () => localStorage.getItem(HIDE_RESOLVED_KEY) === "true",
   );
   const [refreshKey, setRefreshKey] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -160,6 +167,33 @@ function App() {
     setRepoMenuEnabled(repoPath !== null).catch(() => {});
   }, [repoPath]);
 
+  // The menu check mark always mirrors the stored preference: corrects the
+  // item on startup (it is built unchecked) and no-ops after menu clicks.
+  useEffect(() => {
+    setHideResolvedChecked(hideResolved).catch(() => {});
+  }, [hideResolved]);
+
+  // View > Hide Resolved Comments — Rust sends the item's new checked
+  // state (macOS toggles it natively); adopt it as the preference.
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | null = null;
+    void listen<boolean>("menu-hide-resolved", (event) => {
+      setHideResolved(event.payload);
+      localStorage.setItem(HIDE_RESOLVED_KEY, String(event.payload));
+    }).then((fn) => {
+      if (disposed) {
+        fn();
+      } else {
+        unlisten = fn;
+      }
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+
   // View > Refresh (⌘R) — same path as the old toolbar Refresh button.
   useEffect(() => {
     let disposed = false;
@@ -198,6 +232,7 @@ function App() {
           baseBranch={baseBranch}
           mode={mode}
           hideWhitespace={hideWhitespace}
+          hideResolved={hideResolved}
           refreshKey={refreshKey}
           onBranchChange={setBranch}
           onBaseBranchChange={setBaseBranch}

@@ -14,6 +14,11 @@ const MENU_VIEW_ARCHIVED_EVENT: &str = "menu-view-archived";
 const MENU_REFRESH_ID: &str = "view-refresh";
 /// Event emitted to the frontend when View > Refresh is chosen.
 const MENU_REFRESH_EVENT: &str = "menu-refresh";
+/// Menu item id for the View > Hide Resolved Comments check item.
+const MENU_HIDE_RESOLVED_ID: &str = "view-hide-resolved";
+/// Event (bool payload: the new checked state) emitted to the frontend
+/// when View > Hide Resolved Comments is toggled.
+const MENU_HIDE_RESOLVED_EVENT: &str = "menu-hide-resolved";
 
 /// Handles to the View menu items that only make sense with a repo open;
 /// the frontend enables them on repo open and disables them on the
@@ -21,6 +26,7 @@ const MENU_REFRESH_EVENT: &str = "menu-refresh";
 struct RepoMenuItems {
     refresh: tauri::menu::MenuItem<tauri::Wry>,
     archived: tauri::menu::MenuItem<tauri::Wry>,
+    hide_resolved: tauri::menu::CheckMenuItem<tauri::Wry>,
 }
 
 #[tauri::command]
@@ -28,13 +34,24 @@ fn set_repo_menu_enabled(app: tauri::AppHandle, enabled: bool) {
     if let Some(items) = app.try_state::<RepoMenuItems>() {
         let _ = items.refresh.set_enabled(enabled);
         let _ = items.archived.set_enabled(enabled);
+        let _ = items.hide_resolved.set_enabled(enabled);
+    }
+}
+
+/// Mirror the stored hide-resolved preference onto the menu check mark.
+/// The frontend owns the preference (localStorage); this is the JS→menu leg.
+#[tauri::command]
+fn set_hide_resolved_checked(app: tauri::AppHandle, checked: bool) {
+    if let Some(items) = app.try_state::<RepoMenuItems>() {
+        let _ = items.hide_resolved.set_checked(checked);
     }
 }
 
 /// Customize the default menu: "Install 'prologue' Command Line Tool…" in
-/// the app submenu after About, and "Refresh" / "Archived Reviews…" in View.
+/// the app submenu after About, and "Refresh" / "Archived Reviews…" /
+/// "Hide Resolved Comments" in View.
 fn setup_menu(app: &tauri::App) -> tauri::Result<()> {
-    use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+    use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 
     let menu = Menu::default(app.handle())?;
     let items = menu.items()?;
@@ -70,11 +87,26 @@ fn setup_menu(app: &tauri::App) -> tauri::Result<()> {
             false,
             Some("CmdOrCtrl+Shift+A"),
         )?;
+        // Starts unchecked as well; the frontend pushes the stored
+        // preference (and enables on repo open) before it is clickable.
+        let hide_resolved = CheckMenuItem::with_id(
+            app,
+            MENU_HIDE_RESOLVED_ID,
+            "Hide Resolved Comments",
+            false,
+            false,
+            Some("CmdOrCtrl+Shift+H"),
+        )?;
         // "Enter Full Screen" conventionally stays at the bottom.
         view_submenu.insert(&refresh, 0)?;
         view_submenu.insert(&archived, 1)?;
-        view_submenu.insert(&PredefinedMenuItem::separator(app)?, 2)?;
-        app.manage(RepoMenuItems { refresh, archived });
+        view_submenu.insert(&hide_resolved, 2)?;
+        view_submenu.insert(&PredefinedMenuItem::separator(app)?, 3)?;
+        app.manage(RepoMenuItems {
+            refresh,
+            archived,
+            hide_resolved,
+        });
     }
     app.set_menu(menu)?;
     Ok(())
@@ -121,6 +153,15 @@ pub fn run() {
             MENU_REFRESH_ID => {
                 let _ = app.emit(MENU_REFRESH_EVENT, ());
             }
+            MENU_HIDE_RESOLVED_ID => {
+                // macOS auto-toggles the check state before the event
+                // fires, so is_checked() is already the new value.
+                if let Some(items) = app.try_state::<RepoMenuItems>() {
+                    if let Ok(checked) = items.hide_resolved.is_checked() {
+                        let _ = app.emit(MENU_HIDE_RESOLVED_EVENT, checked);
+                    }
+                }
+            }
             _ => {}
         });
 
@@ -158,7 +199,8 @@ pub fn run() {
             cli_install::install_cli,
             watcher::start_watching,
             watcher::stop_watching,
-            set_repo_menu_enabled
+            set_repo_menu_enabled,
+            set_hide_resolved_checked
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
