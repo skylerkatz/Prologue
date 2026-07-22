@@ -1,0 +1,72 @@
+src-tauri/prologue-core/src/export.rs
+  s_3b48bffa7ad3a3::t_608facbeb42b64 9
+  s_3b48bffa7ad3a3::t_1f4b6e0f5384a6 526,538
+  s_3b48bffa7ad3a3::t_f2635059641b16 481-490,504
+  s_3b48bffa7ad3a3::t_b340bfd0d0734b 903
+  s_3b48bffa7ad3a3::t_e920b12e916f2a 116-118,121
+  s_3b48bffa7ad3a3::t_43c39d456f4504 858
+  s_3b48bffa7ad3a3::t_4bc7e48798ac91 58,65
+  s_3b48bffa7ad3a3::t_896d4ca0d5ebd0 74
+  s_3b48bffa7ad3a3::t_89e84a276cd2ac 143,146-148,151
+src-tauri/prologue-core/src/diff.rs
+  s_3b48bffa7ad3a3::t_696cc923fcf899 624
+  s_3b48bffa7ad3a3::t_ecb589fea41934 904
+  s_3b48bffa7ad3a3::t_0f029eb1e69231 919
+  s_3b48bffa7ad3a3::t_de32b0baffbb80 145-148
+  s_3b48bffa7ad3a3::t_99aa18ea97ee72 1064,1067-1068
+  s_3b48bffa7ad3a3::t_586cd93e11b7c7 196,198,200,206,208,210-211,217,220,223
+  s_3b48bffa7ad3a3::t_bdb41c610459cd 929-930
+  s_3b48bffa7ad3a3::t_7974e93b38e9fc 868
+  s_3b48bffa7ad3a3::t_2c2be30e869836 561-566,568-572
+  s_3b48bffa7ad3a3::t_9daf01ecbd6860 171
+  s_3b48bffa7ad3a3::t_973d47f8f6df94 1091-1096
+  s_3b48bffa7ad3a3::t_663d0daaaa6c58 184-185
+  s_3b48bffa7ad3a3::t_85fe20ae4e31e7 282
+  s_3b48bffa7ad3a3::t_8dd580ce577a88 42-52
+  s_3b48bffa7ad3a3::t_07db3149f7a602 771-776
+src-tauri/prologue/src/main.rs
+  s_3b48bffa7ad3a3::t_20b7e8bc6e4c57 562-567
+  s_3b48bffa7ad3a3::t_dc28c41f008f55 12
+  s_3b48bffa7ad3a3::t_53fcec867ca1ba 269
+  s_3b48bffa7ad3a3::t_cdde8a1046986f 293
+  s_3b48bffa7ad3a3::t_1e710cf9ac7f7e 314
+src-tauri/prologue/src/show.rs
+  s_3b48bffa7ad3a3::t_ee3129c654d834 283-291
+  s_3b48bffa7ad3a3::t_ce919e753ec609 94-96
+  s_3b48bffa7ad3a3::t_1ded52c768197d 4
+  s_3b48bffa7ad3a3::t_165154b762e694 202
+src-tauri/src/commands.rs
+  s_3b48bffa7ad3a3::t_8ae106aeb68b82 238
+  s_3b48bffa7ad3a3::t_91f2ece271249c 154
+  s_3b48bffa7ad3a3::t_3dc64469bbd590 55
+  s_3b48bffa7ad3a3::t_8b82e93aebe27d 199
+  s_3b48bffa7ad3a3::t_5ef4d25ee8d8df 5
+  s_3b48bffa7ad3a3::t_e6b5db002367de 41
+src-tauri/prologue-core/src/review.rs
+  s_3b48bffa7ad3a3::t_a9860679b0a57a 900
+  s_3b48bffa7ad3a3::t_0b306d03f20c59 1251,1671,1708,1861,1912,1927
+  s_3b48bffa7ad3a3::t_0dd06b262978c6 924
+  s_3b48bffa7ad3a3::t_849dffc1976259 1515
+  s_3b48bffa7ad3a3::t_b093c9d28bab62 698,701,708,719-720
+  s_3b48bffa7ad3a3::t_6ca9e23ce7f915 1110-1119,1121
+  s_3b48bffa7ad3a3::t_f673931eb26572 29-41
+  s_3b48bffa7ad3a3::t_87b0f53ee58658 1267,1420
+  s_3b48bffa7ad3a3::t_87ba5b160eef72 8
+  s_3b48bffa7ad3a3::t_04ff3054430982 749,755-756
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "27073567d4a645cfe97ccc56114e5aa1af6bcf37",
+  "prompts": {},
+  "sessions": {
+    "s_3b48bffa7ad3a3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84ef92c4-9999-4e48-a54d-b5cb50c5743e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
