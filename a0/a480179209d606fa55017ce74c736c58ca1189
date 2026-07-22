@@ -1,0 +1,25 @@
+src-tauri/prologue-core/src/review.rs
+  s_3b48bffa7ad3a3::t_bbbd1d1feacef1 319,323,327
+  s_3b48bffa7ad3a3::t_9261f4f5a6cff7 284,288-290,301,303
+  s_3b48bffa7ad3a3::t_ebb0dd2a1774ae 355,359,364
+  s_3b48bffa7ad3a3::t_c010e66e92522a 411,415-417
+  s_3b48bffa7ad3a3::t_b157e1cd6b8e72 598-659
+  s_3b48bffa7ad3a3::t_b4a4b77fd2f8be 109-119,127-130,134-136,146-148,150,159
+  s_3b48bffa7ad3a3::t_1fd4009505e613 8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "a0a480179209d606fa55017ce74c736c58ca1189",
+  "prompts": {},
+  "sessions": {
+    "s_3b48bffa7ad3a3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84ef92c4-9999-4e48-a54d-b5cb50c5743e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
