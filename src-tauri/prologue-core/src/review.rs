@@ -74,7 +74,9 @@ pub enum CommentSide {
 }
 
 impl CommentSide {
-    pub(crate) fn as_str(self) -> &'static str {
+    /// Stable text form: the reviews database value, also what CLI output
+    /// and exports print.
+    pub fn as_str(self) -> &'static str {
         match self {
             CommentSide::Old => "old",
             CommentSide::New => "new",
@@ -99,7 +101,9 @@ pub enum CommentState {
 }
 
 impl CommentState {
-    fn as_str(self) -> &'static str {
+    /// Stable text form: the reviews database value, also what CLI output
+    /// and exports print.
+    pub fn as_str(self) -> &'static str {
         match self {
             CommentState::Open => "open",
             CommentState::Resolved => "resolved",
@@ -250,7 +254,9 @@ pub fn open_review_impl(
     get_review(conn, id)
 }
 
-fn get_review(conn: &Connection, id: i64) -> Result<Review, String> {
+/// The review row for `id`, or `None` when no such review exists — for
+/// callers that phrase "not found" themselves.
+pub fn find_review(conn: &Connection, id: i64) -> Result<Option<Review>, String> {
     conn.query_row(
         "SELECT id, repo_path, branch, base_ref, mode, status, created_at, updated_at
          FROM reviews WHERE id = ?1",
@@ -270,8 +276,7 @@ fn get_review(conn: &Connection, id: i64) -> Result<Review, String> {
     )
     .optional()
     .map_err(db_err)?
-    .ok_or_else(|| format!("Review not found: {id}"))
-    .and_then(|(id, repo_path, branch, base_ref, mode, status, created_at, updated_at)| {
+    .map(|(id, repo_path, branch, base_ref, mode, status, created_at, updated_at)| {
         Ok(Review {
             id,
             repo_path,
@@ -283,6 +288,12 @@ fn get_review(conn: &Connection, id: i64) -> Result<Review, String> {
             updated_at,
         })
     })
+    .transpose()
+}
+
+/// The review row for `id`; a missing review is an error.
+pub fn get_review(conn: &Connection, id: i64) -> Result<Review, String> {
+    find_review(conn, id)?.ok_or_else(|| format!("Review not found: {id}"))
 }
 
 /// Why a branch's review should be auto-archived.
@@ -553,6 +564,15 @@ pub fn unmark_file_reviewed_impl(
     Ok(())
 }
 
+/// How many comments (roots and replies) a review holds — a bare COUNT, so
+/// listings don't have to fetch and parse every comment row.
+pub fn comment_count(conn: &Connection, review_id: i64) -> Result<i64, String> {
+    conn.query_row("SELECT COUNT(*) FROM comments WHERE review_id = ?1", [review_id], |r| {
+        r.get(0)
+    })
+    .map_err(db_err)
+}
+
 pub fn list_comments_impl(conn: &Connection, review_id: i64) -> Result<Vec<Comment>, String> {
     let mut stmt = conn
         .prepare(
@@ -652,7 +672,8 @@ fn comment_from_columns(c: CommentColumns) -> Result<Comment, String> {
     })
 }
 
-fn get_comment(conn: &Connection, id: i64) -> Result<Comment, String> {
+/// The comment row for `id`; a missing comment is an error.
+pub fn get_comment(conn: &Connection, id: i64) -> Result<Comment, String> {
     conn.query_row(
         "SELECT id, review_id, level, file_path, side, start_line, end_line,
                 code_anchor, commit_sha, state, body, parent_id, author, created_at, updated_at

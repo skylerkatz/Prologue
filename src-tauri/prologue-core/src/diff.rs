@@ -20,8 +20,9 @@ pub enum DiffMode {
 }
 
 impl DiffMode {
-    /// Stable text form used in the reviews database.
-    pub(crate) fn as_str(self) -> &'static str {
+    /// Stable text form: the reviews database value, also what CLI output
+    /// and exports print.
+    pub fn as_str(self) -> &'static str {
         match self {
             DiffMode::Committed => "committed",
             DiffMode::Staged => "staged",

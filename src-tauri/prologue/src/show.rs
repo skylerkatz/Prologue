@@ -1,7 +1,7 @@
 //! `prologue show`: a review's threads (roots with nested replies, states,
 //! anchors, orphan flags) and the per-file hunk view.
 
-use prologue_core::diff::{self, DiffLine, DiffMode, DiffSpec, FileDiff, LineKind};
+use prologue_core::diff::{self, DiffLine, DiffSpec, FileDiff, LineKind};
 use prologue_core::review::{self, CommentLevel, CommentSide, CommentState, Review, Thread};
 use prologue_core::rusqlite::Connection;
 use serde::Serialize;
@@ -63,14 +63,6 @@ fn location(thread: &Thread) -> String {
     out
 }
 
-fn state_str(state: CommentState) -> &'static str {
-    match state {
-        CommentState::Open => "open",
-        CommentState::Resolved => "resolved",
-        CommentState::Dismissed => "dismissed",
-    }
-}
-
 fn push_indented(out: &mut String, text: &str, indent: &str) {
     for line in text.lines() {
         if line.is_empty() {
@@ -89,7 +81,7 @@ pub fn render_text(data: &ShowData) -> String {
         repo_name(&r.repo_path),
         r.branch,
         r.base_ref,
-        mode_str(r.mode),
+        r.mode.as_str(),
         r.status,
     );
     let open = data
@@ -104,7 +96,7 @@ pub fn render_text(data: &ShowData) -> String {
 
     for thread in &data.threads {
         let root = &thread.root;
-        writeln!(out, "\nC{} [{}] {}", root.id, state_str(root.state), location(thread)).unwrap();
+        writeln!(out, "\nC{} [{}] {}", root.id, root.state.as_str(), location(thread)).unwrap();
         if let Some(anchor) = &root.code_anchor {
             for line in &anchor.lines {
                 writeln!(out, "  > {line}").unwrap();
@@ -117,14 +109,6 @@ pub fn render_text(data: &ShowData) -> String {
         }
     }
     out
-}
-
-fn mode_str(mode: DiffMode) -> &'static str {
-    match mode {
-        DiffMode::Committed => "committed",
-        DiffMode::Staged => "staged",
-        DiffMode::All => "all",
-    }
 }
 
 fn repo_name(repo_path: &str) -> String {

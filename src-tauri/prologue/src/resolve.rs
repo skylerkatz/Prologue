@@ -102,10 +102,9 @@ pub fn repo_matches(review: &Review, query: &str) -> bool {
 pub fn resolve_review(conn: &Connection, arg: Option<&str>, cwd: &Path) -> Result<Review, String> {
     match arg {
         Some(arg) => match ReviewRef::parse(arg)? {
-            ReviewRef::Id(id) => review::list_reviews_impl(conn, None, true)?
-                .into_iter()
-                .find(|r| r.id == id)
-                .ok_or(format!("No review with id {id}")),
+            ReviewRef::Id(id) => {
+                review::find_review(conn, id)?.ok_or(format!("No review with id {id}"))
+            }
             ReviewRef::RepoBranch { repo, branch } => {
                 let matches: Vec<Review> = review::list_reviews_impl(conn, None, true)?
                     .into_iter()

@@ -356,16 +356,8 @@ fn parse_line_range(arg: &str) -> Result<(u32, u32), String> {
 /// The review a comment belongs to (any status — core rejects writes to
 /// archived reviews with its own message).
 fn review_of_comment(conn: &Connection, comment_id: i64) -> Result<Review, String> {
-    use prologue_core::rusqlite::OptionalExtension;
-    let review_id: Option<i64> = conn
-        .query_row("SELECT review_id FROM comments WHERE id = ?1", [comment_id], |r| r.get(0))
-        .optional()
-        .map_err(|e| format!("Review database error: {e}"))?;
-    let review_id = review_id.ok_or_else(|| format!("Comment not found: C{comment_id}"))?;
-    review::list_reviews_impl(conn, None, true)?
-        .into_iter()
-        .find(|r| r.id == review_id)
-        .ok_or_else(|| format!("Review not found: {review_id}"))
+    let comment = review::get_comment(conn, comment_id)?;
+    review::get_review(conn, comment.review_id)
 }
 
 /// Anchor-capture failures usually mean the caller's view of the diff is
@@ -398,10 +390,7 @@ fn print_created(comment: &Comment, json: bool) -> Result<(), String> {
             comment.file_path.as_deref().unwrap_or("?"),
             comment.start_line.unwrap_or(0),
             comment.end_line.unwrap_or(0),
-            match comment.side {
-                Some(CommentSide::Old) => "old",
-                _ => "new",
-            },
+            comment.side.unwrap_or(CommentSide::New).as_str(),
         ),
     };
     let head = comment.commit_sha.get(..7).unwrap_or(&comment.commit_sha);
@@ -430,14 +419,14 @@ fn reviews_table(conn: &Connection, reviews: &[Review]) -> Result<String, String
         "UPDATED".to_owned(),
     ]];
     for review in reviews {
-        let comments: i64 = review::list_comments_impl(conn, review.id)?.len() as i64;
+        let comments = review::comment_count(conn, review.id)?;
         rows.push([
             review.id.to_string(),
             review.status.clone(),
             review.repo_path.clone(),
             review.branch.clone(),
             review.base_ref.clone(),
-            format!("{:?}", review.mode).to_lowercase(),
+            review.mode.as_str().to_owned(),
             comments.to_string(),
             review.updated_at.clone(),
         ]);
