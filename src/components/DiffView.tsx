@@ -14,7 +14,7 @@ import {
   useVirtualizer,
   type Range,
 } from "@tanstack/react-virtual";
-import { getContextLines, getFileDiff } from "../ipc";
+import { errorText, getContextLines, getFileDiff } from "../ipc";
 import { guardReason, type GuardReason } from "../diff/guards";
 import { segmentLine } from "../diff/segments";
 import { detectLang } from "../highlight/lang";
@@ -1265,8 +1265,4 @@ function ExpandRow({
       </button>
     </div>
   );
-}
-
-function errorText(e: unknown): string {
-  return typeof e === "string" ? e : String(e);
 }

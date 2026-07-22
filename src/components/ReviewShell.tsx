@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
 import { BranchSelect } from "./BranchSelect";
 import {
   archiveStaleReviews,
   createComment,
   deleteComment,
+  errorText,
   getDiffSummary,
   listComments,
   listReviewedFiles,
@@ -15,6 +15,7 @@ import {
   updateComment,
   updateCommentState,
 } from "../ipc";
+import { useTauriEvent } from "../useTauriEvent";
 import {
   groupReplies,
   type AnchorStatus,
@@ -182,7 +183,7 @@ export function ReviewShell({
           setComments([]);
           setReviewedFiles(new Map());
           setAnchorStatuses(new Map());
-          setError(typeof e === "string" ? e : String(e));
+          setError(errorText(e));
         }
       })
       .finally(() => {
@@ -199,66 +200,38 @@ export function ReviewShell({
   // app's back; the backend's database watcher emits `comments-changed`
   // only for those (its data_version guard filters the app's own writes).
   // Re-read comments — with a re-anchor pass — without recomputing the diff.
-  useEffect(() => {
-    let disposed = false;
-    let unlisten: (() => void) | null = null;
-    void listen("comments-changed", () => {
-      const pinned = current.current;
-      if (pinned === null) {
+  useTauriEvent("comments-changed", () => {
+    const pinned = current.current;
+    if (pinned === null) {
+      return;
+    }
+    void (async () => {
+      const results = await reanchorComments(
+        pinned.review.repoPath,
+        pinned.view.base,
+        pinned.view.head,
+        pinned.view.mode,
+        pinned.review.id,
+      );
+      const reviewComments = await listComments(pinned.review.id);
+      const reviewedRows = await listReviewedFiles(pinned.review.id);
+      // The view may have moved on (branch switch, refresh) meanwhile.
+      if (current.current?.review.id !== pinned.review.id) {
         return;
       }
-      void (async () => {
-        const results = await reanchorComments(
-          pinned.review.repoPath,
-          pinned.view.base,
-          pinned.view.head,
-          pinned.view.mode,
-          pinned.review.id,
-        );
-        const reviewComments = await listComments(pinned.review.id);
-        const reviewedRows = await listReviewedFiles(pinned.review.id);
-        // The view may have moved on (branch switch, refresh) meanwhile.
-        if (disposed || current.current?.review.id !== pinned.review.id) {
-          return;
-        }
-        setAnchorStatuses(new Map(results.map((r) => [r.commentId, r.status])));
-        setComments(reviewComments);
-        setReviewedFiles(
-          new Map(reviewedRows.map((r) => [r.filePath, r.fingerprint])),
-        );
-      })().catch(() => {
-        // Leave the current comments in place; View > Refresh still
-        // covers everything.
-      });
-    }).then((fn) => {
-      if (disposed) {
-        fn();
-      } else {
-        unlisten = fn;
-      }
+      setAnchorStatuses(new Map(results.map((r) => [r.commentId, r.status])));
+      setComments(reviewComments);
+      setReviewedFiles(
+        new Map(reviewedRows.map((r) => [r.filePath, r.fingerprint])),
+      );
+    })().catch(() => {
+      // Leave the current comments in place; View > Refresh still
+      // covers everything.
     });
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
-  }, []);
+  });
 
   // View > Archived Reviews… (native menu) — replaces the old toolbar button.
-  useEffect(() => {
-    let disposed = false;
-    let unlisten: (() => void) | null = null;
-    void listen("menu-view-archived", () => setShowArchive(true)).then((fn) => {
-      if (disposed) {
-        fn();
-      } else {
-        unlisten = fn;
-      }
-    });
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
-  }, []);
+  useTauriEvent("menu-view-archived", () => setShowArchive(true));
 
   /** Per-file review state derived from the displayed summary: a stored
    * fingerprint that still matches is "reviewed"; one that no longer matches

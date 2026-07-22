@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { Comment, CommentState } from "../types";
+import { errorText } from "../ipc";
 
 /**
  * Draft store shared by composers and comment editors. Virtualized rows
@@ -9,7 +10,40 @@ import type { Comment, CommentState } from "../types";
  */
 export type DraftStore = Map<string, string>;
 
-export const editDraftKey = (commentId: number): string => `edit:${commentId}`;
+const editDraftKey = (commentId: number): string => `edit:${commentId}`;
+
+/**
+ * Owns the editing state a list of `CommentThread`s shares: which comment
+ * is in its editor, which thread's reply composer is open, and the draft
+ * store both persist through. Returns exactly the CommentThread props that
+ * carry that state — including the close-on-success glue around the save
+ * and reply mutations — so panels spread the result instead of re-wiring
+ * setEditingId/setReplyingTo by hand.
+ */
+export function useThreadEditing(
+  onUpdate: (id: number, body: string) => Promise<void>,
+  onCreateReply?: (rootId: number, body: string) => Promise<void>,
+) {
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [replyingTo, setReplyingTo] = useState<number | null>(null);
+  const drafts = useRef<DraftStore>(new Map());
+  return {
+    editingId,
+    drafts: drafts.current,
+    replyingTo,
+    onReplyStart: setReplyingTo,
+    onReplyCancel: () => setReplyingTo(null),
+    onCreateReply:
+      onCreateReply === undefined
+        ? undefined
+        : (rootId: number, body: string) =>
+            onCreateReply(rootId, body).then(() => setReplyingTo(null)),
+    onEditStart: setEditingId,
+    onEditCancel: () => setEditingId(null),
+    onSave: (id: number, body: string) =>
+      onUpdate(id, body).then(() => setEditingId(null)),
+  };
+}
 
 interface CommentComposerProps {
   drafts: DraftStore;
@@ -44,7 +78,7 @@ export function CommentComposer({
         drafts.delete(draftKey);
       })
       .catch((e: unknown) => {
-        setError(typeof e === "string" ? e : String(e));
+        setError(errorText(e));
         setBusy(false);
       });
   };
@@ -147,7 +181,7 @@ export function CommentCard({
   const closed = comment.state !== "open";
 
   const fail = (e: unknown) => {
-    setError(typeof e === "string" ? e : String(e));
+    setError(errorText(e));
     setBusy(false);
     setConfirmingDelete(false);
   };

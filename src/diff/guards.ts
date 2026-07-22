@@ -1,7 +1,7 @@
 import type { FileSummary } from "../types";
 
 /** Files over this many changed lines collapse behind a "Load diff" click. */
-export const MAX_AUTO_LINES = 5000;
+const MAX_AUTO_LINES = 5000;
 
 export type GuardReason = "binary" | "oversize" | "generated";
 
@@ -28,7 +28,7 @@ const GENERATED_NAMES = new Set([
 
 const GENERATED_SUFFIXES = [".min.js", ".min.css", ".map", ".snap"];
 
-export function isGeneratedPath(path: string): boolean {
+function isGeneratedPath(path: string): boolean {
   const name = (path.split("/").pop() ?? path).toLowerCase();
   return (
     GENERATED_NAMES.has(name) ||

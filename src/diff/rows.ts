@@ -9,7 +9,7 @@ import type {
 import { guardReason, type GuardReason } from "./guards";
 
 /** Fixed row height for diff lines; keeps scroll estimates honest. */
-export const LINE_HEIGHT = 21;
+const LINE_HEIGHT = 21;
 
 /** How many unchanged lines one expand-context click reveals. */
 export const CONTEXT_CHUNK = 20;
@@ -197,7 +197,7 @@ export interface FileComments {
   line: LineCommentIndex;
 }
 
-export const lineCommentKey = (side: CommentSide, endLine: number): string =>
+const lineCommentKey = (side: CommentSide, endLine: number): string =>
   `${side}:${endLine}`;
 
 /**

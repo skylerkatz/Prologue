@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
-import { exportReview } from "../ipc";
+import { errorText, exportReview } from "../ipc";
 import type { ExportFormat, WorkingTreeMode } from "../types";
 
 const OPTIONS: ReadonlyArray<{ format: ExportFormat; label: string }> = [
@@ -83,7 +83,7 @@ export function ExportMenu({ target, openCount }: ExportMenuProps) {
       await writeText(text);
       showToast(`Copied ${label} to clipboard`, false);
     } catch (e) {
-      showToast(typeof e === "string" ? e : String(e), true);
+      showToast(errorText(e), true);
     }
   };
 

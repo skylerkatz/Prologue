@@ -1,6 +1,6 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import type { Comment, CommentState, RepliesByRoot } from "../types";
-import { CommentComposer, CommentThread, type DraftStore } from "./Comments";
+import { CommentComposer, CommentThread, useThreadEditing } from "./Comments";
 
 interface ReviewCommentsPanelProps {
   /** Review-level thread roots only. */
@@ -25,9 +25,7 @@ export function ReviewCommentsPanel({
   onSetState,
 }: ReviewCommentsPanelProps) {
   const [adding, setAdding] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [replyingTo, setReplyingTo] = useState<number | null>(null);
-  const drafts = useRef<DraftStore>(new Map());
+  const threadEditing = useThreadEditing(onUpdate, onCreateReply);
 
   return (
     <section className="review-comments" aria-label="Review comments">
@@ -51,26 +49,14 @@ export function ReviewCommentsPanel({
           key={comment.id}
           root={comment}
           replies={repliesByRoot.get(comment.id) ?? []}
-          editingId={editingId}
-          drafts={drafts.current}
-          replyingTo={replyingTo}
-          onReplyStart={setReplyingTo}
-          onReplyCancel={() => setReplyingTo(null)}
-          onCreateReply={(rootId, body) =>
-            onCreateReply(rootId, body).then(() => setReplyingTo(null))
-          }
-          onEditStart={setEditingId}
-          onEditCancel={() => setEditingId(null)}
-          onSave={(id, body) =>
-            onUpdate(id, body).then(() => setEditingId(null))
-          }
+          {...threadEditing}
           onDelete={onDelete}
           onSetState={onSetState}
         />
       ))}
       {adding && (
         <CommentComposer
-          drafts={drafts.current}
+          drafts={threadEditing.drafts}
           draftKey="review-new"
           placeholder="Overall notes about this review…"
           onSubmit={(body) => onCreate(body).then(() => setAdding(false))}

@@ -10,7 +10,7 @@ import { GRAMMAR_LOADERS } from "./grammars";
 
 /** Hunks beyond this many lines render plain; tokenizing them isn't worth
  * the main-thread time (files that big are behind the oversize guard). */
-export const MAX_HIGHLIGHT_LINES = 2000;
+const MAX_HIGHLIGHT_LINES = 2000;
 
 /** Lines tokenized per synchronous chunk before yielding to the main
  * thread, so one huge hunk can't hold a frame hostage. */

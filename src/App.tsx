@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { listen } from "@tauri-apps/api/event";
 import {
+  errorText,
   findActiveReview,
   listBranches,
   openRepo,
@@ -10,6 +10,7 @@ import {
   startWatching,
   stopWatching,
 } from "./ipc";
+import { useTauriEvent } from "./useTauriEvent";
 import { addRecentRepo, getRecentRepos, removeRecentRepo } from "./recents";
 import type { BranchList, RepoInfo, WorkingTreeMode } from "./types";
 import { ReviewShell } from "./components/ReviewShell";
@@ -87,7 +88,7 @@ function App() {
       // View > Refresh still covers everything.
       startWatching(repo.path).catch(() => {});
     } catch (e) {
-      setError(typeof e === "string" ? e : String(e));
+      setError(errorText(e));
     }
   }
 
@@ -130,36 +131,14 @@ function App() {
     setRefreshKey((key) => key + 1);
   }
 
-  // A ref so the repo-changed subscription below survives across renders
-  // without re-subscribing every time `refresh`'s closure is recreated.
-  const refreshRef = useRef(refresh);
-  refreshRef.current = refresh;
-
   // The Rust watcher emits `repo-changed` (debounced) on working-tree or
   // .git activity; run the exact same path as View > Refresh.
   const repoPath = openState?.repo.path ?? null;
-  useEffect(() => {
-    if (repoPath === null) {
-      return;
+  useTauriEvent<string>("repo-changed", (event) => {
+    if (repoPath !== null && event.payload === repoPath) {
+      void refresh();
     }
-    let disposed = false;
-    let unlisten: (() => void) | null = null;
-    void listen<string>("repo-changed", (event) => {
-      if (event.payload === repoPath) {
-        void refreshRef.current();
-      }
-    }).then((fn) => {
-      if (disposed) {
-        fn();
-      } else {
-        unlisten = fn;
-      }
-    });
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
-  }, [repoPath]);
+  });
 
   // View > Refresh / Archived Reviews… only make sense with a repo open;
   // the items start disabled on the Rust side and follow the repo from here.
@@ -175,43 +154,15 @@ function App() {
 
   // View > Hide Resolved Comments — Rust sends the item's new checked
   // state (macOS toggles it natively); adopt it as the preference.
-  useEffect(() => {
-    let disposed = false;
-    let unlisten: (() => void) | null = null;
-    void listen<boolean>("menu-hide-resolved", (event) => {
-      setHideResolved(event.payload);
-      localStorage.setItem(HIDE_RESOLVED_KEY, String(event.payload));
-    }).then((fn) => {
-      if (disposed) {
-        fn();
-      } else {
-        unlisten = fn;
-      }
-    });
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
-  }, []);
+  useTauriEvent<boolean>("menu-hide-resolved", (event) => {
+    setHideResolved(event.payload);
+    localStorage.setItem(HIDE_RESOLVED_KEY, String(event.payload));
+  });
 
   // View > Refresh (⌘R) — same path as the old toolbar Refresh button.
-  useEffect(() => {
-    let disposed = false;
-    let unlisten: (() => void) | null = null;
-    void listen("menu-refresh", () => {
-      void refreshRef.current();
-    }).then((fn) => {
-      if (disposed) {
-        fn();
-      } else {
-        unlisten = fn;
-      }
-    });
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
-  }, []);
+  useTauriEvent("menu-refresh", () => {
+    void refresh();
+  });
 
   return (
     <div className="app-shell">

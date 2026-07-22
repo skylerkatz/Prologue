@@ -19,6 +19,14 @@ import type {
 
 // Typed wrappers around the Tauri commands.
 
+/**
+ * Normalize a rejected IPC value for display: the Rust side rejects with
+ * plain strings, anything else stringifies.
+ */
+export function errorText(e: unknown): string {
+  return typeof e === "string" ? e : String(e);
+}
+
 export function openRepo(path: string): Promise<RepoInfo> {
   return invoke("open_repo", { path });
 }

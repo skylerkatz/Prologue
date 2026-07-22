@@ -1,7 +1,7 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import type { Comment, CommentState, RepliesByRoot } from "../types";
 import { Chevron } from "./Chevron";
-import { CommentThread, type DraftStore } from "./Comments";
+import { CommentThread, useThreadEditing } from "./Comments";
 
 interface OrphanedCommentsProps {
   /** Thread roots whose anchor (or file) is gone from the current diff. */
@@ -28,13 +28,11 @@ export function OrphanedComments({
   onDelete,
   onSetState,
 }: OrphanedCommentsProps) {
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [replyingTo, setReplyingTo] = useState<number | null>(null);
+  const threadEditing = useThreadEditing(onUpdate, onCreateReply);
   // Collapse the whole bucket to its header row, like a file card.
   // Starts minimized: orphans are reference material, not the review's
   // main path — expand on demand.
   const [expanded, setExpanded] = useState(false);
-  const drafts = useRef<DraftStore>(new Map());
 
   if (comments.length === 0) {
     return null;
@@ -86,19 +84,7 @@ export function OrphanedComments({
             <CommentThread
               root={comment}
               replies={repliesByRoot.get(comment.id) ?? []}
-              editingId={editingId}
-              drafts={drafts.current}
-              replyingTo={replyingTo}
-              onReplyStart={setReplyingTo}
-              onReplyCancel={() => setReplyingTo(null)}
-              onCreateReply={(rootId, body) =>
-                onCreateReply(rootId, body).then(() => setReplyingTo(null))
-              }
-              onEditStart={setEditingId}
-              onEditCancel={() => setEditingId(null)}
-              onSave={(id, body) =>
-                onUpdate(id, body).then(() => setEditingId(null))
-              }
+              {...threadEditing}
               onDelete={onDelete}
               onSetState={onSetState}
             />

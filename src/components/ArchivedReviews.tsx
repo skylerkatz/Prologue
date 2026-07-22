@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { listArchivedReviews, listComments } from "../ipc";
+import { useEffect, useMemo, useState } from "react";
+import { errorText, listArchivedReviews, listComments } from "../ipc";
 import { groupReplies, type ArchivedReview, type Comment } from "../types";
-import { CommentThread, type DraftStore } from "./Comments";
+import { CommentThread, useThreadEditing } from "./Comments";
 
 interface ArchivedReviewsProps {
   repoPath: string;
@@ -18,9 +18,10 @@ export function ArchivedReviews({ repoPath, onClose }: ArchivedReviewsProps) {
   const [selected, setSelected] = useState<ArchivedReview | null>(null);
   const [comments, setComments] = useState<Comment[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // CommentCard requires a draft store even though read-only cards never
-  // write to it.
-  const drafts = useRef<DraftStore>(new Map());
+  const noop = () => Promise.resolve();
+  // CommentThread requires the editing props even though read-only cards
+  // never use them; an inert instance keeps the wiring in one place.
+  const threadEditing = useThreadEditing(noop);
 
   useEffect(() => {
     let cancelled = false;
@@ -32,7 +33,7 @@ export function ArchivedReviews({ repoPath, onClose }: ArchivedReviewsProps) {
       })
       .catch((e: unknown) => {
         if (!cancelled) {
-          setError(typeof e === "string" ? e : String(e));
+          setError(errorText(e));
         }
       });
     return () => {
@@ -45,7 +46,7 @@ export function ArchivedReviews({ repoPath, onClose }: ArchivedReviewsProps) {
     setComments(null);
     listComments(review.id)
       .then(setComments)
-      .catch((e: unknown) => setError(typeof e === "string" ? e : String(e)));
+      .catch((e: unknown) => setError(errorText(e)));
   };
 
   // Archived threads render whole: roots in order, replies nested (the
@@ -58,8 +59,6 @@ export function ArchivedReviews({ repoPath, onClose }: ArchivedReviewsProps) {
     () => groupReplies(comments ?? []),
     [comments],
   );
-
-  const noop = () => Promise.resolve();
 
   return (
     <div className="archive-overlay" role="dialog" aria-label="Archived reviews">
@@ -141,12 +140,8 @@ export function ArchivedReviews({ repoPath, onClose }: ArchivedReviewsProps) {
                   <CommentThread
                     root={comment}
                     replies={repliesByRoot.get(comment.id) ?? []}
-                    editingId={null}
-                    drafts={drafts.current}
+                    {...threadEditing}
                     readOnly
-                    onEditStart={() => {}}
-                    onEditCancel={() => {}}
-                    onSave={noop}
                     onDelete={noop}
                   />
                 </div>
