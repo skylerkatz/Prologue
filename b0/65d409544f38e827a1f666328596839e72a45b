@@ -1,0 +1,104 @@
+src/components/ModeToggle.tsx
+  s_3b48bffa7ad3a3::t_fca6e2c9527241 1,4-5
+src/components/ReviewShell.tsx
+  s_3b48bffa7ad3a3::t_fca6e2c9527241 4,23,29
+  s_3b48bffa7ad3a3::t_2f391429c60d2c 96
+  s_3b48bffa7ad3a3::t_36a570fb607e6a 3
+src/App.tsx
+  s_3b48bffa7ad3a3::t_245456a4227aef 162
+  s_3b48bffa7ad3a3::t_ee11e6972529f5 14-18
+  s_3b48bffa7ad3a3::t_71f210b5fc9d10 168
+  s_3b48bffa7ad3a3::t_fca6e2c9527241 20,41,54,115
+  s_3b48bffa7ad3a3::t_a0bdb537ebfb96 142
+src-tauri/prologue-core/src/comment.rs
+  s_3b48bffa7ad3a3::t_f32d62ffe7dd62 74
+  s_3b48bffa7ad3a3::t_6f2a8240bf9f23 108,114,116,118,120,133
+  s_3b48bffa7ad3a3::t_d16f88b3b8c6f8 44
+  s_3b48bffa7ad3a3::t_80a474c381f4de 111
+  s_3b48bffa7ad3a3::t_8ff7a81c9d4ed4 95
+  s_3b48bffa7ad3a3::t_0d9c030bf6f084 455
+  s_3b48bffa7ad3a3::t_9bc1563093120b 77-78,80
+  s_3b48bffa7ad3a3::t_fafa5d0f2c8269 127
+  s_3b48bffa7ad3a3::t_466a8818bba4e4 16
+  s_3b48bffa7ad3a3::t_632542af58381c 452
+src-tauri/prologue-core/src/export.rs
+  s_3b48bffa7ad3a3::t_65cde41fafb4c9 12
+src-tauri/prologue-core/src/intraline.rs
+  s_3b48bffa7ad3a3::t_a29965260da547 9
+src-tauri/prologue-core/src/lib.rs
+  s_3b48bffa7ad3a3::t_35b12f7b689448 18-21
+src-tauri/src/watcher.rs
+  s_3b48bffa7ad3a3::t_ba5d4ff5b46181 8
+  s_3b48bffa7ad3a3::t_86e51140075403 50
+  s_3b48bffa7ad3a3::t_bb129dc55e9809 93
+src-tauri/src/events.rs
+  s_3b48bffa7ad3a3::t_2ef1aed4825e17 1-54
+src/components/DiffView.tsx
+  s_3b48bffa7ad3a3::t_fca6e2c9527241 48,98
+src-tauri/prologue-core/src/ts_export.rs
+  s_3b48bffa7ad3a3::t_a25dc4ea671874 1-76
+src/components/ExportMenu.tsx
+  s_3b48bffa7ad3a3::t_fca6e2c9527241 4,19
+src/components/useReviewSession.ts
+  s_3b48bffa7ad3a3::t_fca6e2c9527241 24,35,80,111
+  s_3b48bffa7ad3a3::t_67f6511c932a59 207
+  s_3b48bffa7ad3a3::t_84ef8480ebac95 18
+src/ipc.ts
+  s_3b48bffa7ad3a3::t_fca6e2c9527241 17,42,58,80,135,174,199,230
+src/types.ts
+  s_3b48bffa7ad3a3::t_d6c45930227cb2 1-35,42-45,67
+package.json
+  s_3b48bffa7ad3a3::t_6a99b80d8cdfce 12
+src-tauri/src/lib.rs
+  s_3b48bffa7ad3a3::t_fe1174117a90c3 3
+  s_3b48bffa7ad3a3::t_d7cd2f5f967b4b 154,157,164
+src-tauri/prologue-core/src/diff.rs
+  s_3b48bffa7ad3a3::t_a373fdf06ddf3d 126
+  s_3b48bffa7ad3a3::t_73e738eb6319a4 166
+  s_3b48bffa7ad3a3::t_54c8ee216c510b 46
+  s_3b48bffa7ad3a3::t_8bba5646e23abc 138,149
+  s_3b48bffa7ad3a3::t_1450c21c1a3db3 94
+  s_3b48bffa7ad3a3::t_9420872e0eb2f4 113
+  s_3b48bffa7ad3a3::t_219930b3617860 154
+  s_3b48bffa7ad3a3::t_98253ad34a27e3 391
+  s_3b48bffa7ad3a3::t_9acfac2c055d11 11
+  s_3b48bffa7ad3a3::t_f9fe3e93a7a350 84
+src-tauri/prologue-core/Cargo.toml
+  s_3b48bffa7ad3a3::t_c674461964e6de 16,20-23,29-31
+src/generated/ipc-types.ts
+  s_3b48bffa7ad3a3::t_bdc2aa9e08a918 57-64
+  s_3b48bffa7ad3a3::t_924c5b93c426c7 1-56,65-102
+src-tauri/prologue-core/src/anchor.rs
+  s_3b48bffa7ad3a3::t_764b602973a02d 40
+  s_3b48bffa7ad3a3::t_058fb62b09d9a4 110
+src-tauri/prologue-core/src/review.rs
+  s_3b48bffa7ad3a3::t_f4f126dd36d6be 26
+  s_3b48bffa7ad3a3::t_ce6c26d61f0fc0 29-30
+  s_3b48bffa7ad3a3::t_93dc8853f0f96e 44
+  s_3b48bffa7ad3a3::t_e90bdcc944c03e 95
+  s_3b48bffa7ad3a3::t_b1fecd2dace101 108
+  s_3b48bffa7ad3a3::t_aa21dfb628f2ff 350
+  s_3b48bffa7ad3a3::t_8a53ab7a5da790 355
+src-tauri/prologue-core/src/repo.rs
+  s_3b48bffa7ad3a3::t_4418368d38627d 6,13
+src-tauri/Cargo.lock
+  s_3b48bffa7ad3a3::t_f38ec26486c842 1944-1949,2986,2991,4162-4170,4568-4590
+src/generated/events.ts
+  s_3b48bffa7ad3a3::t_b6108b0e46b61d 1-13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "b065d409544f38e827a1f666328596839e72a45b",
+  "prompts": {},
+  "sessions": {
+    "s_3b48bffa7ad3a3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84ef92c4-9999-4e48-a54d-b5cb50c5743e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
