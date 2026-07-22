@@ -3,6 +3,7 @@
 //! crate's dependency tree.
 
 pub mod anchor;
+pub mod comment;
 pub mod db;
 pub mod diff;
 pub mod error;

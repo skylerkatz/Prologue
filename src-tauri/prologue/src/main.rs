@@ -422,7 +422,7 @@ fn reviews_table(conn: &Connection, reviews: &[Review]) -> Result<String, String
         let comments = review::comment_count(conn, review.id)?;
         rows.push([
             review.id.to_string(),
-            review.status.clone(),
+            review.status.to_string(),
             review.repo_path.clone(),
             review.branch.clone(),
             review.base_ref.clone(),

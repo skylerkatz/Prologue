@@ -22,12 +22,88 @@
 //! code that migrated across hunk boundaries reads as changed enough to
 //! orphan.
 
-use crate::diff::{DiffLine, FileDiff};
-use crate::review::{CodeAnchor, CommentSide};
-use serde::Serialize;
+use crate::diff::{CommentSide, DiffLine, FileDiff};
+use crate::error::CoreError;
+use serde::{Deserialize, Serialize};
 
 /// Minimum mean per-line similarity for a fuzzy window to count as a match.
 const FUZZY_THRESHOLD: f64 = 0.6;
+
+/// How many unchanged same-side lines the code anchor keeps on each side of
+/// the selection.
+const ANCHOR_CONTEXT: usize = 3;
+
+/// Enough verbatim code to re-locate a line comment after edits: the selected
+/// lines, up to [`ANCHOR_CONTEXT`] same-side lines around them, and the hunk
+/// header. Stored as JSON in the `code_anchor` column.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeAnchor {
+    pub hunk_header: String,
+    pub context_before: Vec<String>,
+    pub lines: Vec<String>,
+    pub context_after: Vec<String>,
+}
+
+/// Build the code anchor for a line selection: the selected lines verbatim
+/// (on `side`), up to [`ANCHOR_CONTEXT`] same-side lines around them, and the
+/// containing hunk's header. The selection must fall inside a single hunk —
+/// the UI constrains selections the same way.
+pub(crate) fn extract_anchor(
+    diff: &FileDiff,
+    side: CommentSide,
+    start: u32,
+    end: u32,
+) -> Result<CodeAnchor, CoreError> {
+    let lineno = |line: &DiffLine| match side {
+        CommentSide::Old => line.old_lineno,
+        CommentSide::New => line.new_lineno,
+    };
+    for hunk in &diff.hunks {
+        let mut first: Option<usize> = None;
+        let mut last = 0;
+        let mut selected = Vec::new();
+        for (i, line) in hunk.lines.iter().enumerate() {
+            let Some(n) = lineno(line) else { continue };
+            if n < start || n > end {
+                continue;
+            }
+            first.get_or_insert(i);
+            last = i;
+            selected.push(line.content.clone());
+        }
+        let Some(first) = first else { continue };
+        if selected.len() as u32 != end - start + 1 {
+            return Err(CoreError::SelectionCrossesHunks);
+        }
+        let mut context_before: Vec<String> = hunk.lines[..first]
+            .iter()
+            .rev()
+            .filter(|l| lineno(l).is_some())
+            .take(ANCHOR_CONTEXT)
+            .map(|l| l.content.clone())
+            .collect();
+        context_before.reverse();
+        let context_after: Vec<String> = hunk.lines[last + 1..]
+            .iter()
+            .filter(|l| lineno(l).is_some())
+            .take(ANCHOR_CONTEXT)
+            .map(|l| l.content.clone())
+            .collect();
+        return Ok(CodeAnchor {
+            hunk_header: hunk.header.clone(),
+            context_before,
+            lines: selected,
+            context_after,
+        });
+    }
+    Err(CoreError::NoDiffLines {
+        path: diff.path.clone(),
+        start,
+        end,
+        side: side.as_str(),
+    })
+}
 
 #[derive(Serialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]

@@ -40,6 +40,33 @@ impl DiffMode {
     }
 }
 
+/// Which side of a diff a line (or a comment on it) lives on.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum CommentSide {
+    Old,
+    New,
+}
+
+impl CommentSide {
+    /// Stable text form: the reviews database value, also what CLI output
+    /// and exports print.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            CommentSide::Old => "old",
+            CommentSide::New => "new",
+        }
+    }
+
+    pub(crate) fn parse(s: &str) -> Result<Self, String> {
+        match s {
+            "old" => Ok(CommentSide::Old),
+            "new" => Ok(CommentSide::New),
+            other => Err(format!("Unknown comment side: {other}")),
+        }
+    }
+}
+
 /// The coordinates a diff is computed at: which repository, which two refs,
 /// and which working-tree mode. Passed as one value so a swapped base/head
 /// can never compile silently at a call site.

@@ -1,7 +1,7 @@
 //! Turning "which review?" into a review row: explicit id, `repo@branch`,
 //! or nothing at all (cwd's repository + checked-out branch).
 
-use prologue_core::review::{self, Review};
+use prologue_core::review::{self, Review, ReviewStatus};
 use prologue_core::rusqlite::Connection;
 use std::path::{Path, PathBuf};
 
@@ -135,7 +135,7 @@ pub fn resolve_review(conn: &Connection, arg: Option<&str>, cwd: &Path) -> Resul
 /// with the same name (only one active per repo+branch can exist).
 fn pick_one(mut matches: Vec<Review>, wanted: &str) -> Result<Review, String> {
     let active: Vec<Review> =
-        matches.iter().filter(|r| r.status == "active").cloned().collect();
+        matches.iter().filter(|r| r.status == ReviewStatus::Active).cloned().collect();
     if active.len() == 1 {
         return Ok(active.into_iter().next().unwrap());
     }

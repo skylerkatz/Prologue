@@ -15,6 +15,11 @@ pub const APP_IDENTIFIER: &str = "com.skylerkatz.prologue";
 /// ISO-8601 UTC with millisecond precision.
 pub const NOW: &str = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
 
+/// Shared formatter for rusqlite errors surfaced to users.
+pub(crate) fn db_err(e: rusqlite::Error) -> String {
+    format!("Review database error: {e}")
+}
+
 /// Ordered migrations; entry `i` brings the schema to version `i + 1`.
 /// Append new entries for future schema changes — never edit applied ones.
 const MIGRATIONS: &[&str] = &[
