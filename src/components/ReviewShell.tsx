@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { BranchSelect } from "./BranchSelect";
 import {
   archiveStaleReviews,
   createComment,
@@ -461,35 +462,25 @@ export function ReviewShell({
         >
           {repo.name}
         </button>
-        <label className="control">
+        <div className="control">
           <span>Base</span>
-          <select
+          <BranchSelect
             value={baseBranch}
-            onChange={(e) => onBaseBranchChange(e.currentTarget.value)}
-          >
-            {branchList.branches.map((b) => (
-              <option key={b} value={b}>
-                {b}
-              </option>
-            ))}
-          </select>
-        </label>
+            branches={branchList.branches}
+            onChange={onBaseBranchChange}
+          />
+        </div>
         <span className="arrow" aria-hidden="true">
           ←
         </span>
-        <label className="control">
+        <div className="control">
           <span>Branch</span>
-          <select
+          <BranchSelect
             value={branch}
-            onChange={(e) => onBranchChange(e.currentTarget.value)}
-          >
-            {branchList.branches.map((b) => (
-              <option key={b} value={b}>
-                {b}
-              </option>
-            ))}
-          </select>
-        </label>
+            branches={branchList.branches}
+            onChange={onBranchChange}
+          />
+        </div>
         <div className="toolbar-spacer" />
         <ModeToggle mode={mode} onChange={onModeChange} />
         <WhitespaceToggle

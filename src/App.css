@@ -333,14 +333,107 @@ button.primary:hover {
   font-size: 12px;
 }
 
-.control select {
+/* Searchable branch picker: mono trigger + filterable menu. */
+.branch-select {
+  position: relative;
+}
+
+.branch-select-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-family: var(--font-mono);
   font-size: 13px;
+  color: var(--text);
   background: var(--bg-card);
   border: 1px solid var(--border-strong);
   border-radius: 6px;
   padding: 4px 8px;
   max-width: 256px;
+  cursor: pointer;
+}
+
+.branch-select-button:hover {
+  border-color: var(--accent);
+}
+
+.branch-select-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.branch-select-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  min-width: 240px;
+  max-width: 360px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: var(--shadow-menu);
+  overflow: hidden;
+}
+
+.branch-select-filter {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  margin: 8px;
+  padding: 5px 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  outline: none;
+}
+
+.branch-select-filter:focus {
+  border-color: var(--accent);
+}
+
+.branch-select-list {
+  max-height: 288px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+}
+
+.branch-select-option {
+  display: block;
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 6px 13px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.branch-select-option.highlighted {
+  background: var(--bg-subtle);
+}
+
+/* The branch in use: warm highlight + ribbon bookmark, like file rows. */
+.branch-select-option.current {
+  font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.branch-select-option.current.highlighted {
+  background: var(--surface-selected);
+}
+
+.branch-select-empty {
+  margin: 0;
+  padding: 10px 13px;
+  font-size: 12.5px;
+  color: var(--text-muted);
 }
 
 .arrow {
