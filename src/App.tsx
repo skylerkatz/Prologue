@@ -11,8 +11,13 @@ import {
   stopWatching,
 } from "./ipc";
 import { useTauriEvent } from "./useTauriEvent";
+import {
+  MENU_HIDE_RESOLVED_EVENT,
+  MENU_REFRESH_EVENT,
+  REPO_CHANGED_EVENT,
+} from "./generated/events";
 import { addRecentRepo, getRecentRepos, removeRecentRepo } from "./recents";
-import type { BranchList, RepoInfo, WorkingTreeMode } from "./types";
+import type { BranchList, RepoInfo, DiffMode } from "./types";
 import { ReviewShell } from "./components/ReviewShell";
 import { TitleBar } from "./components/TitleBar";
 import { WelcomePage } from "./components/WelcomePage";
@@ -33,7 +38,7 @@ const MODE_KEY = "prologue.mode";
 const HIDE_RESOLVED_KEY = "prologue.hideResolvedComments";
 
 /** The stored mode, or "committed" if nothing valid is stored. */
-function readStoredMode(): WorkingTreeMode {
+function readStoredMode(): DiffMode {
   const stored = localStorage.getItem(MODE_KEY);
   return stored === "committed" || stored === "staged" || stored === "all"
     ? stored
@@ -46,7 +51,7 @@ function App() {
   const [branch, setBranch] = useState("");
   const [baseBranch, setBaseBranch] = useState("");
   // Both toggles are global preferences, sticky across launches and repos.
-  const [mode, setMode] = useState<WorkingTreeMode>(readStoredMode);
+  const [mode, setMode] = useState<DiffMode>(readStoredMode);
   const [hideWhitespace, setHideWhitespace] = useState(
     () => localStorage.getItem(HIDE_WHITESPACE_KEY) === "true",
   );
@@ -107,7 +112,7 @@ function App() {
     setRecents(await removeRecentRepo(path));
   }
 
-  function changeMode(next: WorkingTreeMode) {
+  function changeMode(next: DiffMode) {
     setMode(next);
     localStorage.setItem(MODE_KEY, next);
   }
@@ -134,7 +139,7 @@ function App() {
   // The Rust watcher emits `repo-changed` (debounced) on working-tree or
   // .git activity; run the exact same path as View > Refresh.
   const repoPath = openState?.repo.path ?? null;
-  useTauriEvent<string>("repo-changed", (event) => {
+  useTauriEvent<string>(REPO_CHANGED_EVENT, (event) => {
     if (repoPath !== null && event.payload === repoPath) {
       void refresh();
     }
@@ -154,13 +159,13 @@ function App() {
 
   // View > Hide Resolved Comments — Rust sends the item's new checked
   // state (macOS toggles it natively); adopt it as the preference.
-  useTauriEvent<boolean>("menu-hide-resolved", (event) => {
+  useTauriEvent<boolean>(MENU_HIDE_RESOLVED_EVENT, (event) => {
     setHideResolved(event.payload);
     localStorage.setItem(HIDE_RESOLVED_KEY, String(event.payload));
   });
 
   // View > Refresh (⌘R) — same path as the old toolbar Refresh button.
-  useTauriEvent("menu-refresh", () => {
+  useTauriEvent(MENU_REFRESH_EVENT, () => {
     void refresh();
   });
 

@@ -23,8 +23,11 @@ pub use crate::comment::{
 pub use crate::diff::CommentSide;
 
 #[derive(Serialize, Debug, Clone)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct Review {
+    /// SQLite rowid — far below 2^53, a plain JS number on the wire.
+    #[cfg_attr(feature = "ts", ts(type = "number"))]
     pub id: i64,
     pub repo_path: String,
     pub branch: String,
@@ -38,6 +41,7 @@ pub struct Review {
 /// A review's lifecycle state. Serializes as the same lowercase strings the
 /// raw `status` column carried, so the IPC/CLI wire shape is unchanged.
 #[derive(Serialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum ReviewStatus {
     Active,
@@ -88,6 +92,7 @@ impl From<&Review> for DiffSpec {
 ///
 /// [`FileSummary`]: crate::diff::FileSummary
 #[derive(Serialize, Debug, Clone)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct ReviewedFile {
     pub file_path: String,
@@ -100,6 +105,7 @@ pub struct ReviewedFile {
 /// merged into the base — in which case `review`, if present, is archived
 /// and read-only.
 #[derive(Serialize, Debug)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct OpenReviewResult {
     pub review: Option<Review>,
@@ -341,10 +347,12 @@ pub fn archive_stale_reviews_impl(
 
 /// An archived review plus its comment count, for the read-only browser.
 #[derive(Serialize, Debug)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct ArchivedReview {
     #[serde(flatten)]
     pub review: Review,
+    #[cfg_attr(feature = "ts", ts(type = "number"))]
     pub comment_count: i64,
 }
 

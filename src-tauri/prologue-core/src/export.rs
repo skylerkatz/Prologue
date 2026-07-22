@@ -9,6 +9,7 @@ use crate::repo::open_git_repo;
 use crate::review::{self, CodeAnchor, Comment, CommentLevel, CommentSide, CommentState};
 
 #[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "kebab-case")]
 pub enum ExportFormat {
     Markdown,

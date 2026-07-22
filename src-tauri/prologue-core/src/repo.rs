@@ -3,12 +3,14 @@ use serde::Serialize;
 use std::path::{Path, PathBuf};
 
 #[derive(Serialize, Debug)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct RepoInfo {
     pub path: String,
     pub name: String,
 }
 
 #[derive(Serialize, Debug)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct BranchList {
     pub branches: Vec<String>,

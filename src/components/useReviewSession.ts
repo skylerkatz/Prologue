@@ -15,12 +15,13 @@ import {
   reanchorComments,
 } from "../ipc";
 import { useTauriEvent } from "../useTauriEvent";
+import { COMMENTS_CHANGED_EVENT } from "../generated/events";
 import type {
   AnchorStatus,
   Comment,
   DiffSummary,
   Review,
-  WorkingTreeMode,
+  DiffMode,
 } from "../types";
 
 /**
@@ -31,7 +32,7 @@ export interface DiffViewState {
   summary: DiffSummary;
   base: string;
   head: string;
-  mode: WorkingTreeMode;
+  mode: DiffMode;
   /** The summary was computed with whitespace changes ignored (git `-w`). */
   ignoreWhitespace: boolean;
   /** Bumped per fetch; stamps scroll targets so a click made against a
@@ -76,7 +77,7 @@ async function fetchReviewData(
   repoPath: string,
   base: string,
   head: string,
-  mode: WorkingTreeMode,
+  mode: DiffMode,
   reviewId: number,
 ) {
   const [[results, comments], reviewedRows] = await Promise.all([
@@ -107,7 +108,7 @@ export function useReviewSession(
   repoPath: string,
   branch: string,
   baseBranch: string,
-  mode: WorkingTreeMode,
+  mode: DiffMode,
   hideWhitespace: boolean,
   refreshKey: number,
 ): ReviewSession {
@@ -203,7 +204,7 @@ export function useReviewSession(
   // app's back; the backend's database watcher emits `comments-changed`
   // only for those (its data_version guard filters the app's own writes).
   // Re-read comments — with a re-anchor pass — without recomputing the diff.
-  useTauriEvent("comments-changed", () => {
+  useTauriEvent(COMMENTS_CHANGED_EVENT, () => {
     const pinned = current.current;
     if (pinned === null) {
       return;

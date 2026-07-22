@@ -1,5 +1,6 @@
 mod cli_install;
 mod commands;
+mod events;
 mod watcher;
 
 use prologue_core::db;
@@ -8,17 +9,10 @@ use tauri::{Emitter, Manager};
 
 /// Menu item id for the View > Archived Reviews… entry.
 const MENU_VIEW_ARCHIVED_ID: &str = "view-archived";
-/// Event emitted to the frontend when View > Archived Reviews… is chosen.
-const MENU_VIEW_ARCHIVED_EVENT: &str = "menu-view-archived";
 /// Menu item id for the View > Refresh entry.
 const MENU_REFRESH_ID: &str = "view-refresh";
-/// Event emitted to the frontend when View > Refresh is chosen.
-const MENU_REFRESH_EVENT: &str = "menu-refresh";
 /// Menu item id for the View > Hide Resolved Comments check item.
 const MENU_HIDE_RESOLVED_ID: &str = "view-hide-resolved";
-/// Event (bool payload: the new checked state) emitted to the frontend
-/// when View > Hide Resolved Comments is toggled.
-const MENU_HIDE_RESOLVED_EVENT: &str = "menu-hide-resolved";
 
 /// Handles to the View menu items that only make sense with a repo open;
 /// the frontend enables them on repo open and disables them on the
@@ -157,17 +151,17 @@ pub fn run() {
             MENU_VIEW_ARCHIVED_ID => {
                 // ReviewShell listens; with no repo open nothing is mounted
                 // and the event is a deliberate no-op.
-                let _ = app.emit(MENU_VIEW_ARCHIVED_EVENT, ());
+                let _ = app.emit(events::MENU_VIEW_ARCHIVED, ());
             }
             MENU_REFRESH_ID => {
-                let _ = app.emit(MENU_REFRESH_EVENT, ());
+                let _ = app.emit(events::MENU_REFRESH, ());
             }
             MENU_HIDE_RESOLVED_ID => {
                 // macOS auto-toggles the check state before the event
                 // fires, so is_checked() is already the new value.
                 if let Some(items) = app.try_state::<RepoMenuItems>() {
                     if let Ok(checked) = items.hide_resolved.is_checked() {
-                        let _ = app.emit(MENU_HIDE_RESOLVED_EVENT, checked);
+                        let _ = app.emit(events::MENU_HIDE_RESOLVED, checked);
                     }
                 }
             }

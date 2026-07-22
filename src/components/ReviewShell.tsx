@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useTauriEvent } from "../useTauriEvent";
-import type { BranchList, RepoInfo, WorkingTreeMode } from "../types";
+import { MENU_VIEW_ARCHIVED_EVENT } from "../generated/events";
+import type { BranchList, RepoInfo, DiffMode } from "../types";
 import { ArchivedReviews } from "./ArchivedReviews";
 import { BranchSelect } from "./BranchSelect";
 import { DiffView } from "./DiffView";
@@ -19,13 +20,13 @@ interface ReviewShellProps {
   branchList: BranchList;
   branch: string;
   baseBranch: string;
-  mode: WorkingTreeMode;
+  mode: DiffMode;
   hideWhitespace: boolean;
   hideResolved: boolean;
   refreshKey: number;
   onBranchChange: (branch: string) => void;
   onBaseBranchChange: (base: string) => void;
-  onModeChange: (mode: WorkingTreeMode) => void;
+  onModeChange: (mode: DiffMode) => void;
   onHideWhitespaceChange: (hide: boolean) => void;
   onSwitchRepo: () => void;
 }
@@ -92,7 +93,7 @@ export function ReviewShell({
   } | null>(null);
 
   // View > Archived Reviews… (native menu) — replaces the old toolbar button.
-  useTauriEvent("menu-view-archived", () => setShowArchive(true));
+  useTauriEvent(MENU_VIEW_ARCHIVED_EVENT, () => setShowArchive(true));
 
   /** What the Export menu would export: the displayed diff's pinned params
    * plus its active review; null (disabled) when there is neither. */

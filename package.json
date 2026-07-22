@@ -9,6 +9,7 @@
     "build": "tsc && NODE_ENV=production vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "generate:ipc": "cd src-tauri && cargo test -p prologue-core --lib generated_ipc && cargo test -p prologue-app --lib generated_events",
     "tauri": "tauri"
   },
   "dependencies": {

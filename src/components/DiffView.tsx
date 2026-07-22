@@ -45,7 +45,7 @@ import type {
   FileSummary,
   NewCommentInput,
   RepliesByRoot,
-  WorkingTreeMode,
+  DiffMode,
 } from "../types";
 import {
   CommentCard,
@@ -95,7 +95,7 @@ interface DiffViewProps {
   repoPath: string;
   base: string;
   head: string;
-  mode: WorkingTreeMode;
+  mode: DiffMode;
   /** Fetch file hunks with whitespace changes ignored (git `-w`); must match
    * the setting the summary was computed with. */
   ignoreWhitespace: boolean;

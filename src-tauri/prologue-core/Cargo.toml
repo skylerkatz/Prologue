@@ -13,11 +13,19 @@ rusqlite = { version = "0.40.1", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tempfile = { version = "3", optional = true }
+ts-rs = { version = "10", optional = true }
 
 [dev-dependencies]
 tempfile = "3"
+# Self dev-dependency: turns the `ts` feature on for test builds only, so
+# `cargo test` regenerates/checks the TS bindings while normal builds carry
+# no ts-rs code at all.
+prologue-core = { path = ".", features = ["ts"] }
 
 [features]
 # Exposes the git fixture helpers (`testutil` module) to sibling crates'
 # tests; never enabled in normal builds.
 testutil = ["dep:tempfile"]
+# TS binding generation for the IPC types (src/generated/ipc-types.ts);
+# test-only, see the self dev-dependency above.
+ts = ["dep:ts-rs"]

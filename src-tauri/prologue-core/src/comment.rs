@@ -13,6 +13,7 @@ use crate::repo::open_git_repo;
 use crate::review::ensure_review_active;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum CommentLevel {
     Review,
@@ -40,6 +41,7 @@ impl CommentLevel {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum CommentState {
     Open,
@@ -69,9 +71,13 @@ impl CommentState {
 }
 
 #[derive(Serialize, Debug, Clone)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct Comment {
+    /// SQLite rowid — far below 2^53, a plain JS number on the wire.
+    #[cfg_attr(feature = "ts", ts(type = "number"))]
     pub id: i64,
+    #[cfg_attr(feature = "ts", ts(type = "number"))]
     pub review_id: i64,
     pub level: CommentLevel,
     pub file_path: Option<String>,
@@ -86,6 +92,7 @@ pub struct Comment {
     /// level deep — a reply's parent is always a root. Replies inherit the
     /// root's file/side/lines/anchor context (their own stay NULL), and
     /// their lifecycle is the root's (`state` is meaningless on replies).
+    #[cfg_attr(feature = "ts", ts(type = "number | null"))]
     pub parent_id: Option<i64>,
     /// Who wrote it: 'reviewer' for the app's own writes, anything else for
     /// external writers (e.g. 'agent' via the prologue CLI). The UI badges
@@ -98,24 +105,32 @@ pub struct Comment {
 /// Frontend payload for `create_comment`; anchor and commit SHA are captured
 /// here in Rust, not trusted from the caller.
 #[derive(Deserialize, Debug)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct NewComment {
+    #[cfg_attr(feature = "ts", ts(type = "number"))]
     pub review_id: i64,
     pub level: CommentLevel,
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub file_path: Option<String>,
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub side: Option<CommentSide>,
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub start_line: Option<u32>,
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub end_line: Option<u32>,
     /// Set to any comment in a thread to reply; the reply attaches to the
     /// thread ROOT (replying to a reply joins the same flat thread). All
     /// positional fields above are ignored for replies — a reply inherits
     /// its context from the root.
     #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(optional, type = "number"))]
     pub parent_id: Option<i64>,
     pub body: String,
     /// Who is writing. The app's IPC payloads never set it (None →
     /// 'reviewer'); external writers name themselves, e.g. 'agent'.
     #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub author: Option<String>,
 }
 
@@ -434,8 +449,10 @@ pub fn update_comment_state_impl(
 /// comment's current (possibly just-moved) range; orphaned comments keep
 /// their last known range.
 #[derive(Serialize, Debug)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct ReanchorResult {
+    #[cfg_attr(feature = "ts", ts(type = "number"))]
     pub comment_id: i64,
     pub status: AnchorStatus,
     pub start_line: Option<u32>,

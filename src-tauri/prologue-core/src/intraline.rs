@@ -6,6 +6,7 @@ use crate::diff::{DiffLine, LineKind};
 /// UTF-16 because the frontend slices JavaScript strings, whose indices are
 /// UTF-16 code units — the renderer applies these ranges verbatim.
 #[derive(Serialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct IntralineRange {
     pub start: u32,

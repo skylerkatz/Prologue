@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { errorText, exportReview } from "../ipc";
-import type { ExportFormat, WorkingTreeMode } from "../types";
+import type { ExportFormat, DiffMode } from "../types";
 
 const OPTIONS: ReadonlyArray<{ format: ExportFormat; label: string }> = [
   { format: "markdown", label: "Markdown" },
@@ -16,7 +16,7 @@ export interface ExportTarget {
   repoPath: string;
   base: string;
   head: string;
-  mode: WorkingTreeMode;
+  mode: DiffMode;
   reviewId: number;
 }
 

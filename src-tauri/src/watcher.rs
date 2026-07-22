@@ -5,14 +5,7 @@ use std::time::Duration;
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use tauri::{AppHandle, Emitter, Manager, State};
 
-/// Event emitted to the frontend after repo activity settles; the payload is
-/// the exact `repo_path` string `start_watching` was called with, so the
-/// frontend can compare it against its open repo without path normalization.
-const REPO_CHANGED_EVENT: &str = "repo-changed";
-
-/// Event emitted when another connection — the prologue CLI — commits to
-/// reviews.db. The app's own writes never fire it (see `start_db_watching`).
-const COMMENTS_CHANGED_EVENT: &str = "comments-changed";
+use crate::events;
 
 /// Quiet period after the last filesystem event before one refresh fires.
 /// Long enough to coalesce a commit's burst of `.git` writes, short enough
@@ -54,7 +47,7 @@ pub fn start_watching(
 
     std::thread::spawn(move || {
         debounce_loop(&rx, DEBOUNCE_WINDOW, || {
-            let _ = app.emit(REPO_CHANGED_EVENT, repo_path.clone());
+            let _ = app.emit(events::REPO_CHANGED, repo_path.clone());
         });
     });
 
@@ -97,7 +90,7 @@ pub fn start_db_watching(app: AppHandle, dir: std::path::PathBuf) -> Result<(), 
             let current = data_version(&app);
             if current.is_some() && current != last {
                 last = current;
-                let _ = app.emit(COMMENTS_CHANGED_EVENT, ());
+                let _ = app.emit(events::COMMENTS_CHANGED, ());
             }
         });
     });

@@ -8,6 +8,7 @@ use crate::repo::open_git_repo;
 
 /// Which working-tree state is diffed against the merge base.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum DiffMode {
     /// Branch tip only (default).
@@ -42,6 +43,7 @@ impl DiffMode {
 
 /// Which side of a diff a line (or a comment on it) lives on.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum CommentSide {
     Old,
@@ -79,6 +81,7 @@ pub struct DiffSpec {
 }
 
 #[derive(Serialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum FileStatus {
     Added,
@@ -88,6 +91,7 @@ pub enum FileStatus {
 }
 
 #[derive(Serialize, Debug)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct FileSummary {
     pub path: String,
@@ -106,6 +110,7 @@ pub struct FileSummary {
 }
 
 #[derive(Serialize, Debug)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct DiffSummary {
     pub base_ref: String,
@@ -118,6 +123,7 @@ pub struct DiffSummary {
 }
 
 #[derive(Serialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum LineKind {
     Context,
@@ -129,6 +135,7 @@ pub enum LineKind {
 /// each side (absent on the side the line doesn't exist on), so a split view
 /// can be built later without reshaping the data.
 #[derive(Serialize, Debug)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct DiffLine {
     pub kind: LineKind,
@@ -139,10 +146,12 @@ pub struct DiffLine {
     /// counterpart in its hunk; omitted from JSON when absent, so the shape
     /// stays backward-compatible.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub intraline: Option<Vec<crate::intraline::IntralineRange>>,
 }
 
 #[derive(Serialize, Debug)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct Hunk {
     pub header: String,
@@ -154,6 +163,7 @@ pub struct Hunk {
 }
 
 #[derive(Serialize, Debug)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct FileDiff {
     pub path: String,
@@ -378,6 +388,7 @@ impl RepoDiff<'_> {
 /// Unchanged lines around hunks, fetched on expand-context clicks so they
 /// never cross IPC up front.
 #[derive(Serialize, Debug)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct ContextLines {
     /// 1-based new-side line number of the first returned line.

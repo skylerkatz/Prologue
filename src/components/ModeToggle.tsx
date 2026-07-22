@@ -1,8 +1,8 @@
-import { WORKING_TREE_MODES, type WorkingTreeMode } from "../types";
+import { WORKING_TREE_MODES, type DiffMode } from "../types";
 
 interface ModeToggleProps {
-  mode: WorkingTreeMode;
-  onChange: (mode: WorkingTreeMode) => void;
+  mode: DiffMode;
+  onChange: (mode: DiffMode) => void;
 }
 
 export function ModeToggle({ mode, onChange }: ModeToggleProps) {

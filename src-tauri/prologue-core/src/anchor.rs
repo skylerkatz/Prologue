@@ -37,6 +37,7 @@ const ANCHOR_CONTEXT: usize = 3;
 /// lines, up to [`ANCHOR_CONTEXT`] same-side lines around them, and the hunk
 /// header. Stored as JSON in the `code_anchor` column.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct CodeAnchor {
     pub hunk_header: String,
@@ -106,6 +107,7 @@ pub(crate) fn extract_anchor(
 }
 
 #[derive(Serialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum AnchorStatus {
     /// Anchor lines found verbatim with unchanged surrounding context.

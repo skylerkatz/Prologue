@@ -14,7 +14,7 @@ import type {
   RepoInfo,
   Review,
   ReviewedFile,
-  WorkingTreeMode,
+  DiffMode,
 } from "./types";
 
 // Typed wrappers around the Tauri commands.
@@ -39,7 +39,7 @@ export function getDiffSummary(
   repoPath: string,
   base: string,
   head: string,
-  mode: WorkingTreeMode,
+  mode: DiffMode,
   ignoreWhitespace: boolean,
 ): Promise<DiffSummary> {
   return invoke("get_diff_summary", {
@@ -55,7 +55,7 @@ export function getFileDiff(
   repoPath: string,
   base: string,
   head: string,
-  mode: WorkingTreeMode,
+  mode: DiffMode,
   ignoreWhitespace: boolean,
   path: string,
 ): Promise<FileDiff> {
@@ -77,7 +77,7 @@ export function openReview(
   repoPath: string,
   branch: string,
   baseRef: string,
-  mode: WorkingTreeMode,
+  mode: DiffMode,
 ): Promise<OpenReviewResult> {
   return invoke("open_review", { repoPath, branch, baseRef, mode });
 }
@@ -132,7 +132,7 @@ export function reanchorComments(
   repoPath: string,
   base: string,
   head: string,
-  mode: WorkingTreeMode,
+  mode: DiffMode,
   reviewId: number,
 ): Promise<ReanchorResult[]> {
   return invoke("reanchor_comments", { repoPath, base, head, mode, reviewId });
@@ -171,7 +171,7 @@ export function createComment(
   repoPath: string,
   base: string,
   head: string,
-  mode: WorkingTreeMode,
+  mode: DiffMode,
   comment: NewCommentInput & { reviewId: number },
 ): Promise<Comment> {
   return invoke("create_comment", { repoPath, base, head, mode, comment });
@@ -196,7 +196,7 @@ export function exportReview(
   repoPath: string,
   base: string,
   head: string,
-  mode: WorkingTreeMode,
+  mode: DiffMode,
   reviewId: number,
   format: ExportFormat,
 ): Promise<string> {
@@ -227,7 +227,7 @@ export function stopWatching(): Promise<void> {
 export function getContextLines(
   repoPath: string,
   head: string,
-  mode: WorkingTreeMode,
+  mode: DiffMode,
   path: string,
   start: number,
   end: number,

@@ -15,6 +15,10 @@ pub mod review;
 // CLI) use them from their dev-dependencies. Never enabled in normal builds.
 #[cfg(any(test, feature = "testutil"))]
 pub mod testutil;
+// TS binding generation for the IPC types; test builds only (the `ts`
+// feature comes from the self dev-dependency).
+#[cfg(all(test, feature = "ts"))]
+mod ts_export;
 
 // Callers hold the database connection themselves (the app wraps it in
 // Tauri-managed state); re-export rusqlite so they name the same version
