@@ -1,0 +1,41 @@
+src/App.tsx
+  s_bb163241636251::t_7610d5e6b242db 8
+  s_bb163241636251::t_57ab8c608fc785 170-195
+  s_bb163241636251::t_018294792658cc 235
+  s_bb163241636251::t_512c8ed2384922 31-33
+  s_bb163241636251::t_4b6fa674a115e8 52-53
+  s_bb163241636251::t_fa0a61326fe6c9 54
+  s_bb163241636251::t_bbf638ac83fbaf 196
+src-tauri/src/lib.rs
+  s_bb163241636251::t_b6eb0f62e7c34c 51-52
+  s_bb163241636251::t_6b1d87fa2abada 156-163
+  s_bb163241636251::t_40d5fef37be863 29,37-46
+  s_bb163241636251::t_a25f78b82f626d 17-21
+  s_bb163241636251::t_bbe9e8028b080b 54
+  s_bb163241636251::t_e97602a53553bd 202-203
+  s_bb163241636251::t_9c228f45db2ebe 90-99,103-109
+  s_bb163241636251::t_0839e2c60bd706 164
+src/components/ReviewShell.tsx
+  s_bb163241636251::t_fe830705e1b951 360-377,380-383,386-390
+  s_bb163241636251::t_da1adfea61feac 402,409,413-414
+  s_bb163241636251::t_bc09d1c25a8b8b 78
+  s_bb163241636251::t_a6f29ea1e8c49f 47
+src/ipc.ts
+  s_bb163241636251::t_508e741eb24a2a 149-153
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "388ca9ef325a25f246700523a1b27c2830c2af97",
+  "prompts": {},
+  "sessions": {
+    "s_bb163241636251": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6b0daf9e-a53b-4e65-b3db-3fbc62d6498d",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
