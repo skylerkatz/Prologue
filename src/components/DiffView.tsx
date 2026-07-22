@@ -33,6 +33,11 @@ import {
   type FileViewState,
   type Row,
 } from "../diff/rows";
+import {
+  commentTargets,
+  nextCommentTarget,
+  nextUnviewedPath,
+} from "../diff/keyboardNav";
 import type {
   AnchorStatus,
   Comment,
@@ -831,6 +836,46 @@ export function DiffView({
     [summary.files, scrollToPath],
   );
 
+  // n/p position memory: the open thread the motion last landed on. A ref,
+  // not state — nothing renders it, and the keydown handler needs the
+  // latest value. A stale id (thread resolved, file collapsed) just makes
+  // the next step re-enter at the first/last target.
+  const lastCommentIdRef = useRef<number | null>(null);
+  const visibleThreads = useMemo(() => commentTargets(rows), [rows]);
+
+  const moveCommentCursor = useCallback(
+    (delta: 1 | -1) => {
+      const target = nextCommentTarget(
+        visibleThreads,
+        lastCommentIdRef.current,
+        delta,
+      );
+      if (target !== null) {
+        lastCommentIdRef.current = target.id;
+        virtualizer.scrollToIndex(target.rowIndex, { align: "center" });
+      }
+    },
+    [visibleThreads, virtualizer],
+  );
+
+  // J/K move the file cursor like j/k, but only between unviewed files.
+  const moveCursorUnviewed = useCallback(
+    (delta: 1 | -1) => {
+      const path = nextUnviewedPath(
+        summary.files,
+        reviewStates,
+        cursorPathRef.current,
+        delta,
+      );
+      if (path !== null) {
+        cursorPathRef.current = path;
+        setCursorPath(path);
+        scrollToPath(path);
+      }
+    },
+    [summary.files, reviewStates, scrollToPath],
+  );
+
   // `c` comments on the current line selection if there is one, else on the
   // file the keyboard cursor sits on.
   const composeAtCursor = useCallback(() => {
@@ -877,6 +922,18 @@ export function DiffView({
       } else if (e.key === "k") {
         e.preventDefault();
         moveCursor(-1);
+      } else if (e.key === "J") {
+        e.preventDefault();
+        moveCursorUnviewed(1);
+      } else if (e.key === "K") {
+        e.preventDefault();
+        moveCursorUnviewed(-1);
+      } else if (e.key === "n") {
+        e.preventDefault();
+        moveCommentCursor(1);
+      } else if (e.key === "p") {
+        e.preventDefault();
+        moveCommentCursor(-1);
       } else if (e.key === "c") {
         e.preventDefault();
         composeAtCursor();
@@ -890,7 +947,13 @@ export function DiffView({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [moveCursor, composeAtCursor, toggleReviewed]);
+  }, [
+    moveCursor,
+    moveCursorUnviewed,
+    moveCommentCursor,
+    composeAtCursor,
+    toggleReviewed,
+  ]);
 
   useEffect(() => {
     if (scrollTarget === null) {
