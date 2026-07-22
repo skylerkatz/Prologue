@@ -1,7 +1,7 @@
 //! `prologue show`: a review's threads (roots with nested replies, states,
 //! anchors, orphan flags) and the per-file hunk view.
 
-use prologue_core::diff::{self, DiffLine, DiffMode, FileDiff, LineKind};
+use prologue_core::diff::{self, DiffLine, DiffMode, DiffSpec, FileDiff, LineKind};
 use prologue_core::review::{self, Comment, CommentLevel, CommentSide, CommentState, Review};
 use prologue_core::rusqlite::Connection;
 use serde::Serialize;
@@ -91,22 +91,9 @@ pub fn show_data(conn: &Connection, review: Review) -> Result<ShowData, String> 
 type Recomputed = (Vec<review::ReanchorResult>, HashSet<String>);
 
 fn recompute_anchors(conn: &Connection, review: &Review) -> Result<Recomputed, String> {
-    let relocations = review::reanchor_comments_impl(
-        conn,
-        &review.repo_path,
-        &review.base_ref,
-        &review.branch,
-        review.mode,
-        review.id,
-        false,
-    )?;
-    let summary = diff::get_diff_summary(
-        review.repo_path.clone(),
-        review.base_ref.clone(),
-        review.branch.clone(),
-        review.mode,
-        false,
-    )?;
+    let spec = DiffSpec::from(review);
+    let relocations = review::reanchor_comments_impl(conn, &spec, review.id, false)?;
+    let summary = diff::get_diff_summary(&spec, false)?;
     let paths = summary.files.into_iter().map(|f| f.path).collect();
     Ok((relocations, paths))
 }
@@ -212,14 +199,7 @@ fn repo_name(repo_path: &str) -> String {
 /// The current hunks of one file, with old/new line numbers per line — the
 /// coordinates a caller needs to place line comments later.
 pub fn file_diff(review: &Review, path: &str) -> Result<FileDiff, String> {
-    diff::get_file_diff(
-        review.repo_path.clone(),
-        review.base_ref.clone(),
-        review.branch.clone(),
-        review.mode,
-        false,
-        path.to_owned(),
-    )
+    diff::get_file_diff(&DiffSpec::from(review), false, path)
 }
 
 pub fn render_file_diff_text(diff: &FileDiff) -> String {
@@ -300,24 +280,15 @@ mod tests {
         let repo_path = fixture.dir.path().to_string_lossy().into_owned();
         let review =
             open_review_impl(&conn, &repo_path, "feature", "main", DiffMode::Committed).unwrap();
-        let root = create_comment_impl(
-            &conn,
-            &repo_path,
-            "main",
-            "feature",
-            DiffMode::Committed,
-            comment(review.id, None, "needs work"),
-        )
-        .unwrap();
-        create_comment_impl(
-            &conn,
-            &repo_path,
-            "main",
-            "feature",
-            DiffMode::Committed,
-            comment(review.id, Some(root.id), "agreed"),
-        )
-        .unwrap();
+        let spec = DiffSpec {
+            repo_path: repo_path.clone(),
+            base: "main".into(),
+            head: "feature".into(),
+            mode: DiffMode::Committed,
+        };
+        let root = create_comment_impl(&conn, &spec, comment(review.id, None, "needs work"))
+            .unwrap();
+        create_comment_impl(&conn, &spec, comment(review.id, Some(root.id), "agreed")).unwrap();
 
         // Shift the commented lines down by two.
         let mut lines: Vec<String> = (1..=10).map(|n| format!("alpha {n}")).collect();

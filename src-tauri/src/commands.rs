@@ -2,7 +2,7 @@
 //! database state (where needed) and delegate. No logic lives here.
 
 use prologue_core::db::Db;
-use prologue_core::diff::{self, ContextLines, DiffMode, DiffSummary, FileDiff};
+use prologue_core::diff::{self, ContextLines, DiffMode, DiffSpec, DiffSummary, FileDiff};
 use prologue_core::export::{self, ExportFormat};
 use prologue_core::repo::{self, open_git_repo, BranchList, RepoInfo};
 use prologue_core::review::{
@@ -38,7 +38,7 @@ pub fn get_diff_summary(
     mode: DiffMode,
     ignore_whitespace: bool,
 ) -> Result<DiffSummary, String> {
-    diff::get_diff_summary(repo_path, base, head, mode, ignore_whitespace)
+    diff::get_diff_summary(&DiffSpec { repo_path, base, head, mode }, ignore_whitespace)
 }
 
 /// Hunks for a single file from the same diff `get_diff_summary` computes;
@@ -52,7 +52,7 @@ pub fn get_file_diff(
     ignore_whitespace: bool,
     path: String,
 ) -> Result<FileDiff, String> {
-    diff::get_file_diff(repo_path, base, head, mode, ignore_whitespace, path)
+    diff::get_file_diff(&DiffSpec { repo_path, base, head, mode }, ignore_whitespace, &path)
 }
 
 /// Lines `start..=end` (1-based, clamped) of the file's new side — head tree,
@@ -151,7 +151,7 @@ pub fn create_comment(
     comment: NewComment,
 ) -> Result<Comment, String> {
     let conn = lock(&db)?;
-    review::create_comment_impl(&conn, &repo_path, &base, &head, mode, comment)
+    review::create_comment_impl(&conn, &DiffSpec { repo_path, base, head, mode }, comment)
 }
 
 #[tauri::command]
@@ -196,7 +196,7 @@ pub fn reanchor_comments(
     review_id: i64,
 ) -> Result<Vec<ReanchorResult>, String> {
     let conn = lock(&db)?;
-    review::reanchor_comments_impl(&conn, &repo_path, &base, &head, mode, review_id, true)
+    review::reanchor_comments_impl(&conn, &DiffSpec { repo_path, base, head, mode }, review_id, true)
 }
 
 /// Archive every active review of this repo whose branch was merged into
@@ -235,5 +235,5 @@ pub fn export_review(
     format: ExportFormat,
 ) -> Result<String, String> {
     let conn = lock(&db)?;
-    export::export_review_impl(&conn, &repo_path, &base, &head, mode, review_id, format, true)
+    export::export_review_impl(&conn, &DiffSpec { repo_path, base, head, mode }, review_id, format, true)
 }

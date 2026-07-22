@@ -6,7 +6,7 @@ use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
 use crate::anchor::AnchorStatus;
-use crate::diff::{self, DiffMode};
+use crate::diff::{self, DiffMode, DiffSpec};
 use crate::repo::open_git_repo;
 use crate::review::{self, CodeAnchor, Comment, CommentLevel, CommentSide, CommentState};
 
@@ -53,21 +53,16 @@ struct ExportData<'a> {
 /// would); without it nothing is written and the output is still identical,
 /// because the computed ranges are applied to the in-memory comments either
 /// way.
-#[allow(clippy::too_many_arguments)]
 pub fn export_review_impl(
     conn: &Connection,
-    repo_path: &str,
-    base: &str,
-    head: &str,
-    mode: DiffMode,
+    spec: &DiffSpec,
     review_id: i64,
     format: ExportFormat,
     persist: bool,
 ) -> Result<String, String> {
     // Re-locate line comments first so exported ranges and orphan status
     // match the diff being exported.
-    let reanchored =
-        review::reanchor_comments_impl(conn, repo_path, base, head, mode, review_id, persist)?;
+    let reanchored = review::reanchor_comments_impl(conn, spec, review_id, persist)?;
     let orphaned_anchors: HashSet<i64> = reanchored
         .iter()
         .filter(|r| r.status == AnchorStatus::Orphaned)
@@ -76,7 +71,7 @@ pub fn export_review_impl(
     let summary =
         // Exports always describe the canonical full diff, never a
         // whitespace-filtered view.
-        diff::get_diff_summary(repo_path.to_owned(), base.to_owned(), head.to_owned(), mode, false)?;
+        diff::get_diff_summary(spec, false)?;
     let diff_paths: HashSet<&str> = summary.files.iter().map(|f| f.path.as_str()).collect();
 
     let mut comments = review::list_comments_impl(conn, review_id)?;
@@ -118,12 +113,12 @@ pub fn export_review_impl(
         return Err("This review has no open comments to export".to_owned());
     }
 
-    let repo = open_git_repo(repo_path)?;
-    let base_commit = diff::resolve_commit(&repo, base)?;
-    let head_commit = diff::resolve_commit(&repo, head)?;
+    let repo = open_git_repo(&spec.repo_path)?;
+    let base_commit = diff::resolve_commit(&repo, &spec.base)?;
+    let head_commit = diff::resolve_commit(&repo, &spec.head)?;
     let base_sha = repo
         .merge_base(base_commit.id(), head_commit.id())
-        .map_err(|_| format!("No merge base between '{base}' and '{head}'"))?
+        .map_err(|_| format!("No merge base between '{}' and '{}'", spec.base, spec.head))?
         .to_string();
 
     let mut review_level = Vec::new();
@@ -145,15 +140,15 @@ pub fn export_review_impl(
     }
 
     let data = ExportData {
-        repo: Path::new(repo_path)
+        repo: Path::new(&spec.repo_path)
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| repo_path.to_owned()),
-        branch: head,
-        base_ref: base,
+            .unwrap_or_else(|| spec.repo_path.clone()),
+        branch: &spec.head,
+        base_ref: &spec.base,
         base_sha,
         head_sha: head_commit.id().to_string(),
-        mode,
+        mode: spec.mode,
         review_level,
         files: by_file,
     };
@@ -483,6 +478,16 @@ mod tests {
             .into_owned()
     }
 
+    /// main…feature spec, as most tests want it.
+    fn spec(fixture: &FixtureRepo, mode: DiffMode) -> DiffSpec {
+        DiffSpec {
+            repo_path: fixture.path(),
+            base: "main".into(),
+            head: "feature".into(),
+            mode,
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn create(
         conn: &Connection,
@@ -496,10 +501,7 @@ mod tests {
     ) -> Comment {
         create_comment_impl(
             conn,
-            &fixture.path(),
-            "main",
-            "feature",
-            DiffMode::Committed,
+            &spec(fixture, DiffMode::Committed),
             NewComment {
                 review_id,
                 level,
@@ -521,16 +523,7 @@ mod tests {
         review_id: i64,
         format: ExportFormat,
     ) -> Result<String, String> {
-        export_review_impl(
-            conn,
-            &fixture.path(),
-            "main",
-            "feature",
-            DiffMode::Committed,
-            review_id,
-            format,
-            true,
-        )
+        export_review_impl(conn, &spec(fixture, DiffMode::Committed), review_id, format, true)
     }
 
     fn reply_to(
@@ -542,10 +535,7 @@ mod tests {
     ) -> Comment {
         create_comment_impl(
             conn,
-            &fixture.path(),
-            "main",
-            "feature",
-            DiffMode::Committed,
+            &spec(fixture, DiffMode::Committed),
             NewComment {
                 review_id,
                 level: CommentLevel::Review, // ignored: replies inherit the root's level
@@ -865,10 +855,7 @@ why delete this file?
 
         let out = export_review_impl(
             &conn,
-            &fixture.path(),
-            "main",
-            "feature",
-            DiffMode::All,
+            &spec(&fixture, DiffMode::All),
             review.id,
             ExportFormat::Markdown,
             true,
@@ -913,10 +900,7 @@ why delete this file?
         ] {
             let readonly = export_review_impl(
                 &conn,
-                &fixture.path(),
-                "main",
-                "feature",
-                DiffMode::Committed,
+                &spec(&fixture, DiffMode::Committed),
                 review_id,
                 format,
                 false,

@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use crate::anchor::{self, AnchorStatus};
 use crate::db::NOW;
-use crate::diff::{self, DiffLine, DiffMode, FileDiff};
+use crate::diff::{self, DiffLine, DiffMode, DiffSpec, FileDiff};
 use crate::error::CoreError;
 use crate::repo::open_git_repo;
 
@@ -24,6 +24,19 @@ pub struct Review {
     pub status: String,
     pub created_at: String,
     pub updated_at: String,
+}
+
+/// The diff coordinates a review is stored at: its branch diffed against its
+/// base ref, in its working-tree mode.
+impl From<&Review> for DiffSpec {
+    fn from(review: &Review) -> Self {
+        DiffSpec {
+            repo_path: review.repo_path.clone(),
+            base: review.base_ref.clone(),
+            head: review.branch.clone(),
+            mode: review.mode,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
@@ -682,23 +695,17 @@ fn ensure_comment_mutable(conn: &Connection, comment_id: i64) -> Result<(), Stri
 
 pub fn create_comment_impl(
     conn: &Connection,
-    repo_path: &str,
-    base: &str,
-    head: &str,
-    mode: DiffMode,
+    spec: &DiffSpec,
     comment: NewComment,
 ) -> Result<Comment, String> {
-    try_create_comment(conn, repo_path, base, head, mode, comment).map_err(String::from)
+    try_create_comment(conn, spec, comment).map_err(String::from)
 }
 
 /// [`create_comment_impl`] with a typed error, for callers that branch on
 /// specific failures (the CLI appends a re-read hint to anchor errors).
 pub fn try_create_comment(
     conn: &Connection,
-    repo_path: &str,
-    base: &str,
-    head: &str,
-    mode: DiffMode,
+    spec: &DiffSpec,
     comment: NewComment,
 ) -> Result<Comment, CoreError> {
     if comment.body.trim().is_empty() {
@@ -709,8 +716,8 @@ pub fn try_create_comment(
     if let Some(parent_id) = comment.parent_id {
         return create_reply(
             conn,
-            repo_path,
-            head,
+            &spec.repo_path,
+            &spec.head,
             comment.review_id,
             parent_id,
             &comment.body,
@@ -739,21 +746,14 @@ pub fn try_create_comment(
             };
             // Anchors are always extracted from the canonical full diff,
             // never a whitespace-filtered view.
-            let file_diff = diff::try_get_file_diff(
-                repo_path.to_owned(),
-                base.to_owned(),
-                head.to_owned(),
-                mode,
-                false,
-                path.clone(),
-            )?;
+            let file_diff = diff::try_get_file_diff(spec, false, &path)?;
             let anchor = extract_anchor(&file_diff, side, start, end)?;
             (Some(path), Some(side), Some(start), Some(end), Some(anchor))
         }
     };
 
-    let repo = open_git_repo(repo_path)?;
-    let commit_sha = diff::resolve_commit(&repo, head)?.id().to_string();
+    let repo = open_git_repo(&spec.repo_path)?;
+    let commit_sha = diff::resolve_commit(&repo, &spec.head)?.id().to_string();
     let anchor_json = anchor
         .map(|a| serde_json::to_string(&a).map_err(|e| format!("Failed to encode anchor: {e}")))
         .transpose()?;
@@ -897,10 +897,7 @@ pub struct ReanchorResult {
 /// read-only callers (the CLI) get identical results without touching rows.
 pub fn reanchor_comments_impl(
     conn: &Connection,
-    repo_path: &str,
-    base: &str,
-    head: &str,
-    mode: DiffMode,
+    spec: &DiffSpec,
     review_id: i64,
     persist: bool,
 ) -> Result<Vec<ReanchorResult>, String> {
@@ -924,14 +921,7 @@ pub fn reanchor_comments_impl(
             None => {
                 // Re-anchoring runs against the canonical full diff so orphan
                 // status never depends on the whitespace view preference.
-                let fetched = match diff::try_get_file_diff(
-                    repo_path.to_owned(),
-                    base.to_owned(),
-                    head.to_owned(),
-                    mode,
-                    false,
-                    path.to_owned(),
-                ) {
+                let fetched = match diff::try_get_file_diff(spec, false, path) {
                     Ok(d) => Some(d),
                     // The file left the diff entirely; anything else is a
                     // real failure worth surfacing.
@@ -1117,9 +1107,18 @@ mod tests {
         }
     }
 
+    /// main…feature committed-mode spec, as every test here wants it.
+    fn spec(fixture: &FixtureRepo) -> DiffSpec {
+        DiffSpec {
+            repo_path: fixture.path(),
+            base: "main".into(),
+            head: "feature".into(),
+            mode: DiffMode::Committed,
+        }
+    }
+
     fn create(conn: &Connection, fixture: &FixtureRepo, comment: NewComment) -> Comment {
-        create_comment_impl(conn, &fixture.path(), "main", "feature", DiffMode::Committed, comment)
-            .unwrap()
+        create_comment_impl(conn, &spec(fixture), comment).unwrap()
     }
 
     #[test]
@@ -1249,10 +1248,7 @@ mod tests {
 
         let err = create_comment_impl(
             &conn,
-            &fixture.path(),
-            "main",
-            "feature",
-            DiffMode::Committed,
+            &spec(&fixture),
             line_comment(review.id, "code.txt", CommentSide::New, 1, 1),
         )
         .unwrap_err();
@@ -1268,7 +1264,7 @@ mod tests {
             open_review_impl(&conn, &fixture.path(), "feature", "main", DiffMode::Committed)
                 .unwrap();
         let create = |c: NewComment| {
-            create_comment_impl(&conn, &fixture.path(), "main", "feature", DiffMode::Committed, c)
+            create_comment_impl(&conn, &spec(&fixture), c)
         };
 
         let empty = new_comment(review.id, CommentLevel::Review, "   ");
@@ -1421,7 +1417,7 @@ mod tests {
                 .unwrap();
         let root = create(&conn, &fixture, new_comment(review.id, CommentLevel::Review, "root"));
         let try_create = |c: NewComment| {
-            create_comment_impl(&conn, &fixture.path(), "main", "feature", DiffMode::Committed, c)
+            create_comment_impl(&conn, &spec(&fixture), c)
         };
 
         let err = try_create(reply(review.id, 999, "hi")).unwrap_err();
@@ -1516,16 +1512,7 @@ mod tests {
         new_lines: &[String],
     ) -> Vec<ReanchorResult> {
         fixture.commit_file("code.txt", &(new_lines.join("\n") + "\n"), "edit");
-        reanchor_comments_impl(
-            conn,
-            &fixture.path(),
-            "main",
-            "feature",
-            DiffMode::Committed,
-            review_id,
-            true,
-        )
-        .unwrap()
+        reanchor_comments_impl(conn, &spec(fixture), review_id, true).unwrap()
     }
 
     fn feature_lines() -> Vec<String> {
@@ -1681,10 +1668,7 @@ mod tests {
 
         let err = create_comment_impl(
             &conn,
-            &fixture.path(),
-            "main",
-            "feature",
-            DiffMode::Committed,
+            &spec(&fixture),
             reply(review.id, root.id, "late reply"),
         )
         .unwrap_err();
@@ -1721,10 +1705,7 @@ mod tests {
 
         let results = reanchor_comments_impl(
             &conn,
-            &fixture.path(),
-            "main",
-            "feature",
-            DiffMode::Committed,
+            &spec(&fixture),
             review.id,
             true,
         )
@@ -1877,10 +1858,7 @@ mod tests {
         assert!(err.contains("read-only"), "{err}");
         let err = create_comment_impl(
             &conn,
-            &fixture.path(),
-            "main",
-            "feature",
-            DiffMode::Committed,
+            &spec(&fixture),
             new_comment(review.id, CommentLevel::Review, "late"),
         )
         .unwrap_err();
@@ -1931,10 +1909,7 @@ mod tests {
 
         let results = reanchor_comments_impl(
             &conn,
-            &fixture.path(),
-            "main",
-            "feature",
-            DiffMode::Committed,
+            &spec(&fixture),
             review.id,
             false,
         )
@@ -1949,10 +1924,7 @@ mod tests {
         // The same call with persist writes exactly the ranges it computed.
         let persisted = reanchor_comments_impl(
             &conn,
-            &fixture.path(),
-            "main",
-            "feature",
-            DiffMode::Committed,
+            &spec(&fixture),
             review.id,
             true,
         )

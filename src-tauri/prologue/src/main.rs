@@ -9,6 +9,7 @@ mod resolve;
 mod show;
 
 use clap::{Parser, Subcommand, ValueEnum};
+use prologue_core::diff::DiffSpec;
 use prologue_core::error::CoreError;
 use prologue_core::export::{self, ExportFormat};
 use prologue_core::review::{self, Comment, CommentLevel, CommentSide, NewComment, Review};
@@ -265,10 +266,7 @@ fn run(cli: Cli) -> Result<(), String> {
             let review = resolve::resolve_review(&conn, review.as_deref(), &cwd)?;
             let text = export::export_review_impl(
                 &conn,
-                &review.repo_path,
-                &review.base_ref,
-                &review.branch,
-                review.mode,
+                &DiffSpec::from(&review),
                 review.id,
                 format.into(),
                 false,
@@ -292,10 +290,7 @@ fn run(cli: Cli) -> Result<(), String> {
             };
             let created = review::try_create_comment(
                 &conn,
-                &review.repo_path,
-                &review.base_ref,
-                &review.branch,
-                review.mode,
+                &DiffSpec::from(&review),
                 NewComment {
                     review_id: review.id,
                     level,
@@ -316,10 +311,7 @@ fn run(cli: Cli) -> Result<(), String> {
             let review = review_of_comment(&conn, parent_id)?;
             let created = review::create_comment_impl(
                 &conn,
-                &review.repo_path,
-                &review.base_ref,
-                &review.branch,
-                review.mode,
+                &DiffSpec::from(&review),
                 NewComment {
                     review_id: review.id,
                     level: CommentLevel::Review, // ignored: replies inherit the root's level
@@ -567,10 +559,12 @@ mod tests {
                 .unwrap();
         let comment = review::create_comment_impl(
             &conn,
-            &repo_path,
-            "main",
-            "feature",
-            DiffMode::Committed,
+            &DiffSpec {
+                repo_path: repo_path.clone(),
+                base: "main".into(),
+                head: "feature".into(),
+                mode: DiffMode::Committed,
+            },
             NewComment {
                 review_id: opened.id,
                 level: CommentLevel::Review,

@@ -39,6 +39,17 @@ impl DiffMode {
     }
 }
 
+/// The coordinates a diff is computed at: which repository, which two refs,
+/// and which working-tree mode. Passed as one value so a swapped base/head
+/// can never compile silently at a call site.
+#[derive(Clone, Debug)]
+pub struct DiffSpec {
+    pub repo_path: String,
+    pub base: String,
+    pub head: String,
+    pub mode: DiffMode,
+}
+
 #[derive(Serialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum FileStatus {
@@ -131,15 +142,10 @@ pub struct FileDiff {
 /// where "head" is the branch tip, index, or working tree depending on `mode`.
 /// `ignore_whitespace` applies git `-w` semantics; whitespace-only files stay
 /// listed (deltas are detected by blob OID) with 0/0 stats.
-pub fn get_diff_summary(
-    repo_path: String,
-    base: String,
-    head: String,
-    mode: DiffMode,
-    ignore_whitespace: bool,
-) -> Result<DiffSummary, String> {
-    let repo = open_git_repo(&repo_path)?;
-    let (diff, merge_base) = build_diff(&repo, &base, &head, mode, ignore_whitespace)?;
+pub fn get_diff_summary(spec: &DiffSpec, ignore_whitespace: bool) -> Result<DiffSummary, String> {
+    let repo = open_git_repo(&spec.repo_path)?;
+    let (diff, merge_base) =
+        build_diff(&repo, &spec.base, &spec.head, spec.mode, ignore_whitespace)?;
 
     let mut files = Vec::new();
     let mut total_additions = 0;
@@ -162,7 +168,7 @@ pub fn get_diff_summary(
         total_additions += additions;
         total_deletions += deletions;
         let path = new_path(&delta)?;
-        let fingerprint = file_fingerprint(&repo, &head, mode, &delta, status, &path);
+        let fingerprint = file_fingerprint(&repo, &spec.head, spec.mode, &delta, status, &path);
         files.push(FileSummary {
             path,
             old_path: rename_old_path(&delta, status),
@@ -175,8 +181,8 @@ pub fn get_diff_summary(
     }
 
     Ok(DiffSummary {
-        base_ref: base,
-        head_ref: head,
+        base_ref: spec.base.clone(),
+        head_ref: spec.head.clone(),
         merge_base: merge_base.to_string(),
         files,
         total_additions,
@@ -187,41 +193,34 @@ pub fn get_diff_summary(
 /// Hunks for a single file from the same diff `get_diff_summary` computes;
 /// fetched on demand so only the summary crosses IPC up front.
 pub fn get_file_diff(
-    repo_path: String,
-    base: String,
-    head: String,
-    mode: DiffMode,
+    spec: &DiffSpec,
     ignore_whitespace: bool,
-    path: String,
+    path: &str,
 ) -> Result<FileDiff, String> {
-    try_get_file_diff(repo_path, base, head, mode, ignore_whitespace, path)
-        .map_err(String::from)
+    try_get_file_diff(spec, ignore_whitespace, path).map_err(String::from)
 }
 
 /// [`get_file_diff`] with a typed error, for callers that branch on
 /// [`CoreError::NoChangesForFile`] instead of parsing the message.
 pub fn try_get_file_diff(
-    repo_path: String,
-    base: String,
-    head: String,
-    mode: DiffMode,
+    spec: &DiffSpec,
     ignore_whitespace: bool,
-    path: String,
+    path: &str,
 ) -> Result<FileDiff, CoreError> {
-    let repo = open_git_repo(&repo_path)?;
-    let (diff, _) = build_diff(&repo, &base, &head, mode, ignore_whitespace)?;
+    let repo = open_git_repo(&spec.repo_path)?;
+    let (diff, _) = build_diff(&repo, &spec.base, &spec.head, spec.mode, ignore_whitespace)?;
 
     let (idx, status) = diff
         .deltas()
         .enumerate()
         .find_map(|(idx, delta)| {
-            let matches = delta_path_matches(&delta, &path);
+            let matches = delta_path_matches(&delta, path);
             file_status(delta.status()).filter(|_| matches).map(|s| (idx, s))
         })
-        .ok_or_else(|| CoreError::NoChangesForFile(path.clone()))?;
+        .ok_or_else(|| CoreError::NoChangesForFile(path.to_owned()))?;
     let delta = diff
         .get_delta(idx)
-        .ok_or(CoreError::NoChangesForFile(path))?;
+        .ok_or_else(|| CoreError::NoChangesForFile(path.to_owned()))?;
     let file_path = new_path(&delta)?;
     let old_path = rename_old_path(&delta, status);
     let binary = delta.flags().is_binary();
@@ -280,7 +279,7 @@ pub fn try_get_file_diff(
     let new_total_lines = if binary || status == FileStatus::Deleted {
         None
     } else {
-        new_side_content(&repo, &head, mode, &file_path)
+        new_side_content(&repo, &spec.head, spec.mode, &file_path)
             .ok()
             .map(|content| u32::try_from(text_of(&content).lines().count()).unwrap_or(u32::MAX))
     };
@@ -559,15 +558,18 @@ mod tests {
         fixture
     }
 
-    fn summary_for(fixture: &FixtureRepo, mode: DiffMode) -> DiffSummary {
-        get_diff_summary(
-            fixture.path(),
-            "main".into(),
-            "feature".into(),
+    /// main…feature spec, as most tests want it.
+    fn spec(fixture: &FixtureRepo, mode: DiffMode) -> DiffSpec {
+        DiffSpec {
+            repo_path: fixture.path(),
+            base: "main".into(),
+            head: "feature".into(),
             mode,
-            false,
-        )
-        .unwrap()
+        }
+    }
+
+    fn summary_for(fixture: &FixtureRepo, mode: DiffMode) -> DiffSummary {
+        get_diff_summary(&spec(fixture, mode), false).unwrap()
     }
 
     fn file<'s>(summary: &'s DiffSummary, path: &str) -> &'s FileSummary {
@@ -619,14 +621,7 @@ mod tests {
         let fixture = branch_fixture();
         let first = summary_for(&fixture, DiffMode::Committed);
         let second = summary_for(&fixture, DiffMode::Committed);
-        let with_ws = get_diff_summary(
-            fixture.path(),
-            "main".into(),
-            "feature".into(),
-            DiffMode::Committed,
-            true,
-        )
-        .unwrap();
+        let with_ws = get_diff_summary(&spec(&fixture, DiffMode::Committed), true).unwrap();
 
         for f in &first.files {
             assert_eq!(f.fingerprint, file(&second, &f.path).fingerprint);
@@ -773,10 +768,12 @@ mod tests {
             .to_string_lossy()
             .into_owned();
         let summary = get_diff_summary(
-            repo_path.clone(),
-            "main".into(),
-            "HEAD".into(),
-            DiffMode::Committed,
+            &DiffSpec {
+                repo_path: repo_path.clone(),
+                base: "main".into(),
+                head: "HEAD".into(),
+                mode: DiffMode::Committed,
+            },
             false,
         )
         .unwrap();
@@ -868,15 +865,7 @@ mod tests {
     #[test]
     fn file_diff_returns_side_aware_hunks() {
         let fixture = branch_fixture();
-        let diff = get_file_diff(
-            fixture.path(),
-            "main".into(),
-            "feature".into(),
-            DiffMode::Committed,
-            false,
-            "a.txt".into(),
-        )
-        .unwrap();
+        let diff = get_file_diff(&spec(&fixture, DiffMode::Committed), false, "a.txt").unwrap();
 
         assert_eq!(diff.path, "a.txt");
         assert_eq!(diff.status, FileStatus::Modified);
@@ -912,15 +901,7 @@ mod tests {
     #[test]
     fn file_diff_locates_deleted_files_by_old_path() {
         let fixture = branch_fixture();
-        let diff = get_file_diff(
-            fixture.path(),
-            "main".into(),
-            "feature".into(),
-            DiffMode::Committed,
-            false,
-            "b.txt".into(),
-        )
-        .unwrap();
+        let diff = get_file_diff(&spec(&fixture, DiffMode::Committed), false, "b.txt").unwrap();
 
         assert_eq!(diff.status, FileStatus::Deleted);
         assert_eq!(diff.new_total_lines, None);
@@ -935,15 +916,7 @@ mod tests {
     #[test]
     fn file_diff_reports_untracked_files_in_all_mode() {
         let fixture = mode_fixture();
-        let diff = get_file_diff(
-            fixture.path(),
-            "main".into(),
-            "feature".into(),
-            DiffMode::All,
-            false,
-            "untracked.txt".into(),
-        )
-        .unwrap();
+        let diff = get_file_diff(&spec(&fixture, DiffMode::All), false, "untracked.txt").unwrap();
 
         assert_eq!(diff.status, FileStatus::Added);
         assert_eq!(diff.hunks.len(), 1);
@@ -953,15 +926,8 @@ mod tests {
     #[test]
     fn file_diff_rejects_a_path_with_no_changes() {
         let fixture = branch_fixture();
-        let err = get_file_diff(
-            fixture.path(),
-            "main".into(),
-            "feature".into(),
-            DiffMode::Committed,
-            false,
-            "nope.txt".into(),
-        )
-        .unwrap_err();
+        let err =
+            get_file_diff(&spec(&fixture, DiffMode::Committed), false, "nope.txt").unwrap_err();
         assert!(err.contains("No changes for file"), "{err}");
     }
 
@@ -1095,25 +1061,11 @@ mod tests {
         fixture.commit_file("code.txt", "fn main() {\n    let x = 1;\n}\n", "re-indent");
 
         let summary = |ignore_whitespace: bool| {
-            get_diff_summary(
-                fixture.path(),
-                "main".into(),
-                "feature".into(),
-                DiffMode::Committed,
-                ignore_whitespace,
-            )
-            .unwrap()
+            get_diff_summary(&spec(&fixture, DiffMode::Committed), ignore_whitespace).unwrap()
         };
         let file_diff = |ignore_whitespace: bool| {
-            get_file_diff(
-                fixture.path(),
-                "main".into(),
-                "feature".into(),
-                DiffMode::Committed,
-                ignore_whitespace,
-                "code.txt".into(),
-            )
-            .unwrap()
+            get_file_diff(&spec(&fixture, DiffMode::Committed), ignore_whitespace, "code.txt")
+                .unwrap()
         };
 
         let full = file(&summary(false), "code.txt").additions;
@@ -1136,10 +1088,12 @@ mod tests {
     fn diff_rejects_unresolvable_refs() {
         let fixture = branch_fixture();
         let err = get_diff_summary(
-            fixture.path(),
-            "does-not-exist".into(),
-            "feature".into(),
-            DiffMode::Committed,
+            &DiffSpec {
+                repo_path: fixture.path(),
+                base: "does-not-exist".into(),
+                head: "feature".into(),
+                mode: DiffMode::Committed,
+            },
             false,
         )
         .unwrap_err();
