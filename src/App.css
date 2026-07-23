@@ -234,6 +234,12 @@ button.primary:hover {
   margin: 0.5rem 0 0;
 }
 
+.welcome-version {
+  margin: 12px 0 0;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
 .recents {
   margin-top: 24px;
   width: min(480px, 100%);
