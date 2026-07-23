@@ -1,0 +1,49 @@
+scripts/release.sh
+  s_f0a326624c75d1::t_805b1a34119612 104
+  s_f0a326624c75d1::t_f080ceacea6c63 117
+  s_f0a326624c75d1::t_081df20073ceae 34-53
+  s_f0a326624c75d1::t_f0f1a2090f9270 92,95
+.claude/skills/release-notes/SKILL.md
+  s_f0a326624c75d1::t_e895cb5525c2fc 1-77
+src/components/WhatsNew.tsx
+  s_f0a326624c75d1::t_9c6577cacb5235 1-74
+src/release-notes.json
+  s_f0a326624c75d1::t_94a4ae11754998 1-27
+src/App.css
+  s_f0a326624c75d1::t_59367f03fd0855 2043-2112
+  s_f0a326624c75d1::t_b9ffc37dba304b 2113-2127
+src/App.tsx
+  s_f0a326624c75d1::t_97a2143d8c2095 31
+  s_f0a326624c75d1::t_07e3940ccefb4e 80
+  s_f0a326624c75d1::t_0856225a065648 19
+  s_f0a326624c75d1::t_2359bf0768243b 50-52
+  s_f0a326624c75d1::t_7cae91d710e24a 94-106
+  s_f0a326624c75d1::t_f18d74b84e0234 245-249
+  s_f0a326624c75d1::t_b3605d8f880bce 309
+src-tauri/src/lib.rs
+  s_f0a326624c75d1::t_eb7afb409bf696 72-81,89
+  s_f0a326624c75d1::t_3761da3eb29aff 226-228
+  s_f0a326624c75d1::t_17a343a6161310 21-22
+src-tauri/src/events.rs
+  s_f0a326624c75d1::t_e212e2a0665f91 20-21
+  s_f0a326624c75d1::t_23f4eda58ded3d 56
+  s_f0a326624c75d1::t_39ba7a69f2d4dc 46-48
+src/generated/events.ts
+  s_f0a326624c75d1::t_38da163a59c0b5 18-19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "47a98d37026b7e29ea02036d7fecfc138f271102",
+  "prompts": {},
+  "sessions": {
+    "s_f0a326624c75d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "23d79caf-de2a-4da3-99dd-42f19520ab8d",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
