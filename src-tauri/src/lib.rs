@@ -16,6 +16,8 @@ const MENU_REFRESH_ID: &str = "view-refresh";
 const MENU_HIDE_RESOLVED_ID: &str = "view-hide-resolved";
 /// Menu item id for the Help > Keyboard Shortcuts entry.
 const MENU_SHOW_SHORTCUTS_ID: &str = "help-shortcuts";
+/// Menu item id for the Prologue > Check for Updates… entry.
+const MENU_CHECK_UPDATES_ID: &str = "check-updates";
 
 /// Handles to the View and Help menu items that only make sense with a
 /// repo open; the frontend enables them on repo open and disables them on
@@ -55,6 +57,16 @@ fn setup_menu(app: &tauri::App) -> tauri::Result<()> {
     let menu = Menu::default(app.handle())?;
     let items = menu.items()?;
     if let Some(app_submenu) = items.first().and_then(|i| i.as_submenu()) {
+        // Directly under About, the conventional macOS spot (Sparkle's).
+        // Always enabled: checking makes sense on the welcome screen too.
+        let check_updates = MenuItem::with_id(
+            app,
+            MENU_CHECK_UPDATES_ID,
+            "Check for Updates…",
+            true,
+            None::<&str>,
+        )?;
+        app_submenu.insert(&check_updates, 1)?;
         let item = MenuItem::with_id(
             app,
             "install-cli",
@@ -62,7 +74,7 @@ fn setup_menu(app: &tauri::App) -> tauri::Result<()> {
             true,
             None::<&str>,
         )?;
-        app_submenu.insert(&item, 1)?;
+        app_submenu.insert(&item, 2)?;
     }
     // Help > Keyboard Shortcuts opens the same overlay as the in-app `?`
     // key. No accelerator: a menu accelerator would swallow the keystroke
@@ -195,6 +207,9 @@ pub fn run() {
             }
             MENU_SHOW_SHORTCUTS_ID => {
                 let _ = app.emit(events::MENU_SHOW_SHORTCUTS, ());
+            }
+            MENU_CHECK_UPDATES_ID => {
+                let _ = app.emit(events::MENU_CHECK_UPDATES, ());
             }
             MENU_HIDE_RESOLVED_ID => {
                 // macOS auto-toggles the check state before the event

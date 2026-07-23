@@ -13,3 +13,5 @@ export const MENU_REFRESH_EVENT = "menu-refresh";
 export const MENU_HIDE_RESOLVED_EVENT = "menu-hide-resolved";
 /** Help > Keyboard Shortcuts chosen. */
 export const MENU_SHOW_SHORTCUTS_EVENT = "menu-show-shortcuts";
+/** Prologue > Check for Updates… chosen. */
+export const MENU_CHECK_UPDATES_EVENT = "menu-check-updates";

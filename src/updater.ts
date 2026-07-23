@@ -17,6 +17,14 @@ export async function checkForUpdate(): Promise<Update | null> {
   }
 }
 
+/**
+ * Menu-triggered check: no dev gate, and errors propagate — a silent miss
+ * would make Check for Updates… feel broken.
+ */
+export function checkForUpdateNow(): Promise<Update | null> {
+  return check();
+}
+
 /** Download and install the update, then restart into the new version. */
 export async function installAndRelaunch(update: Update): Promise<void> {
   await update.downloadAndInstall();

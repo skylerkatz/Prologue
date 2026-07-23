@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, message } from "@tauri-apps/plugin-dialog";
+import { getVersion } from "@tauri-apps/api/app";
 import {
   errorText,
   findActiveReview,
@@ -12,12 +13,17 @@ import {
 } from "./ipc";
 import { useTauriEvent } from "./useTauriEvent";
 import {
+  MENU_CHECK_UPDATES_EVENT,
   MENU_HIDE_RESOLVED_EVENT,
   MENU_REFRESH_EVENT,
   REPO_CHANGED_EVENT,
 } from "./generated/events";
 import { addRecentRepo, getRecentRepos, removeRecentRepo } from "./recents";
-import { checkForUpdate, installAndRelaunch } from "./updater";
+import {
+  checkForUpdate,
+  checkForUpdateNow,
+  installAndRelaunch,
+} from "./updater";
 import type { Update } from "@tauri-apps/plugin-updater";
 import type { BranchList, RepoInfo, DiffMode } from "./types";
 import { ReviewShell } from "./components/ReviewShell";
@@ -191,6 +197,30 @@ function App() {
   // View > Refresh (⌘R) — same path as the old toolbar Refresh button.
   useTauriEvent(MENU_REFRESH_EVENT, () => {
     void refresh();
+  });
+
+  // Prologue > Check for Updates… — unlike the launch check, a manual check
+  // must answer either way: banner on a hit, dialog on a miss or failure.
+  useTauriEvent(MENU_CHECK_UPDATES_EVENT, () => {
+    void (async () => {
+      try {
+        const found = await checkForUpdateNow();
+        if (found !== null) {
+          setUpdate(found);
+          setUpdateState("idle");
+        } else {
+          const version = await getVersion();
+          await message(`Prologue ${version} is the newest version.`, {
+            title: "You're up to date",
+          });
+        }
+      } catch (e) {
+        await message(errorText(e), {
+          title: "Could not check for updates",
+          kind: "error",
+        });
+      }
+    })();
   });
 
   return (
