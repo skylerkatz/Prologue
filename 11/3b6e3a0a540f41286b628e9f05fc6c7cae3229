@@ -1,0 +1,19 @@
+solo.yml
+  s_9b845ba29068e4::t_594aee17a0ac46 46-52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "113b6e3a0a540f41286b628e9f05fc6c7cae3229",
+  "prompts": {},
+  "sessions": {
+    "s_9b845ba29068e4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "46d959d5-a035-4ea9-bb29-17abd4405dea",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
