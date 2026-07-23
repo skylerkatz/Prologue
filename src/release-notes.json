@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.3.0",
+    "date": "2026-07-23",
+    "notes": "## New\n\n- What's New — release notes for every version, in the Prologue menu and shown once automatically after an update"
+  },
+  {
     "version": "0.2.1",
     "date": "2026-07-23",
     "notes": "## New\n\n- Viewed files expand automatically when you click them in the sidebar or jump to them with ⌘P"
