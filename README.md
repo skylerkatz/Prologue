@@ -39,8 +39,12 @@ notarize.
 ## prologue CLI
 
 The `prologue` CLI ships inside the app bundle as a Tauri sidecar
-(`Contents/MacOS/prologue`, signed with the bundle). `scripts/build-sidecar.sh`
-builds it and stages it at `src-tauri/binaries/prologue-<target-triple>`; the
+(`Contents/MacOS/prologue-cli`, signed with the bundle). The bundled name
+must differ from the main app binary (`Prologue`) in more than case: on the
+default case-insensitive APFS, a sidecar named `prologue` and the app binary
+collapse into one file and the CLI silently becomes the GUI.
+`scripts/build-sidecar.sh`
+builds it and stages it at `src-tauri/binaries/prologue-cli-<target-triple>`; the
 tauri CLI runs that script automatically before `dev` and `build`. Plain
 `cargo build`/`cargo test` runs don't stage it — `src-tauri/build.rs` drops an
 empty placeholder there so those still compile.

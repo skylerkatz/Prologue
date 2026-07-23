@@ -1,11 +1,20 @@
-//! "Install CLI" action: symlink the bundled `prologue` sidecar onto the
-//! user's PATH, VS Code-style. A symlink (never a copy) keeps the CLI the
-//! same build as the app, so app updates propagate with no reinstall.
+//! "Install CLI" action: symlink the bundled CLI sidecar onto the user's
+//! PATH, VS Code-style. A symlink (never a copy) keeps the CLI the same
+//! build as the app, so app updates propagate with no reinstall.
+//!
+//! The link is named `prologue` but the bundled binary is `prologue-cli`:
+//! the two names must differ in more than case, because on a
+//! case-insensitive filesystem `prologue` and the main app binary
+//! `Prologue` are the same file — the bundler would collapse them and the
+//! "CLI" would launch the GUI.
 
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
+/// Name of the symlink placed on the user's PATH.
 pub const CLI_NAME: &str = "prologue";
+/// Name of the sidecar inside Contents/MacOS (externalBin minus the triple).
+pub const BUNDLED_CLI_NAME: &str = "prologue-cli";
 
 #[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
@@ -35,6 +44,8 @@ pub struct InstallReport {
 
 /// Everything the install decision depends on, injectable for tests.
 pub struct InstallEnv {
+    /// The running app binary.
+    pub exe_path: PathBuf,
     /// Directory holding the running app binary (and the bundled CLI).
     pub exe_dir: PathBuf,
     pub in_applications: bool,
@@ -57,6 +68,7 @@ impl InstallEnv {
         let in_applications = exe.starts_with("/Applications/");
         let home = std::env::var("HOME").map_err(|_| "HOME is not set")?;
         Ok(Self {
+            exe_path: exe,
             exe_dir,
             in_applications,
             usr_local_bin: PathBuf::from("/usr/local/bin"),
@@ -84,6 +96,16 @@ fn on_path(dir: &Path, path_var: &str) -> bool {
     std::env::split_paths(path_var).any(|p| p == dir)
 }
 
+/// True when both paths resolve to the same inode (so a case-insensitive
+/// name collision is caught even though the paths differ as strings).
+fn same_file(a: &Path, b: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    match (std::fs::metadata(a), std::fs::metadata(b)) {
+        (Ok(ma), Ok(mb)) => ma.dev() == mb.dev() && ma.ino() == mb.ino(),
+        _ => false,
+    }
+}
+
 pub fn install(env: &InstallEnv, force: bool) -> Result<InstallReport, String> {
     if !env.in_applications && !force {
         return Ok(InstallReport {
@@ -99,10 +121,20 @@ pub fn install(env: &InstallEnv, force: bool) -> Result<InstallReport, String> {
         });
     }
 
-    let target = env.exe_dir.join(CLI_NAME);
+    let target = env.exe_dir.join(BUNDLED_CLI_NAME);
     if !target.is_file() {
         return Err(format!(
-            "bundled {CLI_NAME} not found at {}",
+            "bundled {BUNDLED_CLI_NAME} not found at {}",
+            target.display()
+        ));
+    }
+    // On a case-insensitive filesystem a sidecar whose name matches the app
+    // binary in all but case collapses into the app binary at bundling time.
+    // Fail loudly rather than install a symlink that launches the GUI.
+    if same_file(&target, &env.exe_path) {
+        return Err(format!(
+            "bundled {BUNDLED_CLI_NAME} at {} is the app binary itself — \
+             refusing to install a CLI link that would launch the app",
             target.display()
         ));
     }
@@ -193,10 +225,13 @@ mod tests {
             let _ = std::fs::remove_dir_all(&root);
             let exe_dir = root.join("App.app/Contents/MacOS");
             std::fs::create_dir_all(&exe_dir).unwrap();
-            std::fs::write(exe_dir.join(CLI_NAME), b"#!/bin/sh\n").unwrap();
+            let exe_path = exe_dir.join("AppBinary");
+            std::fs::write(&exe_path, b"#!/bin/sh\n# app\n").unwrap();
+            std::fs::write(exe_dir.join(BUNDLED_CLI_NAME), b"#!/bin/sh\n").unwrap();
             let usr_local_bin = root.join("usr-local-bin");
             std::fs::create_dir_all(&usr_local_bin).unwrap();
             let env = InstallEnv {
+                exe_path,
                 exe_dir,
                 in_applications: true,
                 usr_local_bin,
@@ -245,7 +280,7 @@ mod tests {
         let link = f.env.usr_local_bin.join(CLI_NAME);
         assert_eq!(
             std::fs::read_link(&link).unwrap(),
-            f.env.exe_dir.join(CLI_NAME)
+            f.env.exe_dir.join(BUNDLED_CLI_NAME)
         );
         // The fixture's PATH is empty, so even the primary dir gets a hint.
         assert!(report.path_hint.is_some());
@@ -268,7 +303,7 @@ mod tests {
         assert_eq!(report.status, InstallStatus::ReplacedStale);
         assert_eq!(
             std::fs::read_link(&link).unwrap(),
-            f.env.exe_dir.join(CLI_NAME)
+            f.env.exe_dir.join(BUNDLED_CLI_NAME)
         );
     }
 
@@ -316,8 +351,19 @@ mod tests {
     #[test]
     fn missing_bundled_binary_is_an_error() {
         let f = Fixture::new("missing");
-        std::fs::remove_file(f.env.exe_dir.join(CLI_NAME)).unwrap();
+        std::fs::remove_file(f.env.exe_dir.join(BUNDLED_CLI_NAME)).unwrap();
         let err = install(&f.env, false).unwrap_err();
         assert!(err.contains("not found"));
+    }
+
+    #[test]
+    fn bundled_cli_that_is_the_app_binary_is_an_error() {
+        // Simulates the case-insensitive-filesystem collision where the
+        // "sidecar" path resolves to the app binary itself.
+        let mut f = Fixture::new("collision");
+        f.env.exe_path = f.env.exe_dir.join(BUNDLED_CLI_NAME);
+        let err = install(&f.env, false).unwrap_err();
+        assert!(err.contains("app binary itself"));
+        assert!(!f.env.usr_local_bin.join(CLI_NAME).exists());
     }
 }
