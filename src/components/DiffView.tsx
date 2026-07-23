@@ -1205,6 +1205,12 @@ export function DiffView({
     if (scrollTarget === null) {
       return;
     }
+    // Navigating to a file is a request to read it: re-expand a card that
+    // reviewed-ness collapsed, without touching the mark itself (same
+    // peek-not-unmark contract as the caret).
+    updateState(scrollTarget.path, (s) =>
+      s.expanded ? s : { ...s, expanded: true },
+    );
     const index = rows.findIndex(
       (row) =>
         row.kind === "file" &&
