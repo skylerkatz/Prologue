@@ -1,0 +1,104 @@
+src/components/MarkdownPreview.tsx
+  s_49abbdfe1236b4::t_d16765379eb20b 172
+  s_00d80eb3a5c906::t_1b40367a8330a8 3,11-16,24-26,30-31,36,82,91-93
+  s_49abbdfe1236b4::t_f98337611ccb6c 1-2,4-10,17-23,27-29,32-35,37-81,83-90,94-171,173-190
+src/highlight/lang.test.ts
+  s_00d80eb3a5c906::t_0f6ebc06c420fc 1-26
+src-tauri/prologue-core/src/diff.rs
+  s_00d80eb3a5c906::t_5245720c22993a 442-458
+  s_00d80eb3a5c906::t_baf99b3d06f5fe 1162-1210,1213
+  s_00d80eb3a5c906::t_5488beec3889b2 1211-1212
+  s_00d80eb3a5c906::t_ffb28958d9571a 1214
+src/components/MarkdownPreview.test.tsx
+  s_49abbdfe1236b4::t_0b244cd07769b1 1-123
+src/diff/rows.test.ts
+  s_00d80eb3a5c906::t_cebaef94617849 235-305
+  s_00d80eb3a5c906::t_32d2f30e41210b 19
+  s_00d80eb3a5c906::t_38ce9e452ecf3a 306-307
+src/diff/rows.ts
+  s_00d80eb3a5c906::t_d9d2de3839a459 11
+  s_00d80eb3a5c906::t_692e8c0eac6a13 364-370
+  s_00d80eb3a5c906::t_20a99d703066c3 195-196
+  s_00d80eb3a5c906::t_0d3a17bf0e77c0 81-86,94-96
+  s_00d80eb3a5c906::t_1f0804bc2d1f57 152-154
+  s_00d80eb3a5c906::t_c699f10be05fb1 38-55
+  s_00d80eb3a5c906::t_47da036b082d0c 226-227
+  s_00d80eb3a5c906::t_baeee24aa177ee 371
+src/diff/markers.ts
+  s_49abbdfe1236b4::t_a53d4cfac1d3d2 1-170
+src-tauri/src/commands.rs
+  s_00d80eb3a5c906::t_82f85dca9e168d 75-86
+src-tauri/src/lib.rs
+  s_00d80eb3a5c906::t_f80e613fc259de 243
+src/diff/markers.test.ts
+  s_49abbdfe1236b4::t_1787be3434d928 1-323
+src/components/DiffView.tsx
+  s_00d80eb3a5c906::t_1b11dfffb92d6d 206-207
+  s_00d80eb3a5c906::t_1dd9ec22c725c3 1420-1431,1448
+  s_49abbdfe1236b4::t_c286ed8ca725ae 304,1432-1447
+  s_49abbdfe1236b4::t_d0dcabe3aad649 1266
+  s_49abbdfe1236b4::t_157843d101d63f 223-231,517,570,1700
+  s_49abbdfe1236b4::t_92657f551a4095 1014-1016,1018-1034,1040
+  s_49abbdfe1236b4::t_89fd80460be74c 921-930,932-936,938
+  s_00d80eb3a5c906::t_45ca8c3858c4a8 88-89,97-100
+  s_00d80eb3a5c906::t_8565ceb931a729 1673-1699
+  s_00d80eb3a5c906::t_bd10ec91444f7c 36
+  s_49abbdfe1236b4::t_7fdbd26daece57 48
+  s_00d80eb3a5c906::t_d44e550a7d7a29 70
+  s_00d80eb3a5c906::t_6149464cd28005 17-22
+  s_49abbdfe1236b4::t_c76d69167016ac 1109-1111,1125-1126,1128-1140
+  s_00d80eb3a5c906::t_8d0e7fd8d03472 1265
+  s_00d80eb3a5c906::t_6a28685dc77442 465-492,500-516
+  s_49abbdfe1236b4::t_5bb37d80bd0c19 1352
+  s_00d80eb3a5c906::t_554df90dee391a 1351
+  s_49abbdfe1236b4::t_f445a91d5ea155 1313
+  s_00d80eb3a5c906::t_aeda978fa1e2d7 1378-1379,1381
+  s_00d80eb3a5c906::t_1a65687d7c4722 258
+  s_00d80eb3a5c906::t_bbcb9a76292a4d 290-293,302-303
+  s_00d80eb3a5c906::t_975ad80289efca 1606-1638
+  s_49abbdfe1236b4::t_68d6cecb6a9cf3 519-569
+  s_00d80eb3a5c906::t_1934639f09b1ed 1312
+  s_00d80eb3a5c906::t_4194940e2a2983 913-914,917-920,931,937,939-941,943,953
+  s_00d80eb3a5c906::t_5c28977026146d 1541-1542,1544,1554-1556,1558
+  s_49abbdfe1236b4::t_805c0b40463804 518
+  s_49abbdfe1236b4::t_0a864f6453238d 571
+  s_00d80eb3a5c906::t_70b4fff08bf99e 1639
+  s_49abbdfe1236b4::t_09bf56e79e5042 1701-1702
+src/App.css
+  s_00d80eb3a5c906::t_f4ccf46496c3e4 1285-1328
+  s_00d80eb3a5c906::t_1a79999269c4b1 1537-1697
+  s_49abbdfe1236b4::t_5db99f33a4f415 1698-1799
+  s_49abbdfe1236b4::t_cf3d2c7fd69f5e 1800
+src/ipc.ts
+  s_00d80eb3a5c906::t_aaa057c3b7234e 270-279
+src/highlight/lang.ts
+  s_00d80eb3a5c906::t_033a08ea96660d 63-65,70-74
+package-lock.json
+  s_00d80eb3a5c906::t_0bafce4264f1ae 23-24,1657-1665,1679-1687,1706-1711,1887-1896,1985-1994,2015-2024,2065-2077,2166-2187,2208-2213,2280-2306,2320-2329,2340-2401,2435-2444,2465-2478,2482-2484,2491-2494,2497-2505,2507-2512,2515-2518,2521-2531,2534,2536-2549,2551-3306,3374-3398,3486-3512,3547-3612,3748-3765,3820-3829,3844-3862
+package.json
+  s_00d80eb3a5c906::t_8ccfb80ea10c2f 28-29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "c329a323d00765075a736e194cf1f9385567c5a4",
+  "prompts": {},
+  "sessions": {
+    "s_00d80eb3a5c906": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c95c6acc-e1f4-4775-a706-071415801dd1",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    },
+    "s_49abbdfe1236b4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d5f47f6-d067-48af-ad38-db13ccc4f553",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
