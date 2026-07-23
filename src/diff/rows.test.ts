@@ -16,6 +16,7 @@ import {
   initialFileState,
   lineNumber,
   lineSide,
+  previewEligible,
   reviewedFlips,
   rowKey,
   type FileViewState,
@@ -228,6 +229,79 @@ describe("buildRows: per-file gating", () => {
     const errored = { ...initialFileState(true), error: "boom" };
     const rows = buildRows(files, statesFor(files, errored), noComments, noReplies, null, false);
     expect(rows[1]).toEqual({ kind: "error", fi: 0, message: "boom" });
+  });
+});
+
+describe("markdown preview", () => {
+  it("marks markdown documents with a new side as eligible", () => {
+    expect(previewEligible(file({ path: "README.md" }))).toBe(true);
+    expect(previewEligible(file({ path: "docs/guide.markdown" }))).toBe(true);
+    expect(previewEligible(file({ path: "CHANGELOG" }))).toBe(true);
+    expect(previewEligible(file({ path: "src/a.ts" }))).toBe(false);
+    expect(
+      previewEligible(file({ path: "README.md", status: "deleted" })),
+    ).toBe(false);
+    expect(previewEligible(file({ path: "README.md", binary: true }))).toBe(
+      false,
+    );
+  });
+
+  it("replaces the body with a single preview row while previewMode is on", () => {
+    const files = [file({ path: "README.md" })];
+    const state = { ...loadedState(standardDiff()), previewMode: true };
+    const rows = buildRows(
+      files,
+      statesFor(files, state),
+      noComments,
+      noReplies,
+      null,
+      false,
+    );
+    expect(kinds(rows)).toEqual(["file", "preview"]);
+  });
+
+  it("keeps file-level comments above the preview; line comments contribute nothing", () => {
+    const files = [file({ path: "README.md" })];
+    const state = { ...loadedState(standardDiff()), previewMode: true };
+    const comments = indexComments(files, [
+      comment({
+        id: 1,
+        level: "file",
+        filePath: "README.md",
+        side: null,
+        startLine: null,
+        endLine: null,
+      }),
+      comment({ id: 2, filePath: "README.md" }),
+    ]);
+    const rows = buildRows(
+      files,
+      statesFor(files, state),
+      comments,
+      noReplies,
+      null,
+      false,
+    );
+    expect(kinds(rows)).toEqual(["file", "comment", "preview"]);
+  });
+
+  it("bypasses guards and the skeleton — preview needs no diff", () => {
+    const files = [file({ path: "CHANGELOG.md", additions: 6000 })];
+    const rows = buildRows(
+      files,
+      statesFor(files, initialFileState(true, true)),
+      noComments,
+      noReplies,
+      null,
+      false,
+    );
+    expect(kinds(rows)).toEqual(["file", "preview"]);
+  });
+
+  it("preview rows carry a path-stable key and a height estimate", () => {
+    const row: Row = { kind: "preview", fi: 0 };
+    expect(rowKey(row, [file({ path: "README.md" })])).toBe("pREADME.md");
+    expect(estimateRowHeight(row)).toBeGreaterThan(0);
   });
 });
 

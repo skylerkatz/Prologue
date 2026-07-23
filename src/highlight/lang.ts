@@ -60,11 +60,18 @@ const EXTENSIONS: Readonly<Record<string, string>> = {
   patch: "diff",
 };
 
-/** Extension-less filenames with a known grammar. */
+/** Extension-less filenames with a known grammar. The doc names double as
+ * the eligibility set for the rendered markdown preview — conventionally
+ * written in markdown even without an extension. */
 const FILENAMES: Readonly<Record<string, string>> = {
   dockerfile: "dockerfile",
   makefile: "make",
   ".env": "dotenv",
+  readme: "markdown",
+  changelog: "markdown",
+  contributing: "markdown",
+  code_of_conduct: "markdown",
+  security: "markdown",
 };
 
 /** The Shiki grammar id for a repo path, or null to stay plain. */

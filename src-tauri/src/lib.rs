@@ -240,6 +240,7 @@ pub fn run() {
             commands::get_diff_summary,
             commands::get_file_diff,
             commands::get_context_lines,
+            commands::get_file_content,
             commands::open_review,
             commands::find_active_review,
             commands::list_reviewed_files,

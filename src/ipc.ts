@@ -267,6 +267,16 @@ export function findGuide(
   return invoke("find_guide", { reviewId, base, head, mode });
 }
 
+/** Full new-side text of a file, for the rendered markdown preview. */
+export function getFileContent(
+  repoPath: string,
+  head: string,
+  mode: DiffMode,
+  path: string,
+): Promise<string> {
+  return invoke("get_file_content", { repoPath, head, mode, path });
+}
+
 /** New-side lines `start..=end` (1-based, clamped) for expand-context. */
 export function getContextLines(
   repoPath: string,

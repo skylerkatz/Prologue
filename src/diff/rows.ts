@@ -8,6 +8,7 @@ import type {
   RepliesByRoot,
 } from "../types";
 import { guardReason, type GuardReason } from "./guards";
+import { detectLang } from "../highlight/lang";
 
 /** Fixed row height for diff lines; keeps scroll estimates honest. */
 const LINE_HEIGHT = 21;
@@ -34,6 +35,24 @@ export interface FileViewState {
   reveals: GapReveal[];
   /** Fetched unchanged new-side lines, keyed by new line number. */
   context: Map<number, string>;
+  /** Rendered markdown preview instead of the source diff. Only ever true
+   * for [`previewEligible`] files. */
+  previewMode: boolean;
+  /** Full new-side text backing the rendered preview; null until fetched. */
+  fileContent: string | null;
+  /** Preview content fetch failure, shown inside the preview row. */
+  previewError: string | null;
+}
+
+/** Whether the file gets the source/rich toggle and rich-by-default: a
+ * markdown document with a new side to render. Deleted files have no new
+ * side; binary files never render. */
+export function previewEligible(file: FileSummary): boolean {
+  return (
+    !file.binary &&
+    file.status !== "deleted" &&
+    detectLang(file.path) === "markdown"
+  );
 }
 
 /**
@@ -59,8 +78,12 @@ export function reviewedFlips(
   return flips;
 }
 
-/** Reviewed files start collapsed (`expanded: false`); everything else open. */
-export function initialFileState(expanded: boolean): FileViewState {
+/** Reviewed files start collapsed (`expanded: false`); everything else open.
+ * Eligible markdown files start in the rendered preview (`previewMode`). */
+export function initialFileState(
+  expanded: boolean,
+  previewMode = false,
+): FileViewState {
   return {
     expanded,
     forceLoad: false,
@@ -68,6 +91,9 @@ export function initialFileState(expanded: boolean): FileViewState {
     error: null,
     reveals: [],
     context: new Map(),
+    previewMode,
+    fileContent: null,
+    previewError: null,
   };
 }
 
@@ -123,6 +149,9 @@ export type Row =
   | { kind: "empty"; fi: number; whitespaceHidden: boolean }
   /** Line comments whose host line disappeared under hide-whitespace. */
   | { kind: "hiddenComments"; fi: number; count: number }
+  /** Rendered markdown preview of the whole new side, replacing the file's
+   * hunk/line rows while `previewMode` is on. One measured row. */
+  | { kind: "preview"; fi: number }
   | { kind: "hunk"; fi: number; hi: number; header: string }
   /** `hi`/`li` (hunk index, line index within the hunk) are set for hunk
    * lines; expanded gap-context lines carry neither. */
@@ -163,6 +192,8 @@ const ROW_HEIGHTS: Record<Exclude<Row["kind"], "skeleton">, number> = {
   error: 48,
   empty: 40,
   hiddenComments: 40,
+  // A guess; the virtualizer measures the rendered document immediately.
+  preview: 400,
   hunk: 26,
   line: LINE_HEIGHT,
   comment: 96,
@@ -192,6 +223,8 @@ export function rowKey(row: Row, files: FileSummary[]): string {
       return `m${path}`;
     case "hiddenComments":
       return `w${path}`;
+    case "preview":
+      return `p${path}`;
     case "hunk":
       return `h${path}:${row.hi}`;
     case "comment":
@@ -327,6 +360,14 @@ export function buildRows(
     }
     if (composer?.level === "file" && composer.path === file.path) {
       rows.push({ kind: "composer", fi });
+    }
+    // Rich view is a read mode over the new-side document: it needs no
+    // diff, so it bypasses the guard/skeleton/hunk rows entirely. Line
+    // comments have no host row here — they live in the sidebar and in
+    // source view, one toggle away.
+    if (state.previewMode) {
+      rows.push({ kind: "preview", fi });
+      return;
     }
     const guard = guardReason(file);
     if (guard === "binary") {

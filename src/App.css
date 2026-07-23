@@ -1282,6 +1282,50 @@ body.sidebar-resizing * {
   box-shadow: inset 3px 0 0 var(--accent);
 }
 
+/* Source/rich view pair on markdown file cards: the compact cousin of the
+   segmented .mode-toggle. */
+.view-toggle {
+  flex: none;
+  display: flex;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg-subtle);
+}
+
+.view-option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 22px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.view-option + .view-option {
+  border-left: 1px solid var(--border);
+}
+
+.view-option.selected {
+  background: var(--bg-card);
+  color: var(--accent-strong);
+}
+
+.view-option:hover:not(.selected) {
+  color: var(--text);
+}
+
+.view-option-source {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
 .file-toggle {
   flex: none;
   width: 20px;
@@ -1488,6 +1532,270 @@ body.sidebar-resizing * {
   font-size: 12px;
   font-style: italic;
   text-align: center;
+}
+
+/* --- Markdown rich preview ------------------------------------------- */
+
+/* Rendered new-side document (rich view of markdown files): a reading
+   surface on the white card — sans body, serif headings, mono code. */
+.markdown-preview {
+  padding: 20px 28px 24px;
+  max-width: 900px;
+  background: var(--bg-card);
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--text);
+}
+
+.markdown-preview > :first-child {
+  margin-top: 0;
+}
+
+.markdown-preview > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-preview h1,
+.markdown-preview h2,
+.markdown-preview h3,
+.markdown-preview h4,
+.markdown-preview h5,
+.markdown-preview h6 {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  color: var(--text-strong);
+  margin: 1.4em 0 0.5em;
+  line-height: 1.25;
+}
+
+.markdown-preview h1 {
+  font-size: 24px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.markdown-preview h2 {
+  font-size: 19px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.markdown-preview h3 {
+  font-size: 16px;
+}
+
+.markdown-preview h4 {
+  font-size: 14px;
+}
+
+.markdown-preview h5 {
+  font-size: 13px;
+}
+
+.markdown-preview h6 {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.markdown-preview p,
+.markdown-preview ul,
+.markdown-preview ol,
+.markdown-preview blockquote,
+.markdown-preview pre,
+.markdown-preview table {
+  margin: 0 0 0.9em;
+}
+
+.markdown-preview ul,
+.markdown-preview ol {
+  padding-left: 1.6em;
+}
+
+.markdown-preview li + li {
+  margin-top: 0.2em;
+}
+
+.markdown-preview a {
+  color: var(--accent-strong);
+  text-decoration: none;
+}
+
+.markdown-preview a:hover {
+  text-decoration: underline;
+}
+
+.markdown-preview code {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+.markdown-preview pre {
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px 14px;
+  overflow-x: auto;
+}
+
+.markdown-preview pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.markdown-preview blockquote {
+  border-left: 3px solid var(--border-strong);
+  padding: 2px 0 2px 14px;
+  color: var(--text-muted);
+}
+
+.markdown-preview table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+
+.markdown-preview th,
+.markdown-preview td {
+  border: 1px solid var(--border);
+  padding: 5px 11px;
+  text-align: left;
+}
+
+.markdown-preview th {
+  background: var(--bg-subtle);
+  font-weight: 600;
+}
+
+.markdown-preview hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1.4em 0;
+}
+
+.markdown-preview img {
+  max-width: 100%;
+}
+
+/* GFM task lists: the checkbox replaces the list marker. */
+.markdown-preview li:has(> input[type="checkbox"]) {
+  list-style: none;
+  margin-left: -1.3em;
+}
+
+.markdown-preview input[type="checkbox"] {
+  margin-right: 6px;
+  accent-color: var(--accent);
+}
+
+/* --- Rich-view change markers ---------------------------------------- */
+
+/* Gutter bars on changed blocks, in the diff palette: green = block fully
+   added, amber = partially changed (the status-badge modified tone). The
+   bar hangs in the preview's left padding so layout never shifts. */
+.markdown-preview .md-block-added,
+.markdown-preview .md-block-modified {
+  position: relative;
+  cursor: pointer;
+}
+
+.markdown-preview .md-block-added::before,
+.markdown-preview .md-block-modified::before {
+  content: "";
+  position: absolute;
+  left: -14px;
+  top: 1px;
+  bottom: 1px;
+  width: 4px;
+  border-radius: 2px;
+}
+
+.markdown-preview .md-block-added::before {
+  background: var(--added);
+}
+
+.markdown-preview .md-block-modified::before {
+  background: var(--badge-modified-text);
+}
+
+/* Clicking a marked block flips to the source diff; tint on hover so the
+   affordance reads before the pointer gives it away. */
+.markdown-preview .md-block-added:hover {
+  background: var(--diff-add-bg);
+}
+
+.markdown-preview .md-block-modified:hover {
+  background: var(--badge-modified-bg);
+}
+
+/* Red deletion tombstone: content was removed here. Click to peek at the
+   deleted source lines — rendered like source-view deletion rows. */
+.markdown-preview .md-del-marker {
+  margin: 0 0 0.9em;
+}
+
+.markdown-preview .md-del-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  padding: 2px 8px 2px 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--removed);
+  cursor: pointer;
+}
+
+.markdown-preview .md-del-toggle:hover {
+  text-decoration: underline;
+}
+
+.markdown-preview .md-del-icon {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--removed);
+}
+
+.markdown-preview .md-del-lines {
+  margin-top: 4px;
+  border: 1px solid var(--diff-del-gutter);
+  border-radius: 6px;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 21px;
+}
+
+.markdown-preview .md-del-line {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  background: var(--diff-del-bg);
+}
+
+.markdown-preview .md-del-lineno {
+  text-align: right;
+  padding-right: 8px;
+  background: var(--diff-del-gutter);
+  color: var(--text);
+}
+
+.markdown-preview .md-del-content {
+  padding: 0 12px 0 8px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
 }
 
 /* --- M5: comment lifecycle ------------------------------------------- */

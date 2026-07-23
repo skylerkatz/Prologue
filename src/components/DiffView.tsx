@@ -14,7 +14,12 @@ import {
   useVirtualizer,
   type Range,
 } from "@tanstack/react-virtual";
-import { errorText, getContextLines, getFileDiff } from "../ipc";
+import {
+  errorText,
+  getContextLines,
+  getFileContent,
+  getFileDiff,
+} from "../ipc";
 import { guardReason, type GuardReason } from "../diff/guards";
 import { segmentLine } from "../diff/segments";
 import { detectLang } from "../highlight/lang";
@@ -28,6 +33,7 @@ import {
   initialFileState,
   lineNumber,
   lineSide,
+  previewEligible,
   reviewedFlips,
   rowKey,
   type ComposerLocation,
@@ -39,6 +45,7 @@ import {
   nextCommentTarget,
   nextUnviewedPath,
 } from "../diff/keyboardNav";
+import { firstChangedLine, markersFor } from "../diff/markers";
 import type {
   AnchorStatus,
   Comment,
@@ -60,6 +67,7 @@ import {
   type DraftStore,
 } from "./Comments";
 import { Chevron } from "./Chevron";
+import { MarkdownPreview } from "./MarkdownPreview";
 import { useCopyPath } from "./useCopyPath";
 
 /** Parallel `get_file_diff` calls; each recomputes the repo diff in Rust. */
@@ -77,7 +85,8 @@ const hunkKeyFile = (key: string): string =>
   key.slice(0, key.lastIndexOf("\u0000"));
 
 /** Reviewed files start collapsed; "changed since review" files start
- * expanded — they need re-reviewing. */
+ * expanded — they need re-reviewing. Markdown documents start in the
+ * rendered preview. */
 function initialStates(
   files: FileSummary[],
   reviewStates: ReadonlyMap<string, FileReviewState>,
@@ -85,7 +94,10 @@ function initialStates(
   return new Map(
     files.map((f) => [
       f.path,
-      initialFileState(reviewStates.get(f.path) !== "reviewed"),
+      initialFileState(
+        reviewStates.get(f.path) !== "reviewed",
+        previewEligible(f),
+      ),
     ]),
   );
 }
@@ -191,6 +203,8 @@ export function DiffView({
   // resolved fetch whose key was pruned is stale and never applied.
   const requested = useRef(new Set<string>());
   const activeLoads = useRef(0);
+  // Same dedupe scheme for preview content fetches (`fileKey`-keyed).
+  const contentRequested = useRef(new Set<string>());
   // In-progress comment text; survives virtualized rows unmounting.
   const drafts = useRef<DraftStore>(new Map());
   // Live drag state + the fixed end of the selection; refs so the gutter
@@ -206,6 +220,15 @@ export function DiffView({
   const selectionRef = useRef(selection);
   const composerRef = useRef(composer);
   composerRef.current = composer;
+  // Mirror for handlers (jumpToSource, composeAtCursor) that need the
+  // current view states without churning their useCallback identities.
+  const statesRef = useRef(states);
+  statesRef.current = states;
+  // A source line to scroll to once `rows` has rebuilt with the file back
+  // in source view; the auto-flip counterpart of pendingScrollPath.
+  const pendingScrollLine = useRef<{ path: string; line: number } | null>(
+    null,
+  );
 
   const applySelection = useCallback((sel: LineSelection | null) => {
     selectionRef.current = sel;
@@ -232,6 +255,7 @@ export function DiffView({
     setSynced({ summary, params });
     if (paramsChanged) {
       requested.current = new Set();
+      contentRequested.current = new Set();
       highlightRequested.current = new Set();
       drafts.current = new Map();
       dragRef.current = null;
@@ -263,7 +287,10 @@ export function DiffView({
         } else {
           nextStates.set(
             file.path,
-            initialFileState(reviewStates.get(file.path) !== "reviewed"),
+            initialFileState(
+              reviewStates.get(file.path) !== "reviewed",
+              previewEligible(file),
+            ),
           );
         }
       }
@@ -271,6 +298,9 @@ export function DiffView({
       const valid = new Set(summary.files.map(fileKey));
       requested.current = new Set(
         [...requested.current].filter((k) => valid.has(k)),
+      );
+      contentRequested.current = new Set(
+        [...contentRequested.current].filter((k) => valid.has(k)),
       );
       highlightRequested.current = new Set(
         [...highlightRequested.current].filter((k) =>
@@ -432,11 +462,111 @@ export function DiffView({
     [repoPath, base, head, mode, ignoreWhitespace, updateState],
   );
 
+  // Full new-side text for a file's rendered preview; same stale-result
+  // discipline as loadFile (a pruned key means the file changed in flight).
+  const loadFileContent = useCallback(
+    (file: FileSummary) => {
+      const key = fileKey(file);
+      if (contentRequested.current.has(key)) {
+        return;
+      }
+      contentRequested.current.add(key);
+      getFileContent(repoPath, head, mode, file.path)
+        .then((content) => {
+          if (!contentRequested.current.has(key)) {
+            return;
+          }
+          updateState(file.path, (s) => ({
+            ...s,
+            fileContent: content,
+            previewError: null,
+          }));
+        })
+        .catch((e: unknown) => {
+          contentRequested.current.delete(key);
+          updateState(file.path, (s) => ({ ...s, previewError: errorText(e) }));
+        });
+    },
+    [repoPath, head, mode, updateState],
+  );
+
   const toggleFile = useCallback(
     (path: string) => {
       updateState(path, (s) => ({ ...s, expanded: !s.expanded }));
     },
     [updateState],
+  );
+
+  // Flip a file between source diff and rendered preview. A line selection
+  // or line composer anchors to source rows that are about to disappear;
+  // drop them rather than leave them dangling.
+  const togglePreview = useCallback(
+    (path: string) => {
+      updateState(path, (s) => ({ ...s, previewMode: !s.previewMode }));
+      if (selectionRef.current?.path === path) {
+        dragRef.current = null;
+        anchorRef.current = null;
+        applySelection(null);
+      }
+      const pinned = composerRef.current;
+      if (pinned !== null && pinned.level === "line" && pinned.path === path) {
+        setComposer(null);
+      }
+    },
+    [updateState, applySelection],
+  );
+
+  // Auto-flip commenting: rich view is read-only, so a comment gesture
+  // there (clicking a marked block, the `c` key) lands the file back in
+  // source view at the corresponding new-side line with the composer open.
+  // Without hunks to target (added files, diff not loaded) it still flips,
+  // falling back to the file-level composer under the header.
+  const jumpToSource = useCallback(
+    (path: string, newLine: number) => {
+      const diff = statesRef.current.get(path)?.diff ?? null;
+      updateState(path, (s) =>
+        s.previewMode ? { ...s, previewMode: false } : s,
+      );
+      let target: { hi: number; line: number } | null = null;
+      if (diff !== null) {
+        for (let hi = 0; hi < diff.hunks.length; hi++) {
+          const hunk = diff.hunks[hi];
+          if (
+            hunk.newLines > 0 &&
+            newLine >= hunk.newStart &&
+            newLine < hunk.newStart + hunk.newLines
+          ) {
+            target = { hi, line: newLine };
+            break;
+          }
+        }
+      }
+      dragRef.current = null;
+      if (target === null) {
+        anchorRef.current = null;
+        applySelection(null);
+        setComposer({ level: "file", path });
+        pendingScrollPath.current = path;
+        return;
+      }
+      anchorRef.current = target.line;
+      applySelection({
+        path,
+        hi: target.hi,
+        side: "new",
+        start: target.line,
+        end: target.line,
+      });
+      setComposer({
+        level: "line",
+        path,
+        side: "new",
+        startLine: target.line,
+        endLine: target.line,
+      });
+      pendingScrollLine.current = { path, line: target.line };
+    },
+    [updateState, applySelection],
   );
 
   const forceLoadFile = useCallback(
@@ -780,12 +910,38 @@ export function DiffView({
 
   // Lazily fetch hunks for expanded files whose rows are in the viewport.
   // Runs after every render; the guards keep it a cheap no-op once loaded.
+  // Preview rows fetch the full new-side document instead of hunks (outside
+  // the diff-load concurrency budget — a content read is a plain file read).
   useEffect(() => {
     for (const item of items) {
-      if (activeLoads.current >= MAX_CONCURRENT_LOADS) {
-        break;
-      }
       const row = rows[item.index];
+      if (row.kind === "preview") {
+        const file = summary.files[row.fi];
+        const state = states.get(file.path);
+        if (state === undefined) {
+          continue;
+        }
+        if (state.fileContent === null && state.previewError === null) {
+          loadFileContent(file);
+        }
+        // Change markers intersect the hunks with the rendered blocks, so
+        // the preview wants the diff too (added files render clean without
+        // it). Same guard/budget rules as source view; until it lands the
+        // document just shows unmarked.
+        if (
+          file.status !== "added" &&
+          state.diff === null &&
+          state.error === null &&
+          activeLoads.current < MAX_CONCURRENT_LOADS &&
+          (guardReason(file) === null || state.forceLoad)
+        ) {
+          loadFile(file);
+        }
+        continue;
+      }
+      if (activeLoads.current >= MAX_CONCURRENT_LOADS) {
+        continue;
+      }
       if (row.kind !== "file" && row.kind !== "skeleton") {
         continue;
       }
@@ -794,6 +950,7 @@ export function DiffView({
       if (
         state === undefined ||
         !state.expanded ||
+        state.previewMode ||
         state.diff !== null ||
         state.error !== null
       ) {
@@ -854,14 +1011,33 @@ export function DiffView({
 
   // Deferred scroll after a mark-reviewed collapse: waits for `rows` to
   // rebuild without the collapsed file's body so the header's new index
-  // (and the shrunken offsets) are what gets scrolled to.
+  // (and the shrunken offsets) are what gets scrolled to. An auto-flip
+  // targets a specific source line the same way — its row only exists
+  // once the rebuild has swapped the preview row for the hunks.
   useEffect(() => {
+    const lineTarget = pendingScrollLine.current;
+    if (lineTarget !== null) {
+      pendingScrollLine.current = null;
+      const index = rows.findIndex(
+        (row) =>
+          row.kind === "line" &&
+          row.hi !== undefined &&
+          summary.files[row.fi].path === lineTarget.path &&
+          row.line.newLineno === lineTarget.line,
+      );
+      if (index >= 0) {
+        virtualizer.scrollToIndex(index, { align: "center" });
+      } else {
+        scrollToPath(lineTarget.path);
+      }
+      return;
+    }
     const path = pendingScrollPath.current;
     if (path !== null) {
       pendingScrollPath.current = null;
       scrollToPath(path);
     }
-  }, [rows, scrollToPath]);
+  }, [rows, scrollToPath, summary.files, virtualizer]);
 
   const moveCursor = useCallback(
     (delta: number) => {
@@ -930,7 +1106,9 @@ export function DiffView({
   );
 
   // `c` comments on the current line selection if there is one, else on the
-  // file the keyboard cursor sits on.
+  // file the keyboard cursor sits on. On a file showing the rendered
+  // preview it auto-flips to source first, targeting the first changed
+  // line — commenting is a source-view activity.
   const composeAtCursor = useCallback(() => {
     const sel = selectionRef.current;
     if (sel !== null) {
@@ -944,10 +1122,22 @@ export function DiffView({
       return;
     }
     const path = cursorPathRef.current;
-    if (path !== null) {
-      addFileComment(path);
+    if (path === null) {
+      return;
     }
-  }, [addFileComment]);
+    const state = statesRef.current.get(path);
+    if (state !== undefined && state.previewMode) {
+      const line =
+        state.diff !== null ? firstChangedLine(markersFor(state.diff)) : null;
+      if (line !== null) {
+        jumpToSource(path, line);
+        return;
+      }
+      updateState(path, (s) => ({ ...s, previewMode: false }));
+      pendingScrollPath.current = path;
+    }
+    addFileComment(path);
+  }, [addFileComment, jumpToSource, updateState]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -1072,6 +1262,8 @@ export function DiffView({
               anchorStatuses={anchorStatuses}
               reviewStates={reviewStates}
               onToggle={toggleFile}
+              onTogglePreview={togglePreview}
+              onJumpToSource={jumpToSource}
               onToggleReviewed={onToggleReviewed}
               onLoad={forceLoadFile}
               onCopyPath={copyPath}
@@ -1117,6 +1309,8 @@ interface RowContentProps {
   anchorStatuses: ReadonlyMap<number, AnchorStatus>;
   reviewStates: ReadonlyMap<string, FileReviewState>;
   onToggle: (path: string) => void;
+  onTogglePreview: (path: string) => void;
+  onJumpToSource: (path: string, newLine: number) => void;
   onToggleReviewed: (path: string) => void;
   onLoad: (path: string) => void;
   onCopyPath: (path: string, absolute: boolean) => void;
@@ -1154,6 +1348,8 @@ const RowContent = memo(function RowContent({
   anchorStatuses,
   reviewStates,
   onToggle,
+  onTogglePreview,
+  onJumpToSource,
   onToggleReviewed,
   onLoad,
   onCopyPath,
@@ -1179,7 +1375,10 @@ const RowContent = memo(function RowContent({
           expanded={states.get(path)?.expanded ?? true}
           focused={cursorPath === path}
           reviewState={reviewStates.get(path)}
+          previewEligible={previewEligible(files[row.fi])}
+          previewMode={states.get(path)?.previewMode ?? false}
           onToggle={() => onToggle(path)}
+          onTogglePreview={() => onTogglePreview(path)}
           onToggleReviewed={() => onToggleReviewed(path)}
           onAddComment={() => onAddFileComment(path)}
           onCopyPath={(absolute) => onCopyPath(path, absolute)}
@@ -1218,6 +1417,35 @@ const RowContent = memo(function RowContent({
       );
     case "hunk":
       return <div className="hunk-header">{row.header}</div>;
+    case "preview": {
+      const state = states.get(path);
+      if (state?.previewError != null) {
+        return <div className="diff-file-error">{state.previewError}</div>;
+      }
+      if (state?.fileContent == null) {
+        return (
+          <div className="diff-skeleton" style={{ height: 96 }}>
+            Rendering preview…
+          </div>
+        );
+      }
+      // Added files render clean — everything is new, bars are noise. A
+      // still-loading (or guarded) diff renders clean too; the markers pop
+      // in when the hunks land. markersFor caches per diff object, so the
+      // preview's memo only breaks when the content identity does.
+      const markers =
+        files[row.fi].status === "added" || state.diff === null
+          ? null
+          : markersFor(state.diff);
+      return (
+        <MarkdownPreview
+          content={state.fileContent}
+          path={path}
+          markers={markers}
+          onJumpToSource={onJumpToSource}
+        />
+      );
+    }
     case "line": {
       const selected =
         selection !== null &&
@@ -1310,7 +1538,10 @@ function FileHeaderRow({
   expanded,
   focused,
   reviewState,
+  previewEligible,
+  previewMode,
   onToggle,
+  onTogglePreview,
   onToggleReviewed,
   onAddComment,
   onCopyPath,
@@ -1320,7 +1551,11 @@ function FileHeaderRow({
   /** The keyboard cursor (j/k) sits on this file. */
   focused: boolean;
   reviewState: FileReviewState | undefined;
+  /** Markdown document with a new side: show the source/rich toggle. */
+  previewEligible: boolean;
+  previewMode: boolean;
   onToggle: () => void;
+  onTogglePreview: () => void;
   onToggleReviewed: () => void;
   onAddComment: () => void;
   /** Double-click on the file name copies its path; ⌥ for absolute. */
@@ -1368,6 +1603,40 @@ function FileHeaderRow({
           Changed since review
         </span>
       )}
+      {previewEligible && (
+        <div className="view-toggle" role="radiogroup" aria-label="File view">
+          <button
+            type="button"
+            role="radio"
+            aria-checked={!previewMode}
+            className={`view-option${previewMode ? "" : " selected"}`}
+            title="Show the source diff"
+            onClick={() => {
+              if (previewMode) {
+                onTogglePreview();
+              }
+            }}
+          >
+            <span className="view-option-source" aria-hidden="true">
+              {"<>"}
+            </span>
+          </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={previewMode}
+            className={`view-option${previewMode ? " selected" : ""}`}
+            title="Show the rendered document"
+            onClick={() => {
+              if (!previewMode) {
+                onTogglePreview();
+              }
+            }}
+          >
+            <PageIcon />
+          </button>
+        </div>
+      )}
       <button
         type="button"
         className="add-comment-button"
@@ -1398,6 +1667,36 @@ function FileHeaderRow({
         Viewed
       </label>
     </div>
+  );
+}
+
+/** Page-with-fold glyph for the rich side of the view toggle; a stroked
+ * SVG for the same reason as Chevron (no icon set, crisp at 12px). */
+function PageIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+      <path
+        d="M3 1.25 h4 L9.25 3.5 v7.25 h-6.25 z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M7 1.25 V3.5 h2.25"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.1"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M4.75 6.25 h2.75 M4.75 8.25 h2.75"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.1"
+        strokeLinecap="round"
+      />
+    </svg>
   );
 }
 

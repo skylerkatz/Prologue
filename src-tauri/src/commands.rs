@@ -72,6 +72,18 @@ pub fn get_context_lines(
     diff::get_context_lines(repo_path, head, mode, path, start, end)
 }
 
+/// Full new-side text of a file — head tree, index, or working tree
+/// depending on `mode` — for the rendered markdown preview.
+#[tauri::command]
+pub fn get_file_content(
+    repo_path: String,
+    head: String,
+    mode: DiffMode,
+    path: String,
+) -> Result<String, String> {
+    diff::get_file_content(repo_path, head, mode, path)
+}
+
 /// Resume the active review for (repo, branch), creating one if none exists.
 /// The stored base ref and mode follow the caller's current choice. A branch
 /// already merged into the base gets no new active review — its existing

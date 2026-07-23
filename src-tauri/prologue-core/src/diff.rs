@@ -439,6 +439,23 @@ pub fn get_context_lines(
     })
 }
 
+/// The full new-side text of a file — branch tip, index, or working tree
+/// depending on `mode`. Backs the rendered markdown preview, which needs
+/// the whole document rather than hunks.
+pub fn get_file_content(
+    repo_path: String,
+    head: String,
+    mode: DiffMode,
+    path: String,
+) -> Result<String, String> {
+    let repo = open_git_repo(&repo_path)?;
+    let content = new_side_content(&repo, &head, mode, &path)?;
+    if content.contains(&0) {
+        return Err(format!("Cannot render a binary file: {path}"));
+    }
+    Ok(text_of(&content))
+}
+
 /// Content identity of a delta's two sides plus the new-side file mode
 /// (catches chmod-only changes). In All mode libgit2 reports zero OIDs for
 /// workdir-side entries, so hash the bytes ourselves (no ODB write). Read
@@ -1137,6 +1154,59 @@ mod tests {
             "nope.txt".into(),
             1,
             5,
+        )
+        .unwrap_err();
+        assert!(err.contains("File not found"), "{err}");
+    }
+
+    #[test]
+    fn file_content_returns_the_whole_new_side() {
+        let fixture = context_fixture();
+        let content = get_file_content(
+            fixture.path(),
+            "feature".into(),
+            DiffMode::Committed,
+            "big.txt".into(),
+        )
+        .unwrap();
+
+        assert_eq!(content.lines().count(), 20);
+        assert!(content.starts_with("line 1\n"));
+        assert!(content.contains("line 10 CHANGED\n"));
+    }
+
+    #[test]
+    fn file_content_reads_the_working_tree_in_all_mode() {
+        let fixture = context_fixture();
+        fixture.write("big.txt", "workdir only\n");
+
+        let committed = get_file_content(
+            fixture.path(),
+            "feature".into(),
+            DiffMode::Committed,
+            "big.txt".into(),
+        )
+        .unwrap();
+        assert!(committed.starts_with("line 1\n"));
+
+        let workdir = get_file_content(
+            fixture.path(),
+            "feature".into(),
+            DiffMode::All,
+            "big.txt".into(),
+        )
+        .unwrap();
+        assert_eq!(workdir, "workdir only\n");
+    }
+
+    #[test]
+    fn file_content_rejects_a_missing_path() {
+        let fixture = context_fixture();
+        let err = get_file_content(
+            fixture.path(),
+            "feature".into(),
+            DiffMode::Committed,
+            "nope.md".into(),
         )
         .unwrap_err();
         assert!(err.contains("File not found"), "{err}");
