@@ -1,0 +1,36 @@
+src-tauri/capabilities/default.json
+  s_74e60502796652::t_0e53064e929646 10
+src-tauri/src/lib.rs
+  s_74e60502796652::t_97979de5c76a9a 60-69,77
+  s_74e60502796652::t_74b21add0c3a10 211-213
+  s_74e60502796652::t_d98d6f0f8ea2d8 19-20
+src-tauri/src/events.rs
+  s_74e60502796652::t_aeb26ffa84718e 18-19
+  s_74e60502796652::t_d1035ed224c93c 42-44
+  s_74e60502796652::t_b0f235275675bb 51
+src/updater.ts
+  s_74e60502796652::t_cd8cd047c1f11b 20-27
+src/App.tsx
+  s_74e60502796652::t_47b99b02258d9d 16
+  s_74e60502796652::t_f67f64a3d6c36f 22-26
+  s_74e60502796652::t_fbc096189bbd9c 202-225
+  s_74e60502796652::t_18122b9cbca1d2 2-3
+src/generated/events.ts
+  s_74e60502796652::t_89395b6f37a2b2 16-17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "f103e2b76bef99c51e4a824882e54f4a6df81c7a",
+  "prompts": {},
+  "sessions": {
+    "s_74e60502796652": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8ea87d73-f407-4cde-bf47-e90cab1dd76b",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
