@@ -46,7 +46,9 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "externalBin": ["binaries/prologue"],
+    "externalBin": [
+      "binaries/prologue"
+    ],
     "macOS": {
       "signingIdentity": "-"
     },
