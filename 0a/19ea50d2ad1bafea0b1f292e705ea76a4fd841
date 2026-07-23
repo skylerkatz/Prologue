@@ -1,0 +1,19 @@
+src/components/DiffView.tsx
+  s_a5f0d7ef26dace::t_a7312a4ddcc91c 1208-1213
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "0a19ea50d2ad1bafea0b1f292e705ea76a4fd841",
+  "prompts": {},
+  "sessions": {
+    "s_a5f0d7ef26dace": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "022a4b6e-e34a-416c-ab8c-10a604cec66f",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
