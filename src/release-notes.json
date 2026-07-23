@@ -1,0 +1,27 @@
+[
+  {
+    "version": "0.2.1",
+    "date": "2026-07-23",
+    "notes": "## New\n\n- Viewed files expand automatically when you click them in the sidebar or jump to them with ⌘P"
+  },
+  {
+    "version": "0.2.0",
+    "date": "2026-07-23",
+    "notes": "## New\n\n- Rich markdown diffs — markdown files can be reviewed as a rendered preview with change markers instead of raw text\n\n## Fixed\n\n- The Install 'prologue' Command Line Tool action works again in packaged builds"
+  },
+  {
+    "version": "0.1.2",
+    "date": "2026-07-23",
+    "notes": "## New\n\n- Check for Updates… in the Prologue menu"
+  },
+  {
+    "version": "0.1.1",
+    "date": "2026-07-23",
+    "notes": "## New\n\n- The welcome screen shows the app version"
+  },
+  {
+    "version": "0.1.0",
+    "date": "2026-07-23",
+    "notes": "The first release of Prologue — a macOS app for reviewing git diffs before they leave your machine.\n\n- Review any branch, base, or working-tree diff with virtualized rendering, syntax highlighting, and word-level change highlights\n- Leave inline comments and threaded replies anchored to diff lines; threads re-anchor as the code moves and archive with the review\n- Generated review guides that walk the diff in a narrative order\n- `prologue` CLI (bundled, installable from the app menu) for reading reviews and replying from the terminal or an agent\n- Keyboard-first navigation: j/k, n/p, ⌘P file jump, and a ? shortcut cheat sheet\n- Auto-updates via GitHub Releases"
+  }
+]

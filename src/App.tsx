@@ -16,6 +16,7 @@ import {
   MENU_CHECK_UPDATES_EVENT,
   MENU_HIDE_RESOLVED_EVENT,
   MENU_REFRESH_EVENT,
+  MENU_WHATS_NEW_EVENT,
   REPO_CHANGED_EVENT,
 } from "./generated/events";
 import { addRecentRepo, getRecentRepos, removeRecentRepo } from "./recents";
@@ -27,6 +28,7 @@ import {
 import type { Update } from "@tauri-apps/plugin-updater";
 import type { BranchList, RepoInfo, DiffMode } from "./types";
 import { ReviewShell } from "./components/ReviewShell";
+import { WhatsNew, hasNotesFor } from "./components/WhatsNew";
 import { TitleBar } from "./components/TitleBar";
 import { WelcomePage } from "./components/WelcomePage";
 import "./App.css";
@@ -44,6 +46,9 @@ const MODE_KEY = "prologue.mode";
 
 /** localStorage key for the "Hide Resolved Comments" preference. */
 const HIDE_RESOLVED_KEY = "prologue.hideResolvedComments";
+
+/** localStorage key for the last version whose release notes were shown. */
+const LAST_SEEN_VERSION_KEY = "prologue.lastSeenVersion";
 
 /** The stored mode, or "committed" if nothing valid is stored. */
 function readStoredMode(): DiffMode {
@@ -72,6 +77,7 @@ function App() {
   const [updateState, setUpdateState] = useState<
     "idle" | "installing" | "failed"
   >("idle");
+  const [showWhatsNew, setShowWhatsNew] = useState(false);
 
   useEffect(() => {
     getRecentRepos()
@@ -83,6 +89,19 @@ function App() {
   // and on network failure, so the banner only ever appears on a real hit.
   useEffect(() => {
     checkForUpdate().then(setUpdate);
+  }, []);
+
+  // Open What's New once after an update. A missing stored version means a
+  // fresh install (or first launch with this feature): record it silently
+  // rather than greeting a new user with a changelog.
+  useEffect(() => {
+    getVersion().then((version) => {
+      const seen = localStorage.getItem(LAST_SEEN_VERSION_KEY);
+      localStorage.setItem(LAST_SEEN_VERSION_KEY, version);
+      if (seen !== null && seen !== version && hasNotesFor(version)) {
+        setShowWhatsNew(true);
+      }
+    });
   }, []);
 
   async function installUpdate() {
@@ -223,6 +242,11 @@ function App() {
     })();
   });
 
+  // Prologue > What's New… — reopen the release notes on demand.
+  useTauriEvent(MENU_WHATS_NEW_EVENT, () => {
+    setShowWhatsNew(true);
+  });
+
   return (
     <div className="app-shell">
       <TitleBar branch={openState ? branch : null} />
@@ -282,6 +306,7 @@ function App() {
           }}
         />
       )}
+      {showWhatsNew && <WhatsNew onClose={() => setShowWhatsNew(false)} />}
     </div>
   );
 }

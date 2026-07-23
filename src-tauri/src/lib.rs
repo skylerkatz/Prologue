@@ -18,6 +18,8 @@ const MENU_HIDE_RESOLVED_ID: &str = "view-hide-resolved";
 const MENU_SHOW_SHORTCUTS_ID: &str = "help-shortcuts";
 /// Menu item id for the Prologue > Check for Updates… entry.
 const MENU_CHECK_UPDATES_ID: &str = "check-updates";
+/// Menu item id for the Prologue > What's New… entry.
+const MENU_WHATS_NEW_ID: &str = "whats-new";
 
 /// Handles to the View and Help menu items that only make sense with a
 /// repo open; the frontend enables them on repo open and disables them on
@@ -67,6 +69,16 @@ fn setup_menu(app: &tauri::App) -> tauri::Result<()> {
             None::<&str>,
         )?;
         app_submenu.insert(&check_updates, 1)?;
+        // Next to the update flow: the notes it installs live here too.
+        // Always enabled — the overlay works on the welcome screen.
+        let whats_new = MenuItem::with_id(
+            app,
+            MENU_WHATS_NEW_ID,
+            "What's New…",
+            true,
+            None::<&str>,
+        )?;
+        app_submenu.insert(&whats_new, 2)?;
         let item = MenuItem::with_id(
             app,
             "install-cli",
@@ -74,7 +86,7 @@ fn setup_menu(app: &tauri::App) -> tauri::Result<()> {
             true,
             None::<&str>,
         )?;
-        app_submenu.insert(&item, 2)?;
+        app_submenu.insert(&item, 3)?;
     }
     // Help > Keyboard Shortcuts opens the same overlay as the in-app `?`
     // key. No accelerator: a menu accelerator would swallow the keystroke
@@ -210,6 +222,9 @@ pub fn run() {
             }
             MENU_CHECK_UPDATES_ID => {
                 let _ = app.emit(events::MENU_CHECK_UPDATES, ());
+            }
+            MENU_WHATS_NEW_ID => {
+                let _ = app.emit(events::MENU_WHATS_NEW, ());
             }
             MENU_HIDE_RESOLVED_ID => {
                 // macOS auto-toggles the check state before the event

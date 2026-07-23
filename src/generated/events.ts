@@ -15,3 +15,5 @@ export const MENU_HIDE_RESOLVED_EVENT = "menu-hide-resolved";
 export const MENU_SHOW_SHORTCUTS_EVENT = "menu-show-shortcuts";
 /** Prologue > Check for Updates… chosen. */
 export const MENU_CHECK_UPDATES_EVENT = "menu-check-updates";
+/** Prologue > What's New… chosen. */
+export const MENU_WHATS_NEW_EVENT = "menu-whats-new";

@@ -31,6 +31,26 @@ if [[ -n "$(git status --porcelain)" ]]; then
   exit 1
 fi
 
+# Release notes are authored ahead of time (see .claude/skills/release-notes)
+# and must already be committed — the clean-tree check above enforces that.
+# The entry becomes the GitHub Release body and the updater manifest notes.
+NOTES_FILE="$(mktemp -t prologue-notes)"
+trap 'rm -f "$NOTES_FILE"' EXIT
+if ! node -e '
+  const fs = require("fs");
+  const [version, out] = process.argv.slice(1);
+  let list = [];
+  try { list = JSON.parse(fs.readFileSync("src/release-notes.json", "utf8")); } catch {}
+  const entry = list.find((e) => e.version === version);
+  const notes = (entry?.notes ?? "").trim();
+  if (!notes) process.exit(1);
+  fs.writeFileSync(out, notes + "\n");
+' "$VERSION" "$NOTES_FILE"; then
+  echo "no release notes for v$VERSION in src/release-notes.json" >&2
+  echo "run /release-notes $VERSION in Claude, review, and commit the entry first" >&2
+  exit 1
+fi
+
 BRANCH="$(git branch --show-current)"
 if [[ "$BRANCH" != "main" ]]; then
   echo "warning: releasing from branch '$BRANCH', not main" >&2
@@ -69,9 +89,10 @@ done
 MANIFEST="$BUNDLE/latest.json"
 node -e '
   const fs = require("fs");
-  const [version, sigPath, out] = process.argv.slice(1);
+  const [version, sigPath, notesPath, out] = process.argv.slice(1);
   fs.writeFileSync(out, JSON.stringify({
     version,
+    notes: fs.readFileSync(notesPath, "utf8").trim(),
     pub_date: new Date().toISOString(),
     platforms: {
       "darwin-aarch64": {
@@ -80,7 +101,7 @@ node -e '
       },
     },
   }, null, 2) + "\n");
-' "$VERSION" "$SIG" "$MANIFEST"
+' "$VERSION" "$SIG" "$NOTES_FILE" "$MANIFEST"
 
 # No bump commit when re-releasing the version already in the files.
 if ! git diff --quiet package.json package-lock.json src-tauri/tauri.conf.json; then
@@ -93,7 +114,7 @@ gh release create "v$VERSION" \
   --repo "$REPO" \
   --target "$(git rev-parse HEAD)" \
   --title "Prologue v$VERSION" \
-  --generate-notes \
+  --notes-file "$NOTES_FILE" \
   "$DMG" "$TAR" "$SIG" "$MANIFEST"
 
 echo

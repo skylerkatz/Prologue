@@ -2040,6 +2040,91 @@ body.sidebar-resizing * {
   margin-top: 0.6rem;
 }
 
+/* --- What's New (release notes overlay) -------------------------------- */
+
+/* Same scrim/panel treatment as the archive browser. */
+.whats-new-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay-scrim);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 64px 16px 32px;
+  z-index: 10;
+}
+
+.whats-new-panel {
+  width: min(720px, 100%);
+  max-height: 80vh;
+  overflow-y: auto;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 16px 16px;
+  box-shadow: var(--shadow-menu);
+}
+
+.whats-new-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Overlay heading in the brand serif, like .archive-title. */
+.whats-new-title {
+  font-family: var(--font-serif);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.whats-new-entry + .whats-new-entry {
+  border-top: 1px solid var(--border);
+}
+
+.whats-new-version {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 16px 0 0;
+  font-family: var(--font-serif);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.whats-new-date {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+/* The panel provides chrome; strip the standalone-document styling. */
+.whats-new-notes {
+  padding: 4px 0 14px;
+  max-width: none;
+  background: transparent;
+}
+
+/* Notes use ## sections (New / Fixed / Other); render them as small
+   labels under the version instead of document headings, so the version
+   line stays the strongest element — same treatment as
+   .shortcut-section-title. */
+.whats-new-notes h2 {
+  font-family: inherit;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border-bottom: none;
+  padding-bottom: 0;
+  margin: 1.2em 0 0.4em;
+}
+
 /* --- Comment replies (flat threads) ----------------------------------- */
 
 /* Replies indent once (24px) under their root wherever the thread renders —

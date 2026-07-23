@@ -17,6 +17,8 @@ pub const MENU_HIDE_RESOLVED: &str = "menu-hide-resolved";
 pub const MENU_SHOW_SHORTCUTS: &str = "menu-show-shortcuts";
 /// Prologue > Check for Updates… chosen.
 pub const MENU_CHECK_UPDATES: &str = "menu-check-updates";
+/// Prologue > What's New… chosen.
+pub const MENU_WHATS_NEW: &str = "menu-whats-new";
 
 #[cfg(test)]
 mod tests {
@@ -41,7 +43,9 @@ mod tests {
              /** Help > Keyboard Shortcuts chosen. */\n\
              export const MENU_SHOW_SHORTCUTS_EVENT = \"{menu_show_shortcuts}\";\n\
              /** Prologue > Check for Updates… chosen. */\n\
-             export const MENU_CHECK_UPDATES_EVENT = \"{menu_check_updates}\";\n",
+             export const MENU_CHECK_UPDATES_EVENT = \"{menu_check_updates}\";\n\
+             /** Prologue > What's New… chosen. */\n\
+             export const MENU_WHATS_NEW_EVENT = \"{menu_whats_new}\";\n",
             repo_changed = super::REPO_CHANGED,
             comments_changed = super::COMMENTS_CHANGED,
             menu_view_archived = super::MENU_VIEW_ARCHIVED,
@@ -49,6 +53,7 @@ mod tests {
             menu_hide_resolved = super::MENU_HIDE_RESOLVED,
             menu_show_shortcuts = super::MENU_SHOW_SHORTCUTS,
             menu_check_updates = super::MENU_CHECK_UPDATES,
+            menu_whats_new = super::MENU_WHATS_NEW,
         );
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../src/generated/events.ts");
         let current = std::fs::read_to_string(&path).unwrap_or_default();
