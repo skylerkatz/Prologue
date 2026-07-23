@@ -1,0 +1,23 @@
+package-lock.json
+  s_a5f0d7ef26dace::t_40baf716a04c05 3,9
+package.json
+  s_a5f0d7ef26dace::t_0c795870e2dcee 4
+src-tauri/tauri.conf.json
+  s_a5f0d7ef26dace::t_34e79765089cdf 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "0c82c82addeca558cc96e0441d5664999e1f2c18",
+  "prompts": {},
+  "sessions": {
+    "s_a5f0d7ef26dace": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "022a4b6e-e34a-416c-ab8c-10a604cec66f",
+        "model": "unknown"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
