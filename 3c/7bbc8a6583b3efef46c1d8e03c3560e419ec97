@@ -1,0 +1,45 @@
+src-tauri/tauri.release.conf.json
+  s_74e60502796652::t_8779172325049a 1-6
+src-tauri/capabilities/default.json
+  s_74e60502796652::t_715749fc6da1ef 10-12
+src/App.css
+  s_74e60502796652::t_8b028d894793e2 121-151
+src-tauri/tauri.conf.json
+  s_74e60502796652::t_ddc502a213bde4 38-45
+src/App.tsx
+  s_74e60502796652::t_77b4e3a328b9e9 65-68,76-92
+  s_74e60502796652::t_184fe0f0375b94 199-226
+  s_74e60502796652::t_b4e1020f73dfc2 20-21
+  s_74e60502796652::t_c4fa899c7f0f96 93
+scripts/release.sh
+  s_74e60502796652::t_9ada0e80f27efc 1-84,90-100
+  s_74e60502796652::t_1daa2770e6f9d7 85-89
+package.json
+  s_74e60502796652::t_f1622793a56b94 23,25
+src-tauri/Cargo.toml
+  s_74e60502796652::t_fe774430106d97 43,46
+src-tauri/src/lib.rs
+  s_74e60502796652::t_41129e592cc68a 148,150
+src/updater.ts
+  s_74e60502796652::t_14efc9e8cc084a 1-24
+package-lock.json
+  s_74e60502796652::t_9f7b162dc2386e 18,20,1572-1580,1590-1598
+src-tauri/Cargo.lock
+  s_74e60502796652::t_dafd8af5bee944 100-108,837-847,1162-1171,1801-1815,2107-2136,2397-2402,2827-2838,2989-2994,3021-3034,3352,3355,3541,3547-3549,3554,3590-3603,3657-3729,3745-3753,3811-3833,4065-4080,4205-4210,4305,4338-4348,4372,4551,4570-4579,4612-4644,4655,4678,4913-4922,5299-5304,5636-5644,5881-5889,6203,6267-6276,6402-6407,6441-6452
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "3c7bbc8a6583b3efef46c1d8e03c3560e419ec97",
+  "prompts": {},
+  "sessions": {
+    "s_74e60502796652": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8ea87d73-f407-4cde-bf47-e90cab1dd76b",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
