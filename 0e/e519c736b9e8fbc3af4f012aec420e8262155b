@@ -1,0 +1,19 @@
+src-tauri/tauri.conf.json
+  s_74e60502796652::t_4b989546d7dd10 49-51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "0ee519c736b9e8fbc3af4f012aec420e8262155b",
+  "prompts": {},
+  "sessions": {
+    "s_74e60502796652": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8ea87d73-f407-4cde-bf47-e90cab1dd76b",
+        "model": "unknown"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
