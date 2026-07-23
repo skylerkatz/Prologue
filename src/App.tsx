@@ -17,6 +17,8 @@ import {
   REPO_CHANGED_EVENT,
 } from "./generated/events";
 import { addRecentRepo, getRecentRepos, removeRecentRepo } from "./recents";
+import { checkForUpdate, installAndRelaunch } from "./updater";
+import type { Update } from "@tauri-apps/plugin-updater";
 import type { BranchList, RepoInfo, DiffMode } from "./types";
 import { ReviewShell } from "./components/ReviewShell";
 import { TitleBar } from "./components/TitleBar";
@@ -60,12 +62,34 @@ function App() {
   );
   const [refreshKey, setRefreshKey] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [update, setUpdate] = useState<Update | null>(null);
+  const [updateState, setUpdateState] = useState<
+    "idle" | "installing" | "failed"
+  >("idle");
 
   useEffect(() => {
     getRecentRepos()
       .then(setRecents)
       .catch(() => setRecents([]));
   }, []);
+
+  // One update check per launch; checkForUpdate resolves null in dev builds
+  // and on network failure, so the banner only ever appears on a real hit.
+  useEffect(() => {
+    checkForUpdate().then(setUpdate);
+  }, []);
+
+  async function installUpdate() {
+    if (update === null) {
+      return;
+    }
+    setUpdateState("installing");
+    try {
+      await installAndRelaunch(update);
+    } catch {
+      setUpdateState("failed");
+    }
+  }
 
   async function openRepoAt(path: string) {
     setError(null);
@@ -172,6 +196,34 @@ function App() {
   return (
     <div className="app-shell">
       <TitleBar branch={openState ? branch : null} />
+      {update !== null && (
+        <div className="update-banner" role="status">
+          <span className="update-banner-text">
+            {updateState === "failed"
+              ? "The update could not be installed. It will be retried on the next launch."
+              : `Prologue ${update.version} is available.`}
+          </span>
+          {updateState !== "failed" && (
+            <button
+              className="primary"
+              onClick={() => void installUpdate()}
+              disabled={updateState === "installing"}
+            >
+              {updateState === "installing"
+                ? "Installing…"
+                : "Restart to Update"}
+            </button>
+          )}
+          <button
+            className="update-banner-dismiss"
+            onClick={() => setUpdate(null)}
+            aria-label="Dismiss update notice"
+            disabled={updateState === "installing"}
+          >
+            ×
+          </button>
+        </div>
+      )}
       {!openState ? (
         <WelcomePage
           recents={recents}

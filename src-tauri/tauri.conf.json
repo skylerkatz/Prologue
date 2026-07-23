@@ -35,6 +35,14 @@
       }
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM2RDg1M0U4OUJFRDcxNjUKUldSbGNlMmI2RlBZTnFSdFBhQ2xITTdvTmZCa2h4TlFwUUFBUHBDY2pvdHY2TVp0Q250QU15N0wK",
+      "endpoints": [
+        "https://github.com/skylerkatz/Prologue/releases/latest/download/latest.json"
+      ]
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",
