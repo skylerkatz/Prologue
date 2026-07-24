@@ -1,0 +1,20 @@
+src/release-notes.json
+  s_e1268b28cd43ff::t_2c80374ffae0d7 3-6
+  s_e1268b28cd43ff::t_24f5c2672a1856 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "fab6f8ec0f1247ad4cf35a402993c7cc7b49342a",
+  "prompts": {},
+  "sessions": {
+    "s_e1268b28cd43ff": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2fec7265-1a6d-4714-9c4d-d97694290af3",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
