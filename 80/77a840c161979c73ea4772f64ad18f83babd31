@@ -1,0 +1,38 @@
+src-tauri/src/cli_install.rs
+  s_7ec1727a50f5e8::t_864d598b58a6cc 205-206,209-213
+src-tauri/src/lib.rs
+  s_7ec1727a50f5e8::t_5518facd7dffc5 212
+  s_7ec1727a50f5e8::t_61fe059eec3500 191-199
+  s_7ec1727a50f5e8::t_098ee4b2f22082 238-241
+  s_7ec1727a50f5e8::t_408122e5524bbf 328
+  s_7ec1727a50f5e8::t_b1698fec10c0a6 53-83
+package.json
+  s_7ec1727a50f5e8::t_6756a6a3c8fb67 23
+src-tauri/Cargo.toml
+  s_7ec1727a50f5e8::t_b592c6e8be8230 43-45
+src-tauri/capabilities/default.json
+  s_7ec1727a50f5e8::t_44c66ed21af747 11
+src/components/MarkdownPreview.tsx
+  s_7ec1727a50f5e8::t_451328d63f3e9f 47-66
+  s_7ec1727a50f5e8::t_92a1823890288a 2
+package-lock.json
+  s_7ec1727a50f5e8::t_4db9b9f4d64da9 18,1575-1583
+src-tauri/Cargo.lock
+  s_7ec1727a50f5e8::t_8a70d3b7a3c502 2056-2074,3008-3018,3382,4601-4622
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "8077a840c161979c73ea4772f64ad18f83babd31",
+  "prompts": {},
+  "sessions": {
+    "s_7ec1727a50f5e8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a64b52ed-4270-42f9-acc8-4f4734dc06a8",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
