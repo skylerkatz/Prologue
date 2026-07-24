@@ -68,8 +68,11 @@ pub fn render_text(review: &Review, guide: &Guide, summary: Option<&DiffSummary>
     // 01/05-style ordinals; the width grows with the section count.
     let width = total.to_string().len().max(2);
     for (index, section) in guide.sections.iter().enumerate() {
-        writeln!(out, "\n{:0width$}/{:0width$} {}", index + 1, total, section.title).unwrap();
-        for line in section.summary.lines() {
+        // Titles, summaries, and file paths are untrusted (LLM-generated or
+        // from the branch); keep terminal escapes out of them.
+        let title = crate::show::sanitize(&section.title);
+        writeln!(out, "\n{:0width$}/{:0width$} {}", index + 1, total, title).unwrap();
+        for line in crate::show::sanitize(&section.summary).lines() {
             if line.is_empty() {
                 out.push('\n');
             } else {
@@ -77,7 +80,7 @@ pub fn render_text(review: &Review, guide: &Guide, summary: Option<&DiffSummary>
             }
         }
         for path in &section.files {
-            writeln!(out, "  {}", file_line(path, summary)).unwrap();
+            writeln!(out, "  {}", crate::show::sanitize(&file_line(path, summary))).unwrap();
         }
     }
     out
@@ -222,6 +225,19 @@ mod tests {
         let text = render_text(&review, &guide, Some(&summary));
         assert!(text.contains("  M code.txt +2 -1"), "{text}");
         assert!(text.contains("\n  d.txt\n"), "{text}");
+    }
+
+    #[test]
+    fn render_text_escapes_control_sequences_in_guide_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let (_conn, _fixture, review, mut guide) = seeded(&dir);
+        guide.sections[0].title = "Title \u{1b}[2K wiped".to_owned();
+        guide.sections[0].summary = "Line\r\u{1b}[1A overwritten".to_owned();
+
+        let text = render_text(&review, &guide, None);
+        assert!(text.contains("Title ^[[2K wiped"), "{text}");
+        assert!(text.contains("  Line^M^[[1A overwritten"), "{text}");
+        assert!(!text.contains('\u{1b}'), "{text}");
     }
 
     #[test]

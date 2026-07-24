@@ -300,6 +300,7 @@ fn run(cli: Cli) -> Result<(), String> {
                 .map_err(|e| format!("Failed to write output: {e}"))?;
         }
         Command::Comment { review, file, line, side, body, author, json } => {
+            validate_author(&author)?;
             let review = resolve::resolve_review(&conn, review.as_deref(), &cwd)?;
             let (level, start_line, end_line, side) = match (&file, &line) {
                 (Some(_), Some(range)) => {
@@ -329,6 +330,7 @@ fn run(cli: Cli) -> Result<(), String> {
             print_created(&created, json)?;
         }
         Command::Reply { comment, body, author, json } => {
+            validate_author(&author)?;
             let parent_id = parse_comment_id(&comment)?;
             let review = review_of_comment(&conn, parent_id)?;
             let created = review::create_comment_impl(
@@ -358,6 +360,24 @@ fn parse_comment_id(arg: &str) -> Result<i64, String> {
         .unwrap_or(arg)
         .parse()
         .map_err(|_| format!("Cannot parse comment '{arg}' — expected an id like C12 or 12"))
+}
+
+/// `--author` / `PROLOGUE_AUTHOR` is caller-asserted free text that ends up
+/// in terminal output and exports; keep it printable and short.
+const AUTHOR_MAX_CHARS: usize = 64;
+
+fn validate_author(author: &str) -> Result<(), String> {
+    if author.chars().any(char::is_control) {
+        return Err("Invalid author: control characters are not allowed".to_owned());
+    }
+    let chars = author.chars().count();
+    if chars > AUTHOR_MAX_CHARS {
+        return Err(format!(
+            "Invalid author: {chars} characters is longer than the \
+             {AUTHOR_MAX_CHARS}-character limit"
+        ));
+    }
+    Ok(())
 }
 
 /// `42` or `42-45` → (42, 45).
@@ -542,6 +562,19 @@ mod tests {
             Command::Comment { author, .. } => assert_eq!(author, "skyler"),
             _ => panic!("parsed as the wrong command"),
         }
+    }
+
+    #[test]
+    fn author_validation_rejects_control_chars_and_overlong_names() {
+        validate_author("agent").unwrap();
+        validate_author("Skyler Katz").unwrap();
+        validate_author(&"a".repeat(AUTHOR_MAX_CHARS)).unwrap();
+        assert!(validate_author("\u{1b}[31magent").is_err());
+        assert!(validate_author("a\rb").is_err());
+        assert!(validate_author("a\nb").is_err());
+        assert!(validate_author("a\tb").is_err());
+        let err = validate_author(&"a".repeat(AUTHOR_MAX_CHARS + 1)).unwrap_err();
+        assert!(err.contains("64-character limit"), "{err}");
     }
 
     #[test]

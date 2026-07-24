@@ -1,9 +1,10 @@
 //! Opening the reviews database: read-only for the query commands,
-//! writable for comment/reply. The schema-version seatbelt lives in
-//! `prologue_core::db::open`, shared with the app.
+//! writable for comment/reply. The write path shares core's schema-version
+//! seatbelt (`prologue_core::db::open`); the read path opens at the SQLite
+//! level with `SQLITE_OPEN_READ_ONLY` and never migrates.
 
-use prologue_core::db::APP_IDENTIFIER;
-use prologue_core::rusqlite::Connection;
+use prologue_core::db::{APP_IDENTIFIER, SCHEMA_VERSION};
+use prologue_core::rusqlite::{Connection, OpenFlags};
 use std::path::{Path, PathBuf};
 
 /// The Prologue app's database (its Tauri app-data directory).
@@ -15,34 +16,81 @@ pub fn default_db_path() -> Result<PathBuf, String> {
         .join("reviews.db"))
 }
 
-/// Open `path` for reading. Core's open runs the shared schema seatbelt
-/// first: a database newer than this binary is refused, an older one is
-/// migrated by the same shared migrations the app runs. The returned
-/// connection is `query_only` — writes fail at the SQLite level.
+/// Open `path` for reading, with `SQLITE_OPEN_READ_ONLY` — the file cannot
+/// be modified, so a nominally-read command (`reviews`, `show`, …) can never
+/// migrate an older database in place (e.g. one shared with a running older
+/// app version). A schema-version mismatch in either direction is refused:
+/// a newer database needs a newer binary; an older one is migrated by the
+/// app or by a write command, never by a read.
 pub fn open_reviews_db(path: &Path) -> Result<Connection, String> {
-    let conn = open_checked(path)?;
-    conn.pragma_update(None, "query_only", "ON")
-        .map_err(|e| format!("Failed to make the connection read-only: {e}"))?;
+    ensure_exists(path)?;
+    let conn = Connection::open_with_flags(
+        path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(|e| format!("Failed to open review database: {e}"))?;
+    // The app may hold the write lock briefly (WAL checkpoint); wait a
+    // moment instead of failing immediately.
+    conn.busy_timeout(std::time::Duration::from_millis(500))
+        .map_err(|e| format!("Failed to set busy timeout: {e}"))?;
+    check_readable_version(&conn, path)?;
     Ok(conn)
 }
 
-/// Open `path` for the comment/reply commands: same seatbelt, but the
-/// connection can write. Lifecycle state stays untouchable regardless — the
-/// CLI has no commands that change it.
+/// Open `path` for the comment/reply commands: core's shared seatbelt (a
+/// newer schema is refused, an older one is migrated), and the connection
+/// can write. Lifecycle state stays untouchable regardless — the CLI has no
+/// commands that change it.
 pub fn open_reviews_db_for_write(path: &Path) -> Result<Connection, String> {
-    open_checked(path)
+    ensure_exists(path)?;
+    prologue_core::db::open(path)
 }
 
-fn open_checked(path: &Path) -> Result<Connection, String> {
-    // The CLI never creates the database (core's open would) — a missing
-    // file means the app has not run yet.
+// The CLI never creates the database (core's open would) — a missing file
+// means the app has not run yet.
+fn ensure_exists(path: &Path) -> Result<(), String> {
     if !path.is_file() {
         return Err(format!(
             "No reviews database at {} — launch the Prologue app once to create it.",
             path.display()
         ));
     }
-    prologue_core::db::open(path)
+    Ok(())
+}
+
+/// The read-path version seatbelt. Unlike core's (which migrates older
+/// schemas in place), a read-only connection cannot migrate, so both
+/// directions are refused with a pointer at what can.
+fn check_readable_version(conn: &Connection, path: &Path) -> Result<(), String> {
+    let db_err =
+        |e: prologue_core::rusqlite::Error| format!("Failed to read {}: {e}", path.display());
+    let has_migrations: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master
+             WHERE type = 'table' AND name = 'schema_migrations'",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(db_err)?;
+    if has_migrations == 0 {
+        return Err(format!("{} is not a Prologue reviews database", path.display()));
+    }
+    let version: i64 = conn
+        .query_row("SELECT COALESCE(MAX(version), 0) FROM schema_migrations", [], |r| r.get(0))
+        .map_err(db_err)?;
+    if version > SCHEMA_VERSION {
+        return Err(format!(
+            "This reviews database is newer than this build (database schema v{version}, \
+             this build knows v{SCHEMA_VERSION}) — update the Prologue app or rebuild prologue"
+        ));
+    }
+    if version < SCHEMA_VERSION {
+        return Err(format!(
+            "This reviews database has an older schema (v{version}; this build reads \
+             v{SCHEMA_VERSION}) — launch the Prologue app once to migrate it"
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -115,7 +163,7 @@ mod tests {
     }
 
     #[test]
-    fn migrates_an_older_database_in_place() {
+    fn the_read_path_refuses_an_older_database_untouched() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("reviews.db");
         // A v1-era database: only the first migration applied.
@@ -133,10 +181,22 @@ mod tests {
             .unwrap();
         }
 
-        // Not asserting the migrated shape here (core's tests cover it) —
-        // just that an older version passes the seatbelt and is brought up
-        // to the current version.
-        open_reviews_db(&path).unwrap();
+        // A read command must not silently upgrade a database it merely
+        // wanted to look at (it may belong to an older app version).
+        let err = open_reviews_db(&path).unwrap_err();
+        assert!(err.contains("older schema"), "{err}");
+        assert!(err.contains("launch the Prologue app"), "{err}");
+
+        // The refused file was not touched: still v1.
+        let conn = Connection::open(&path).unwrap();
+        let version: i64 = conn
+            .query_row("SELECT MAX(version) FROM schema_migrations", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, 1);
+        drop(conn);
+
+        // The write path keeps migrating — core's tests cover the shape.
+        open_reviews_db_for_write(&path).unwrap();
         let conn = Connection::open(&path).unwrap();
         let version: i64 = conn
             .query_row("SELECT MAX(version) FROM schema_migrations", [], |r| r.get(0))

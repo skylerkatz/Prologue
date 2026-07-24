@@ -63,6 +63,27 @@ fn location(thread: &Thread) -> String {
     out
 }
 
+/// Map C0 control characters (except `\n` and `\t`) and DEL to caret
+/// notation, and remaining controls (the C1 range) to U+FFFD, so review
+/// content cannot smuggle terminal escape sequences (SGR conceal, cursor
+/// movement, OSC clipboard/title writes) into the text output. The `--json`
+/// paths stay raw — serde_json escapes controls itself.
+pub(crate) fn sanitize(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '\n' | '\t' => out.push(c),
+            '\u{0}'..='\u{1f}' | '\u{7f}' => {
+                out.push('^');
+                out.push(char::from(c as u8 ^ 0x40));
+            }
+            c if c.is_control() => out.push(char::REPLACEMENT_CHARACTER),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
 fn push_indented(out: &mut String, text: &str, indent: &str) {
     for line in text.lines() {
         if line.is_empty() {
@@ -96,16 +117,17 @@ pub fn render_text(data: &ShowData) -> String {
 
     for thread in &data.threads {
         let root = &thread.root;
-        writeln!(out, "\nC{} [{}] {}", root.id, root.state.as_str(), location(thread)).unwrap();
+        writeln!(out, "\nC{} [{}] {}", root.id, root.state.as_str(), sanitize(&location(thread)))
+            .unwrap();
         if let Some(anchor) = &root.code_anchor {
             for line in &anchor.lines {
-                writeln!(out, "  > {line}").unwrap();
+                writeln!(out, "  > {}", sanitize(line)).unwrap();
             }
         }
-        push_indented(&mut out, &root.body, "  ");
+        push_indented(&mut out, &sanitize(&root.body), "  ");
         for reply in &thread.replies {
             writeln!(out, "  ↳ C{} (reply)", reply.id).unwrap();
-            push_indented(&mut out, &reply.body, "    ");
+            push_indented(&mut out, &sanitize(&reply.body), "    ");
         }
     }
     out
@@ -125,9 +147,9 @@ pub fn file_diff(review: &Review, path: &str) -> Result<FileDiff, String> {
 }
 
 pub fn render_file_diff_text(diff: &FileDiff) -> String {
-    let mut out = diff.path.clone();
+    let mut out = sanitize(&diff.path);
     if let Some(old) = &diff.old_path {
-        write!(out, " (renamed from {old})").unwrap();
+        write!(out, " (renamed from {})", sanitize(old)).unwrap();
     }
     out.push('\n');
     if diff.binary {
@@ -135,7 +157,7 @@ pub fn render_file_diff_text(diff: &FileDiff) -> String {
         return out;
     }
     for hunk in &diff.hunks {
-        out.push_str(&hunk.header);
+        out.push_str(&sanitize(&hunk.header));
         if !hunk.header.ends_with('\n') {
             out.push('\n');
         }
@@ -154,7 +176,13 @@ fn render_line(line: &DiffLine) -> String {
         LineKind::Addition => '+',
         LineKind::Deletion => '-',
     };
-    format!("{:>5} {:>5} {} {}", num(line.old_lineno), num(line.new_lineno), marker, line.content)
+    format!(
+        "{:>5} {:>5} {} {}",
+        num(line.old_lineno),
+        num(line.new_lineno),
+        marker,
+        sanitize(&line.content)
+    )
 }
 
 #[cfg(test)]
@@ -231,6 +259,43 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed["threads"][0]["root"]["startLine"], 8);
         assert_eq!(parsed["threads"][0]["orphaned"], false);
+    }
+
+    #[test]
+    fn sanitize_maps_terminal_controls_to_caret_notation() {
+        assert_eq!(sanitize("plain text"), "plain text");
+        assert_eq!(sanitize("keep\nnewlines\tand tabs"), "keep\nnewlines\tand tabs");
+        assert_eq!(sanitize("\u{1b}[8mhidden\u{1b}[0m"), "^[[8mhidden^[[0m");
+        assert_eq!(sanitize("cr\rlf"), "cr^Mlf");
+        assert_eq!(sanitize("nul\u{0}del\u{7f}"), "nul^@del^?");
+        // C1 controls have no caret form; replaced outright.
+        assert_eq!(sanitize("c1\u{9b}x"), "c1\u{fffd}x");
+    }
+
+    #[test]
+    fn render_text_escapes_control_sequences_in_comment_bodies() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = test_db(&dir);
+        let fixture = fixture();
+        let repo_path = fixture.dir.path().to_string_lossy().into_owned();
+        let review =
+            open_review_impl(&conn, &repo_path, "feature", "main", DiffMode::Committed).unwrap();
+        let spec = DiffSpec {
+            repo_path: repo_path.clone(),
+            base: "main".into(),
+            head: "feature".into(),
+            mode: DiffMode::Committed,
+        };
+        let body = "clipboard \u{1b}]52;c;payload\u{7} grab";
+        create_comment_impl(&conn, &spec, comment(review.id, None, body)).unwrap();
+
+        let data = show_data(&conn, review).unwrap();
+        let text = render_text(&data);
+        assert!(text.contains("clipboard ^[]52;c;payload^G grab"), "{text}");
+        assert!(!text.contains('\u{1b}'), "{text}");
+        // The JSON path stays raw — serde_json escapes controls itself.
+        let json = serde_json::to_string(&data).unwrap();
+        assert!(json.contains("\\u001b]52;c;payload"), "{json}");
     }
 
     #[test]
