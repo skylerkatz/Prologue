@@ -1,3 +1,4 @@
+use rusqlite::config::DbConfig;
 use rusqlite::{Connection, OpenFlags};
 use std::path::Path;
 use std::sync::Mutex;
@@ -118,6 +119,13 @@ pub fn open(path: &Path) -> Result<Connection, String> {
         .map_err(|e| format!("Failed to enable WAL mode: {e}"))?;
     conn.pragma_update(None, "foreign_keys", "ON")
         .map_err(|e| format!("Failed to enable foreign keys: {e}"))?;
+    // The database file can come from anywhere (the CLI's --db flag), so
+    // never run SQL embedded in its schema — views/triggers in a crafted
+    // file — with elevated trust, and refuse schema corruption tricks.
+    conn.pragma_update(None, "trusted_schema", "OFF")
+        .map_err(|e| format!("Failed to disable trusted_schema: {e}"))?;
+    conn.set_db_config(DbConfig::SQLITE_DBCONFIG_DEFENSIVE, true)
+        .map_err(|e| format!("Failed to enable defensive mode: {e}"))?;
     // Writers from more than one process (app + CLI) share this database;
     // wait briefly on a locked connection instead of failing immediately.
     conn.busy_timeout(std::time::Duration::from_millis(500))
@@ -169,6 +177,19 @@ fn check_compatible(path: &Path) -> Result<(), String> {
             "This reviews database is newer than this build (database schema v{version}, \
              this build knows v{SCHEMA_VERSION}) — update the Prologue app or rebuild prologue"
         ));
+    }
+
+    // The Prologue schema contains no views or triggers; a file that has any
+    // is carrying SQL of unknown origin and is not ours to run.
+    let schema_sql: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type IN ('view', 'trigger')",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(db_err)?;
+    if schema_sql > 0 {
+        return Err(format!("{} is not a Prologue reviews database", path.display()));
     }
     Ok(())
 }

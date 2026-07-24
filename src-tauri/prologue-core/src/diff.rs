@@ -513,9 +513,50 @@ fn new_side_content(
             let workdir = repo
                 .workdir()
                 .ok_or_else(|| "Repository has no working directory".to_owned())?;
-            std::fs::read(workdir.join(path)).map_err(|_| not_found())
+            let file = confined_workdir_path(workdir, path).ok_or_else(not_found)?;
+            std::fs::read(file).map_err(|_| not_found())
         }
     }
+}
+
+/// Resolve `path` to a file strictly inside `workdir`, or `None`. `path`
+/// reaches here unvalidated from IPC, so nothing outside the working tree may
+/// ever be readable through it: absolute paths and `..`/`.` components are
+/// rejected outright, every component is refused if it is a symlink (a
+/// hostile repo can ship `config.yml -> ~/.ssh/id_rsa`, and non-regular
+/// leaves like FIFOs would hang the read), and the canonicalized result must
+/// still live under the canonicalized workdir.
+fn confined_workdir_path(workdir: &std::path::Path, path: &str) -> Option<std::path::PathBuf> {
+    use std::path::Component;
+
+    let rel = std::path::Path::new(path);
+    if rel.components().next().is_none()
+        || rel
+            .components()
+            .any(|c| !matches!(c, Component::Normal(_)))
+    {
+        return None;
+    }
+
+    // Walk component by component so a symlinked intermediate directory is
+    // refused too, not just a symlinked leaf.
+    let mut full = workdir.to_path_buf();
+    let mut meta = None;
+    for component in rel.components() {
+        full.push(component);
+        let m = std::fs::symlink_metadata(&full).ok()?;
+        if m.file_type().is_symlink() {
+            return None;
+        }
+        meta = Some(m);
+    }
+    if !meta?.is_file() {
+        return None;
+    }
+
+    let canonical_workdir = workdir.canonicalize().ok()?;
+    let canonical = full.canonicalize().ok()?;
+    canonical.starts_with(&canonical_workdir).then_some(full)
 }
 
 /// Compute the three-dot diff for `mode`, with rename detection (matching
@@ -1244,6 +1285,51 @@ mod tests {
         );
         assert_eq!((hidden.total_additions, hidden.total_deletions), (0, 0));
         assert!(file_diff(true).hunks.is_empty());
+    }
+
+    /// Regression test for the path-traversal fix: `All` mode reads from the
+    /// working tree via an IPC-supplied path, which must never escape the
+    /// workdir — not through `..`, an absolute path, or a symlink planted in
+    /// a hostile repo.
+    #[test]
+    fn all_mode_file_content_is_confined_to_the_workdir() {
+        let fixture = branch_fixture();
+        // A real file that lives OUTSIDE the repo, next to it on disk.
+        let repo_dir = std::path::PathBuf::from(fixture.path());
+        let outside = repo_dir.parent().unwrap().join("outside-secret.txt");
+        std::fs::write(&outside, "secret\n").unwrap();
+
+        let read = |path: &str| {
+            get_file_content(fixture.path(), "feature".into(), DiffMode::All, path.into())
+        };
+
+        // Sanity: a normal tracked file still reads fine.
+        assert_eq!(read("a.txt").unwrap(), "one\ntwo\nthree\nfour\n");
+
+        // `..` traversal to the outside file.
+        let err = read("../outside-secret.txt").unwrap_err();
+        assert!(err.contains("File not found"), "{err}");
+        // `..` that round-trips back inside is still rejected — no parent
+        // components, period.
+        let err = read("x/../a.txt").unwrap_err();
+        assert!(err.contains("File not found"), "{err}");
+
+        // Absolute path.
+        let err = read(outside.to_str().unwrap()).unwrap_err();
+        assert!(err.contains("File not found"), "{err}");
+        let err = read("/etc/hosts").unwrap_err();
+        assert!(err.contains("File not found"), "{err}");
+
+        // A symlink inside the repo pointing outside it.
+        std::os::unix::fs::symlink(&outside, repo_dir.join("innocent.txt")).unwrap();
+        let err = read("innocent.txt").unwrap_err();
+        assert!(err.contains("File not found"), "{err}");
+
+        // A symlinked directory inside the repo pointing outside it.
+        std::os::unix::fs::symlink(repo_dir.parent().unwrap(), repo_dir.join("subdir"))
+            .unwrap();
+        let err = read("subdir/outside-secret.txt").unwrap_err();
+        assert!(err.contains("File not found"), "{err}");
     }
 
     #[test]

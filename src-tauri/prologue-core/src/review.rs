@@ -214,7 +214,11 @@ pub fn get_review(conn: &Connection, id: i64) -> Result<Review, String> {
 }
 
 /// Archived reviews are read-only: every comment or reviewed-file mutation
-/// checks its review's status first.
+/// checks its review's status first. This check alone is racy — another
+/// writer (CLI, auto-archive) can archive the review before the mutation
+/// lands — so it only provides the friendly error message; each mutating
+/// statement also embeds an `EXISTS (... status = 'active')` guard, making
+/// the policy hold atomically.
 pub(crate) fn ensure_review_active(conn: &Connection, review_id: i64) -> Result<(), String> {
     let status: Option<String> = conn
         .query_row("SELECT status FROM reviews WHERE id = ?1", [review_id], |r| r.get(0))
@@ -463,16 +467,22 @@ pub fn mark_file_reviewed_impl(
     fingerprint: &str,
 ) -> Result<ReviewedFile, String> {
     ensure_review_active(conn, review_id)?;
-    conn.execute(
-        &format!(
-            "INSERT INTO reviewed_files (review_id, file_path, fingerprint)
-             VALUES (?1, ?2, ?3)
-             ON CONFLICT(review_id, file_path) DO UPDATE
-                 SET fingerprint = excluded.fingerprint, reviewed_at = {NOW}"
-        ),
-        (review_id, file_path, fingerprint),
-    )
-    .map_err(db_err)?;
+    let changed = conn
+        .execute(
+            &format!(
+                "INSERT INTO reviewed_files (review_id, file_path, fingerprint)
+                 SELECT ?1, ?2, ?3
+                 WHERE EXISTS (SELECT 1 FROM reviews WHERE id = ?1 AND status = 'active')
+                 ON CONFLICT(review_id, file_path) DO UPDATE
+                     SET fingerprint = excluded.fingerprint, reviewed_at = {NOW}"
+            ),
+            (review_id, file_path, fingerprint),
+        )
+        .map_err(db_err)?;
+    if changed == 0 {
+        ensure_review_active(conn, review_id)?;
+        return Err("This review is archived and read-only".to_owned());
+    }
     conn.query_row(
         "SELECT file_path, fingerprint, reviewed_at
          FROM reviewed_files WHERE review_id = ?1 AND file_path = ?2",
@@ -496,7 +506,9 @@ pub fn unmark_file_reviewed_impl(
 ) -> Result<(), String> {
     ensure_review_active(conn, review_id)?;
     conn.execute(
-        "DELETE FROM reviewed_files WHERE review_id = ?1 AND file_path = ?2",
+        "DELETE FROM reviewed_files
+         WHERE review_id = ?1 AND file_path = ?2
+           AND EXISTS (SELECT 1 FROM reviews WHERE id = ?1 AND status = 'active')",
         (review_id, file_path),
     )
     .map_err(db_err)?;

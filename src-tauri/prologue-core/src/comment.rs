@@ -322,24 +322,33 @@ pub fn try_create_comment(
         .map(|a| serde_json::to_string(&a).map_err(|e| format!("Failed to encode anchor: {e}")))
         .transpose()?;
 
-    conn.execute(
-        "INSERT INTO comments (review_id, level, file_path, side, start_line, end_line,
-                               code_anchor, commit_sha, body, author)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-        (
-            comment.review_id,
-            comment.level.as_str(),
-            &file_path,
-            side.map(CommentSide::as_str),
-            start_line,
-            end_line,
-            &anchor_json,
-            &commit_sha,
-            &comment.body,
-            author,
-        ),
-    )
-    .map_err(db_err)?;
+    // The active check above gives the friendly error, but the review can be
+    // archived between it and this write — the EXISTS guard makes the
+    // read-only policy hold atomically.
+    let changed = conn
+        .execute(
+            "INSERT INTO comments (review_id, level, file_path, side, start_line, end_line,
+                                   code_anchor, commit_sha, body, author)
+             SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10
+             WHERE EXISTS (SELECT 1 FROM reviews WHERE id = ?1 AND status = 'active')",
+            (
+                comment.review_id,
+                comment.level.as_str(),
+                &file_path,
+                side.map(CommentSide::as_str),
+                start_line,
+                end_line,
+                &anchor_json,
+                &commit_sha,
+                &comment.body,
+                author,
+            ),
+        )
+        .map_err(db_err)?;
+    if changed == 0 {
+        ensure_review_active(conn, comment.review_id)?;
+        return Err("This review is archived and read-only".into());
+    }
     get_comment(conn, conn.last_insert_rowid()).map_err(CoreError::from)
 }
 
@@ -375,12 +384,19 @@ fn create_reply(
     }
     let repo = open_git_repo(repo_path)?;
     let commit_sha = diff::resolve_commit(&repo, head)?.id().to_string();
-    conn.execute(
-        "INSERT INTO comments (review_id, level, parent_id, commit_sha, body, author)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        (review_id, root.level.as_str(), root.id, &commit_sha, body, author),
-    )
-    .map_err(db_err)?;
+    // Atomic re-check of the archived guard, same as try_create_comment.
+    let changed = conn
+        .execute(
+            "INSERT INTO comments (review_id, level, parent_id, commit_sha, body, author)
+             SELECT ?1, ?2, ?3, ?4, ?5, ?6
+             WHERE EXISTS (SELECT 1 FROM reviews WHERE id = ?1 AND status = 'active')",
+            (review_id, root.level.as_str(), root.id, &commit_sha, body, author),
+        )
+        .map_err(db_err)?;
+    if changed == 0 {
+        ensure_review_active(conn, review_id)?;
+        return Err("This review is archived and read-only".to_owned());
+    }
     get_comment(conn, conn.last_insert_rowid())
 }
 
@@ -395,11 +411,18 @@ pub fn update_comment_impl(
     ensure_comment_mutable(conn, comment_id)?;
     let changed = conn
         .execute(
-            &format!("UPDATE comments SET body = ?1, updated_at = {NOW} WHERE id = ?2"),
+            &format!(
+                "UPDATE comments SET body = ?1, updated_at = {NOW}
+                 WHERE id = ?2 AND EXISTS (
+                     SELECT 1 FROM reviews
+                     WHERE id = comments.review_id AND status = 'active')"
+            ),
             (body, comment_id),
         )
         .map_err(db_err)?;
     if changed == 0 {
+        // Lost a race with an archive or delete; re-check for the right error.
+        ensure_comment_mutable(conn, comment_id)?;
         return Err(format!("Comment not found: C{comment_id}"));
     }
     get_comment(conn, comment_id)
@@ -408,9 +431,17 @@ pub fn update_comment_impl(
 pub fn delete_comment_impl(conn: &Connection, comment_id: i64) -> Result<(), String> {
     ensure_comment_mutable(conn, comment_id)?;
     let changed = conn
-        .execute("DELETE FROM comments WHERE id = ?1", [comment_id])
+        .execute(
+            "DELETE FROM comments
+             WHERE id = ?1 AND EXISTS (
+                 SELECT 1 FROM reviews
+                 WHERE id = comments.review_id AND status = 'active')",
+            [comment_id],
+        )
         .map_err(db_err)?;
     if changed == 0 {
+        // Lost a race with an archive or delete; re-check for the right error.
+        ensure_comment_mutable(conn, comment_id)?;
         return Err(format!("Comment not found: C{comment_id}"));
     }
     Ok(())
@@ -437,11 +468,20 @@ pub fn update_comment_state_impl(
     }
     // `updated_at` deliberately untouched: it tracks body edits ("(edited)"),
     // not lifecycle changes.
-    conn.execute(
-        "UPDATE comments SET state = ?1 WHERE id = ?2",
-        (state.as_str(), comment_id),
-    )
-    .map_err(db_err)?;
+    let changed = conn
+        .execute(
+            "UPDATE comments SET state = ?1
+             WHERE id = ?2 AND EXISTS (
+                 SELECT 1 FROM reviews
+                 WHERE id = comments.review_id AND status = 'active')",
+            (state.as_str(), comment_id),
+        )
+        .map_err(db_err)?;
+    if changed == 0 {
+        // Lost a race with an archive or delete; re-check for the right error.
+        ensure_comment_mutable(conn, comment_id)?;
+        return Err(format!("Comment not found: C{comment_id}"));
+    }
     get_comment(conn, comment_id)
 }
 
