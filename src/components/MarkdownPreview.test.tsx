@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { MarkdownPreview } from "./MarkdownPreview";
+import { MarkdownPreview, previewClickTarget } from "./MarkdownPreview";
 import type { FileMarkers } from "../diff/markers";
 
 // Renders the real react-markdown pipeline, so these tests pin the parts
@@ -119,6 +119,57 @@ describe("MarkdownPreview markers", () => {
     const third = html.indexOf("Third paragraph.");
     const marker = html.indexOf("md-del-marker");
     expect(marker).toBeGreaterThan(third);
+  });
+});
+
+// No DOM test environment here (same as MarkdownLink.test.tsx), so the
+// click gesture is pinned through the extracted resolver, with stub
+// elements standing in for the event target.
+describe("previewClickTarget", () => {
+  function stubTarget({
+    control = false,
+    line = "5" as string | null,
+  } = {}): HTMLElement {
+    const block =
+      line === null
+        ? null
+        : ({ getAttribute: () => line } as unknown as Element);
+    return {
+      closest: (selector: string) =>
+        selector.includes("data-md-line")
+          ? block
+          : control
+            ? ({} as Element)
+            : null,
+    } as unknown as HTMLElement;
+  }
+  const collapsed = { isCollapsed: true } as Selection;
+  const dragged = { isCollapsed: false } as Selection;
+
+  it("resolves an annotated block's line on a plain click", () => {
+    expect(previewClickTarget(stubTarget(), collapsed)).toBe(5);
+    // A browser with no selection object at all still jumps.
+    expect(previewClickTarget(stubTarget(), null)).toBe(5);
+  });
+
+  it("ignores the click that ends a selection drag", () => {
+    expect(previewClickTarget(stubTarget(), dragged)).toBeNull();
+  });
+
+  it("leaves interactive elements to their own handlers", () => {
+    expect(
+      previewClickTarget(stubTarget({ control: true }), collapsed),
+    ).toBeNull();
+  });
+
+  it("ignores clicks outside any annotated block", () => {
+    expect(previewClickTarget(stubTarget({ line: null }), collapsed)).toBeNull();
+  });
+
+  it("rejects a non-numeric line annotation", () => {
+    expect(
+      previewClickTarget(stubTarget({ line: "bogus" }), collapsed),
+    ).toBeNull();
   });
 });
 

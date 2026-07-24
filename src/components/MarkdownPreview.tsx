@@ -66,16 +66,12 @@ export const MarkdownPreview = memo(function MarkdownPreview({
   // can't carry functions through hast properties, only data attributes.
   const handleClick = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
-      const target = event.target as HTMLElement;
-      if (target.closest("a, button, input, .md-del-marker") !== null) {
-        return;
-      }
-      const block = target.closest("[data-md-line]");
-      if (block !== null) {
-        const line = Number(block.getAttribute("data-md-line"));
-        if (Number.isFinite(line)) {
-          onJumpToSource(path, line);
-        }
+      const line = previewClickTarget(
+        event.target as HTMLElement,
+        window.getSelection(),
+      );
+      if (line !== null) {
+        onJumpToSource(path, line);
       }
     },
     [onJumpToSource, path],
@@ -93,6 +89,32 @@ export const MarkdownPreview = memo(function MarkdownPreview({
     </div>
   );
 });
+
+/**
+ * Resolve a delegated preview click to the new-side line it should jump
+ * to, or null when the click must not navigate: mid-copy (finishing a
+ * selection drag fires a click on the block it ended over — jumping away
+ * would eat the selection), on an interactive element, or outside any
+ * annotated block. Factored out of the component so the gesture stays
+ * testable without a DOM environment (tests drive it with stub elements).
+ */
+export function previewClickTarget(
+  target: HTMLElement,
+  selection: Selection | null,
+): number | null {
+  if (selection !== null && !selection.isCollapsed) {
+    return null;
+  }
+  if (target.closest("a, button, input, .md-del-marker") !== null) {
+    return null;
+  }
+  const block = target.closest("[data-md-line]");
+  if (block === null) {
+    return null;
+  }
+  const line = Number(block.getAttribute("data-md-line"));
+  return Number.isFinite(line) ? line : null;
+}
 
 /**
  * Annotate top-level blocks with change classes + the new-side line a

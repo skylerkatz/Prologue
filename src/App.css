@@ -1537,7 +1537,9 @@ body.sidebar-resizing * {
 /* --- Markdown rich preview ------------------------------------------- */
 
 /* Rendered new-side document (rich view of markdown files): a reading
-   surface on the white card — sans body, serif headings, mono code. */
+   surface on the white card — sans body, serif headings, mono code. The
+   body opts the whole app out of selection for native feel; a reading
+   surface is exactly where copying text back matters, so opt back in. */
 .markdown-preview {
   padding: 20px 28px 24px;
   max-width: 900px;
@@ -1545,6 +1547,9 @@ body.sidebar-resizing * {
   font-size: 14px;
   line-height: 1.65;
   color: var(--text);
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
 }
 
 .markdown-preview > :first-child {
@@ -1793,9 +1798,6 @@ body.sidebar-resizing * {
   padding: 0 12px 0 8px;
   white-space: pre-wrap;
   word-break: break-all;
-  user-select: text;
-  -webkit-user-select: text;
-  cursor: text;
 }
 
 /* --- M5: comment lifecycle ------------------------------------------- */
