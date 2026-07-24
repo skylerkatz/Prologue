@@ -1740,6 +1740,17 @@ body.sidebar-resizing * {
   background: var(--badge-modified-bg);
 }
 
+/* Added-file previews render without change bars — everything is new —
+   but every block is still a comment target: pointer, tooltip, and a
+   quiet hover tint carry the affordance instead. */
+.markdown-preview .md-block-commentable {
+  cursor: pointer;
+}
+
+.markdown-preview .md-block-commentable:hover {
+  background: var(--bg-subtle);
+}
+
 /* Red deletion tombstone: content was removed here. Click to peek at the
    deleted source lines — rendered like source-view deletion rows. */
 .markdown-preview .md-del-marker {

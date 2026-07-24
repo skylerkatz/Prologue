@@ -1436,19 +1436,21 @@ const RowContent = memo(function RowContent({
           </div>
         );
       }
-      // Added files render clean — everything is new, bars are noise. A
-      // still-loading (or guarded) diff renders clean too; the markers pop
-      // in when the hunks land. markersFor caches per diff object, so the
-      // preview's memo only breaks when the content identity does.
+      // Added files render without bars — everything is new, bars are
+      // noise — but still annotate every block as a comment target (the
+      // new side is the document; no diff needed). A still-loading (or
+      // guarded) diff renders clean too; the markers pop in when the
+      // hunks land. markersFor caches per diff object, so the preview's
+      // memo only breaks when the content identity does.
+      const added = files[row.fi].status === "added";
       const markers =
-        files[row.fi].status === "added" || state.diff === null
-          ? null
-          : markersFor(state.diff);
+        added || state.diff === null ? null : markersFor(state.diff);
       return (
         <MarkdownPreview
           content={state.fileContent}
           path={path}
           markers={markers}
+          addedFile={added}
           onJumpToSource={onJumpToSource}
         />
       );

@@ -1,7 +1,7 @@
 import { memo, useCallback, useMemo, useState } from "react";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { Element, Root, RootContent } from "hast";
+import type { Element, Properties, Root, RootContent } from "hast";
 import {
   blockTargetLine,
   classifyBlock,
@@ -22,22 +22,38 @@ import { MarkdownLink } from "./MarkdownLink";
  * become red tombstones that expand the deleted source lines in place.
  * Rich view stays read-only: clicking a marked block hands off to
  * `onJumpToSource`, which flips the file to the source diff.
+ *
+ * Entirely-new files carry no markers (bars on a file where everything
+ * is new would be noise) but still want a path from preview to a line
+ * comment; `addedFile` annotates every block as a comment target instead.
  */
 export const MarkdownPreview = memo(function MarkdownPreview({
   content,
   path,
   markers,
+  addedFile = false,
   onJumpToSource,
 }: {
   content: string;
   path: string;
   /** Null renders clean — added files, or hunks not (yet) loaded. */
   markers: FileMarkers | null;
+  /**
+   * Entirely-new file: there is no diff to intersect — the new side IS
+   * the document — so every top-level block becomes a click-to-comment
+   * target at its remark start line, with no change bars.
+   */
+  addedFile?: boolean;
   onJumpToSource: (path: string, newLine: number) => void;
 }) {
   const rehypePlugins = useMemo(
-    () => (markers === null ? [] : [() => markerTransform(markers)]),
-    [markers],
+    () =>
+      markers !== null
+        ? [() => markerTransform(markers)]
+        : addedFile
+          ? [addedFileTransform]
+          : [],
+    [markers, addedFile],
   );
 
   // Tombstone divs planted by the transform become interactive markers;
@@ -116,6 +132,38 @@ export function previewClickTarget(
   return Number.isFinite(line) ? line : null;
 }
 
+/** Append a class through hast's polymorphic className property. */
+function appendClass(props: Properties, name: string): void {
+  const existing = props.className;
+  props.className = Array.isArray(existing)
+    ? [...existing, name]
+    : existing !== undefined && existing !== null
+      ? [String(existing), name]
+      : [name];
+}
+
+/**
+ * The added-file counterpart of markerTransform: with no diff to
+ * intersect (the new side IS the document), remark's position data alone
+ * maps each top-level block to its source start line. Every block becomes
+ * a comment target through the same data attribute the delegated click
+ * handler already reads — but no change classes; the commentable class
+ * only carries the pointer/tooltip affordance.
+ */
+function addedFileTransform(): (tree: Root) => void {
+  return (tree) => {
+    for (const child of tree.children) {
+      if (child.type !== "element" || child.position === undefined) {
+        continue;
+      }
+      const props = (child.properties ??= {});
+      appendClass(props, "md-block-commentable");
+      props.dataMdLine = String(child.position.start.line);
+      props.title = "Click to comment on this line in the source diff";
+    }
+  };
+}
+
 /**
  * Annotate top-level blocks with change classes + the new-side line a
  * comment should land on, and plant a tombstone div at each deletion
@@ -152,13 +200,7 @@ function markerTransform(markers: FileMarkers): (tree: Root) => void {
       const mark = classifyBlock(markers, start, end);
       if (mark !== null) {
         const props = (child.properties ??= {});
-        const marker = `md-block-${mark}`;
-        const existing = props.className;
-        props.className = Array.isArray(existing)
-          ? [...existing, marker]
-          : existing !== undefined && existing !== null
-            ? [String(existing), marker]
-            : [marker];
+        appendClass(props, `md-block-${mark}`);
         const target = blockTargetLine(markers, start, end);
         if (target !== null) {
           props.dataMdLine = String(target);

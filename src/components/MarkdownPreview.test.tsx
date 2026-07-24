@@ -122,6 +122,47 @@ describe("MarkdownPreview markers", () => {
   });
 });
 
+describe("MarkdownPreview added files", () => {
+  function renderAdded(): string {
+    return renderToStaticMarkup(
+      <MarkdownPreview
+        content={doc}
+        path="README.md"
+        markers={null}
+        addedFile
+        onJumpToSource={noop}
+      />,
+    );
+  }
+
+  it("annotates every top-level block with its start line", () => {
+    const html = renderAdded();
+    expect(html).toContain('data-md-line="1"'); // heading
+    expect(html).toContain('data-md-line="3"'); // first paragraph
+    expect(html).toContain('data-md-line="5"'); // two-line paragraph: start
+    expect(html).toContain('data-md-line="8"'); // third paragraph
+  });
+
+  it("carries the pointer/tooltip affordance without change styling", () => {
+    const html = renderAdded();
+    expect(html).toContain("md-block-commentable");
+    expect(html).toContain(
+      "Click to comment on this line in the source diff",
+    );
+    expect(html).not.toContain("md-block-added");
+    expect(html).not.toContain("md-block-modified");
+    expect(html).not.toContain("md-del-marker");
+  });
+
+  it("stays inert without the added-file flag", () => {
+    // markers=null alone is a changed file whose diff hasn't landed yet —
+    // nothing to jump to, so nothing gets annotated.
+    const html = render(null);
+    expect(html).not.toContain("data-md-line");
+    expect(html).not.toContain("md-block-commentable");
+  });
+});
+
 // No DOM test environment here (same as MarkdownLink.test.tsx), so the
 // click gesture is pinned through the extracted resolver, with stub
 // elements standing in for the event target.
