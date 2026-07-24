@@ -1,0 +1,36 @@
+src/diff/rows.ts
+  s_70e1f8673353ea::t_870b16e3d54d1b 278,300,303-305
+  s_70e1f8673353ea::t_4f68cee9e35e21 2
+  s_70e1f8673353ea::t_0cc8376bb8812b 260-265
+  s_70e1f8673353ea::t_961f9be590a56d 371-376
+src/components/DiffView.tsx
+  s_70e1f8673353ea::t_4de1a251b697e4 774-775
+src/diff/rows.test.ts
+  s_70e1f8673353ea::t_e96165418622be 119-123
+  s_70e1f8673353ea::t_ca6099865d7688 538
+  s_70e1f8673353ea::t_0031b208db7b72 411
+  s_70e1f8673353ea::t_1c43088ffca542 399
+  s_70e1f8673353ea::t_8f33015dae0820 506
+  s_70e1f8673353ea::t_c485f8a4ec530f 525,573
+  s_70e1f8673353ea::t_43f5d73c334d62 440
+  s_70e1f8673353ea::t_61c12f3182db64 414-427
+  s_70e1f8673353ea::t_60a531b89bb1de 466-502
+  s_70e1f8673353ea::t_7fd53f68b0d2f7 3
+  s_70e1f8673353ea::t_a6be86ec0d4c7f 282
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "ea4362988da3727905b2972d132beb0ccb8772f7",
+  "prompts": {},
+  "sessions": {
+    "s_70e1f8673353ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9beda515-2e81-427b-a31c-3dd7f932ad56",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
