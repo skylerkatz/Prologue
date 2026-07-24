@@ -1,0 +1,27 @@
+src/diff/rows.test.ts
+  s_235f0e716c7086::t_59dfd757024006 308-332
+  s_235f0e716c7086::t_be6e259df65db8 21
+src/diff/rows.ts
+  s_235f0e716c7086::t_4034dae7fa5d68 59-60,66-76
+  s_235f0e716c7086::t_e08a428595df12 61-65
+src/components/DiffView.tsx
+  s_235f0e716c7086::t_ba4d35dd010144 37
+  s_235f0e716c7086::t_e25530ac541a92 524-526
+  s_235f0e716c7086::t_27da12f27a8f68 930-934,936-937
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "11ded1770964ae6a31c6455da7bb1a3e88d50c80",
+  "prompts": {},
+  "sessions": {
+    "s_235f0e716c7086": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4a1c94b7-061b-4f62-8edc-6efc51727247",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
