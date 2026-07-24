@@ -119,19 +119,45 @@ pub fn open(path: &Path) -> Result<Connection, String> {
         .map_err(|e| format!("Failed to enable WAL mode: {e}"))?;
     conn.pragma_update(None, "foreign_keys", "ON")
         .map_err(|e| format!("Failed to enable foreign keys: {e}"))?;
-    // The database file can come from anywhere (the CLI's --db flag), so
-    // never run SQL embedded in its schema — views/triggers in a crafted
-    // file — with elevated trust, and refuse schema corruption tricks.
-    conn.pragma_update(None, "trusted_schema", "OFF")
-        .map_err(|e| format!("Failed to disable trusted_schema: {e}"))?;
-    conn.set_db_config(DbConfig::SQLITE_DBCONFIG_DEFENSIVE, true)
-        .map_err(|e| format!("Failed to enable defensive mode: {e}"))?;
+    harden_connection(&conn)?;
     // Writers from more than one process (app + CLI) share this database;
     // wait briefly on a locked connection instead of failing immediately.
     conn.busy_timeout(std::time::Duration::from_millis(500))
         .map_err(|e| format!("Failed to set busy timeout: {e}"))?;
     migrate(&conn)?;
     Ok(conn)
+}
+
+/// Session hardening every reviews-database connection gets, whichever
+/// binary opened it and with whatever flags. The database file can come
+/// from anywhere (the CLI's --db flag), so never run SQL embedded in its
+/// schema — views/triggers in a crafted file — with elevated trust, and
+/// refuse schema corruption tricks. Shared so the app/write path and the
+/// CLI's read-only path cannot drift apart.
+pub fn harden_connection(conn: &Connection) -> Result<(), String> {
+    conn.pragma_update(None, "trusted_schema", "OFF")
+        .map_err(|e| format!("Failed to disable trusted_schema: {e}"))?;
+    conn.set_db_config(DbConfig::SQLITE_DBCONFIG_DEFENSIVE, true)
+        .map_err(|e| format!("Failed to enable defensive mode: {e}"))?;
+    Ok(())
+}
+
+/// The Prologue schema contains no views or triggers; a file that has any
+/// is carrying SQL of unknown origin and is not ours to run (a read-only
+/// open does not stop view SQL from executing on SELECT). Part of every
+/// binary's open-path seatbelt.
+pub fn ensure_no_schema_sql(conn: &Connection, path: &Path) -> Result<(), String> {
+    let schema_sql: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type IN ('view', 'trigger')",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(|e| format!("Failed to read {}: {e}", path.display()))?;
+    if schema_sql > 0 {
+        return Err(format!("{} is not a Prologue reviews database", path.display()));
+    }
+    Ok(())
 }
 
 /// The schema-version seatbelt, shared by every binary that opens the
@@ -179,19 +205,7 @@ fn check_compatible(path: &Path) -> Result<(), String> {
         ));
     }
 
-    // The Prologue schema contains no views or triggers; a file that has any
-    // is carrying SQL of unknown origin and is not ours to run.
-    let schema_sql: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type IN ('view', 'trigger')",
-            [],
-            |r| r.get(0),
-        )
-        .map_err(db_err)?;
-    if schema_sql > 0 {
-        return Err(format!("{} is not a Prologue reviews database", path.display()));
-    }
-    Ok(())
+    ensure_no_schema_sql(&conn, path)
 }
 
 /// The highest applied migration version, 0 on a fresh migrations table.
@@ -314,6 +328,34 @@ mod tests {
             )
             .unwrap();
         assert_eq!(reviews, 0);
+    }
+
+    /// A schema-valid file carrying views or triggers is refused before any
+    /// of its SQL can run — READ_ONLY alone would not stop view SQL.
+    #[test]
+    fn open_refuses_a_database_with_views_or_triggers() {
+        let dir = tempfile::tempdir().unwrap();
+        let with_view = dir.path().join("view.db");
+        open(&with_view).unwrap();
+        {
+            let conn = Connection::open(&with_view).unwrap();
+            conn.execute_batch("CREATE VIEW spy AS SELECT 1;").unwrap();
+        }
+        let err = open(&with_view).unwrap_err();
+        assert!(err.contains("not a Prologue reviews database"), "{err}");
+
+        let with_trigger = dir.path().join("trigger.db");
+        open(&with_trigger).unwrap();
+        {
+            let conn = Connection::open(&with_trigger).unwrap();
+            conn.execute_batch(
+                "CREATE TRIGGER spy AFTER INSERT ON reviews
+                 BEGIN SELECT 1; END;",
+            )
+            .unwrap();
+        }
+        let err = open(&with_trigger).unwrap_err();
+        assert!(err.contains("not a Prologue reviews database"), "{err}");
     }
 
     #[test]

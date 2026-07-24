@@ -213,12 +213,11 @@ pub fn get_review(conn: &Connection, id: i64) -> Result<Review, String> {
     find_review(conn, id)?.ok_or_else(|| format!("Review not found: {id}"))
 }
 
-/// Archived reviews are read-only: every comment or reviewed-file mutation
-/// checks its review's status first. This check alone is racy — another
-/// writer (CLI, auto-archive) can archive the review before the mutation
-/// lands — so it only provides the friendly error message; each mutating
-/// statement also embeds an `EXISTS (... status = 'active')` guard, making
-/// the policy hold atomically.
+/// Archived reviews are read-only. This check alone is racy — another
+/// writer (CLI, auto-archive) can archive the review before a mutation
+/// lands — so it only provides the friendly error message; the atomic
+/// enforcement lives in [`with_active_review_guard`], which every mutation
+/// runs through.
 pub(crate) fn ensure_review_active(conn: &Connection, review_id: i64) -> Result<(), String> {
     let status: Option<String> = conn
         .query_row("SELECT status FROM reviews WHERE id = ?1", [review_id], |r| r.get(0))
@@ -229,6 +228,29 @@ pub(crate) fn ensure_review_active(conn: &Connection, review_id: i64) -> Result<
         Some(_) => Err("This review is archived and read-only".to_owned()),
         None => Err(format!("Review not found: {review_id}")),
     }
+}
+
+/// The archived-review guard every mutation (insert, update, delete,
+/// upsert) shares. `execute` runs a statement whose SQL embeds the atomic
+/// `EXISTS (SELECT 1 FROM reviews WHERE id = … AND status = 'active')`
+/// clause; this wrapper adds the friendly pre-check and, when the statement
+/// changed nothing, re-checks the status — so losing a race with an archive
+/// always surfaces as the same read-only error, at every site. A zero that
+/// reaches the caller therefore means the review was still active and the
+/// statement's own WHERE matched nothing: business as usual for idempotent
+/// deletes, "target vanished mid-flight" for updates, unreachable for
+/// inserts.
+pub(crate) fn with_active_review_guard(
+    conn: &Connection,
+    review_id: i64,
+    execute: impl FnOnce() -> rusqlite::Result<usize>,
+) -> Result<usize, String> {
+    ensure_review_active(conn, review_id)?;
+    let changed = execute().map_err(db_err)?;
+    if changed == 0 {
+        ensure_review_active(conn, review_id)?;
+    }
+    Ok(changed)
 }
 
 /// Why a branch's review should be auto-archived.
@@ -466,9 +488,8 @@ pub fn mark_file_reviewed_impl(
     file_path: &str,
     fingerprint: &str,
 ) -> Result<ReviewedFile, String> {
-    ensure_review_active(conn, review_id)?;
-    let changed = conn
-        .execute(
+    let changed = with_active_review_guard(conn, review_id, || {
+        conn.execute(
             &format!(
                 "INSERT INTO reviewed_files (review_id, file_path, fingerprint)
                  SELECT ?1, ?2, ?3
@@ -478,9 +499,8 @@ pub fn mark_file_reviewed_impl(
             ),
             (review_id, file_path, fingerprint),
         )
-        .map_err(db_err)?;
+    })?;
     if changed == 0 {
-        ensure_review_active(conn, review_id)?;
         return Err("This review is archived and read-only".to_owned());
     }
     conn.query_row(
@@ -498,20 +518,22 @@ pub fn mark_file_reviewed_impl(
     .map_err(db_err)
 }
 
-/// Idempotent: unmarking a file that has no mark is not an error.
+/// Idempotent: unmarking a file that has no mark is not an error — a zero
+/// from the guard while the review stayed active is a plain no-op. Losing
+/// the archive race errors exactly like mark does.
 pub fn unmark_file_reviewed_impl(
     conn: &Connection,
     review_id: i64,
     file_path: &str,
 ) -> Result<(), String> {
-    ensure_review_active(conn, review_id)?;
-    conn.execute(
-        "DELETE FROM reviewed_files
-         WHERE review_id = ?1 AND file_path = ?2
-           AND EXISTS (SELECT 1 FROM reviews WHERE id = ?1 AND status = 'active')",
-        (review_id, file_path),
-    )
-    .map_err(db_err)?;
+    with_active_review_guard(conn, review_id, || {
+        conn.execute(
+            "DELETE FROM reviewed_files
+             WHERE review_id = ?1 AND file_path = ?2
+               AND EXISTS (SELECT 1 FROM reviews WHERE id = ?1 AND status = 'active')",
+            (review_id, file_path),
+        )
+    })?;
     Ok(())
 }
 
@@ -906,6 +928,37 @@ mod tests {
         assert!(err.contains("read-only"), "{err}");
         // Reads still work on archived reviews.
         assert_eq!(list_reviewed_files_impl(&conn, review.id).unwrap().len(), 1);
+    }
+
+    /// The race the guard exists for: the review is archived between the
+    /// friendly pre-check and the statement (whose EXISTS clause then
+    /// matches nothing). Every mutation site must surface that as the same
+    /// read-only error — including unmark, whose zero-row result is
+    /// otherwise a legitimate no-op.
+    #[test]
+    fn the_shared_guard_turns_a_lost_archive_race_into_the_read_only_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = test_db(&dir);
+        let review =
+            open_review_impl(&conn, "/repo", "feature", "main", DiffMode::Committed).unwrap();
+
+        // The closure stands in for the guarded statement: it archives the
+        // review (the concurrent writer) and reports zero rows changed.
+        let err = with_active_review_guard(&conn, review.id, || {
+            conn.execute(
+                "UPDATE reviews SET status = 'archived' WHERE id = ?1",
+                [review.id],
+            )?;
+            Ok(0)
+        })
+        .unwrap_err();
+        assert!(err.contains("read-only"), "{err}");
+
+        // A zero that survives the guard (review still active) reaches the
+        // caller — idempotent unmark depends on it.
+        let other =
+            open_review_impl(&conn, "/repo", "other", "main", DiffMode::Committed).unwrap();
+        assert_eq!(with_active_review_guard(&conn, other.id, || Ok(0)).unwrap(), 0);
     }
 
     #[test]

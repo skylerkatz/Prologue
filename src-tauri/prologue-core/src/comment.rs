@@ -10,7 +10,7 @@ use crate::db::{db_err, NOW};
 use crate::diff::{self, CommentSide, DiffSpec, FileDiff};
 use crate::error::CoreError;
 use crate::repo::open_git_repo;
-use crate::review::ensure_review_active;
+use crate::review::{ensure_review_active, with_active_review_guard};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -244,17 +244,34 @@ pub fn get_comment(conn: &Connection, id: i64) -> Result<Comment, String> {
     .and_then(comment_from_row)
 }
 
-fn ensure_comment_mutable(conn: &Connection, comment_id: i64) -> Result<(), String> {
-    let review_id: Option<i64> = conn
-        .query_row(
-            "SELECT review_id FROM comments WHERE id = ?1",
-            [comment_id],
-            |r| r.get(0),
-        )
-        .optional()
-        .map_err(db_err)?;
-    let review_id = review_id.ok_or_else(|| format!("Comment not found: C{comment_id}"))?;
-    ensure_review_active(conn, review_id)
+/// The review a comment belongs to; a missing comment is "not found" — the
+/// shared first step of every comment-keyed mutation.
+fn comment_review_id(conn: &Connection, comment_id: i64) -> Result<i64, String> {
+    conn.query_row(
+        "SELECT review_id FROM comments WHERE id = ?1",
+        [comment_id],
+        |r| r.get(0),
+    )
+    .optional()
+    .map_err(db_err)?
+    .ok_or_else(|| format!("Comment not found: C{comment_id}"))
+}
+
+/// Comment-keyed mutations run through the shared active-review guard:
+/// resolve the owning review, run the statement (whose SQL embeds the
+/// atomic `EXISTS (... status = 'active')` clause), and read a zero that
+/// survives the guard as "the comment vanished mid-flight".
+fn guarded_comment_mutation(
+    conn: &Connection,
+    comment_id: i64,
+    execute: impl FnOnce() -> rusqlite::Result<usize>,
+) -> Result<(), String> {
+    let review_id = comment_review_id(conn, comment_id)?;
+    let changed = with_active_review_guard(conn, review_id, execute)?;
+    if changed == 0 {
+        return Err(format!("Comment not found: C{comment_id}"));
+    }
+    Ok(())
 }
 
 pub fn create_comment_impl(
@@ -275,8 +292,11 @@ pub fn try_create_comment(
     if comment.body.trim().is_empty() {
         return Err("Comment text cannot be empty".into());
     }
-    ensure_review_active(conn, comment.review_id)?;
     let author = comment.author.as_deref().unwrap_or("reviewer");
+    validate_author(author)?;
+    // Fail fast with the friendly error before any repo/diff work; the
+    // atomic enforcement is the guard around the INSERT below.
+    ensure_review_active(conn, comment.review_id)?;
     if let Some(parent_id) = comment.parent_id {
         return create_reply(
             conn,
@@ -322,11 +342,8 @@ pub fn try_create_comment(
         .map(|a| serde_json::to_string(&a).map_err(|e| format!("Failed to encode anchor: {e}")))
         .transpose()?;
 
-    // The active check above gives the friendly error, but the review can be
-    // archived between it and this write — the EXISTS guard makes the
-    // read-only policy hold atomically.
-    let changed = conn
-        .execute(
+    let changed = with_active_review_guard(conn, comment.review_id, || {
+        conn.execute(
             "INSERT INTO comments (review_id, level, file_path, side, start_line, end_line,
                                    code_anchor, commit_sha, body, author)
              SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10
@@ -344,12 +361,31 @@ pub fn try_create_comment(
                 author,
             ),
         )
-        .map_err(db_err)?;
+    })?;
     if changed == 0 {
-        ensure_review_active(conn, comment.review_id)?;
         return Err("This review is archived and read-only".into());
     }
     get_comment(conn, conn.last_insert_rowid()).map_err(CoreError::from)
+}
+
+/// `author` is caller-asserted free text that lands in exports and terminal
+/// output; every write path — app IPC and the CLI alike — funnels through
+/// [`try_create_comment`], so the printable/short rule is enforced here at
+/// the choke point (the CLI repeats it early for a friendlier error).
+const AUTHOR_MAX_CHARS: usize = 64;
+
+fn validate_author(author: &str) -> Result<(), String> {
+    if author.chars().any(char::is_control) {
+        return Err("Invalid author: control characters are not allowed".to_owned());
+    }
+    let chars = author.chars().count();
+    if chars > AUTHOR_MAX_CHARS {
+        return Err(format!(
+            "Invalid author: {chars} characters is longer than the \
+             {AUTHOR_MAX_CHARS}-character limit"
+        ));
+    }
+    Ok(())
 }
 
 /// Append a reply to the thread containing `parent_id`. The reply attaches
@@ -384,17 +420,15 @@ fn create_reply(
     }
     let repo = open_git_repo(repo_path)?;
     let commit_sha = diff::resolve_commit(&repo, head)?.id().to_string();
-    // Atomic re-check of the archived guard, same as try_create_comment.
-    let changed = conn
-        .execute(
+    let changed = with_active_review_guard(conn, review_id, || {
+        conn.execute(
             "INSERT INTO comments (review_id, level, parent_id, commit_sha, body, author)
              SELECT ?1, ?2, ?3, ?4, ?5, ?6
              WHERE EXISTS (SELECT 1 FROM reviews WHERE id = ?1 AND status = 'active')",
             (review_id, root.level.as_str(), root.id, &commit_sha, body, author),
         )
-        .map_err(db_err)?;
+    })?;
     if changed == 0 {
-        ensure_review_active(conn, review_id)?;
         return Err("This review is archived and read-only".to_owned());
     }
     get_comment(conn, conn.last_insert_rowid())
@@ -408,9 +442,8 @@ pub fn update_comment_impl(
     if body.trim().is_empty() {
         return Err("Comment text cannot be empty".to_owned());
     }
-    ensure_comment_mutable(conn, comment_id)?;
-    let changed = conn
-        .execute(
+    guarded_comment_mutation(conn, comment_id, || {
+        conn.execute(
             &format!(
                 "UPDATE comments SET body = ?1, updated_at = {NOW}
                  WHERE id = ?2 AND EXISTS (
@@ -419,32 +452,20 @@ pub fn update_comment_impl(
             ),
             (body, comment_id),
         )
-        .map_err(db_err)?;
-    if changed == 0 {
-        // Lost a race with an archive or delete; re-check for the right error.
-        ensure_comment_mutable(conn, comment_id)?;
-        return Err(format!("Comment not found: C{comment_id}"));
-    }
+    })?;
     get_comment(conn, comment_id)
 }
 
 pub fn delete_comment_impl(conn: &Connection, comment_id: i64) -> Result<(), String> {
-    ensure_comment_mutable(conn, comment_id)?;
-    let changed = conn
-        .execute(
+    guarded_comment_mutation(conn, comment_id, || {
+        conn.execute(
             "DELETE FROM comments
              WHERE id = ?1 AND EXISTS (
                  SELECT 1 FROM reviews
                  WHERE id = comments.review_id AND status = 'active')",
             [comment_id],
         )
-        .map_err(db_err)?;
-    if changed == 0 {
-        // Lost a race with an archive or delete; re-check for the right error.
-        ensure_comment_mutable(conn, comment_id)?;
-        return Err(format!("Comment not found: C{comment_id}"));
-    }
-    Ok(())
+    })
 }
 
 pub fn update_comment_state_impl(
@@ -452,7 +473,6 @@ pub fn update_comment_state_impl(
     comment_id: i64,
     state: CommentState,
 ) -> Result<Comment, String> {
-    ensure_comment_mutable(conn, comment_id)?;
     // Lifecycle lives on thread roots; a reply has no state of its own.
     let parent_id: Option<i64> = conn
         .query_row(
@@ -460,7 +480,9 @@ pub fn update_comment_state_impl(
             [comment_id],
             |r| r.get(0),
         )
-        .map_err(db_err)?;
+        .optional()
+        .map_err(db_err)?
+        .ok_or_else(|| format!("Comment not found: C{comment_id}"))?;
     if parent_id.is_some() {
         return Err(
             "Replies have no independent state — resolve or dismiss the thread root".to_owned(),
@@ -468,20 +490,15 @@ pub fn update_comment_state_impl(
     }
     // `updated_at` deliberately untouched: it tracks body edits ("(edited)"),
     // not lifecycle changes.
-    let changed = conn
-        .execute(
+    guarded_comment_mutation(conn, comment_id, || {
+        conn.execute(
             "UPDATE comments SET state = ?1
              WHERE id = ?2 AND EXISTS (
                  SELECT 1 FROM reviews
                  WHERE id = comments.review_id AND status = 'active')",
             (state.as_str(), comment_id),
         )
-        .map_err(db_err)?;
-    if changed == 0 {
-        // Lost a race with an archive or delete; re-check for the right error.
-        ensure_comment_mutable(conn, comment_id)?;
-        return Err(format!("Comment not found: C{comment_id}"));
-    }
+    })?;
     get_comment(conn, comment_id)
 }
 
@@ -1011,6 +1028,39 @@ mod tests {
             .map(|c| c.author)
             .collect();
         assert_eq!(authors, ["reviewer", "reviewer", "agent", "skyler"]);
+    }
+
+    /// Author validation lives at the core choke point, so every caller —
+    /// app IPC and CLI alike — is covered, on roots and replies both.
+    #[test]
+    fn core_rejects_control_characters_and_overlong_authors() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = test_db(&dir);
+        let fixture = fixture();
+        let review =
+            open_review_impl(&conn, &fixture.path(), "feature", "main", DiffMode::Committed)
+                .unwrap();
+        let with_author = |mut c: NewComment, author: &str| {
+            c.author = Some(author.to_owned());
+            create_comment_impl(&conn, &spec(&fixture), c)
+        };
+
+        let err = with_author(new_comment(review.id, CommentLevel::Review, "note"), "\u{1b}[31magent")
+            .unwrap_err();
+        assert!(err.contains("control characters"), "{err}");
+
+        let err = with_author(new_comment(review.id, CommentLevel::Review, "note"), &"a".repeat(65))
+            .unwrap_err();
+        assert!(err.contains("64-character limit"), "{err}");
+
+        // At the limit is fine; nothing invalid was stored along the way.
+        with_author(new_comment(review.id, CommentLevel::Review, "note"), &"a".repeat(64)).unwrap();
+        assert_eq!(list_comments_impl(&conn, review.id).unwrap().len(), 1);
+
+        // Replies funnel through the same choke point.
+        let root = create(&conn, &fixture, new_comment(review.id, CommentLevel::Review, "root"));
+        let err = with_author(reply(review.id, root.id, "done"), "x\r\n").unwrap_err();
+        assert!(err.contains("control characters"), "{err}");
     }
 
     #[test]
