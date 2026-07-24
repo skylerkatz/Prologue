@@ -1,4 +1,5 @@
 import type {
+  AnchorStatus,
   Comment,
   CommentSide,
   DiffLine,
@@ -256,6 +257,12 @@ export interface FileComments {
   /** File-level comments in id order. */
   file: Comment[];
   line: LineCommentIndex;
+  /** Anchor-orphaned comments on this (still-present) file, in id order.
+   * Kept apart from `file` so `buildRows` can order and tag them
+   * explicitly: they render after the file-level comments, never in the
+   * line index — their stale `side:endLine` would place them at a wrong
+   * line or drop them if the host line is gone. */
+  orphaned: Comment[];
 }
 
 const lineCommentKey = (side: CommentSide, endLine: number): string =>
@@ -268,6 +275,7 @@ const lineCommentKey = (side: CommentSide, endLine: number): string =>
 export function indexComments(
   files: FileSummary[],
   comments: Comment[],
+  anchorStatuses: ReadonlyMap<number, AnchorStatus>,
 ): Map<number, FileComments> {
   const byPath = new Map(files.map((file, fi) => [file.path, fi]));
   const index = new Map<number, FileComments>();
@@ -289,10 +297,12 @@ export function indexComments(
     }
     let entry = index.get(fi);
     if (entry === undefined) {
-      entry = { file: [], line: new Map() };
+      entry = { file: [], line: new Map(), orphaned: [] };
       index.set(fi, entry);
     }
-    if (
+    if (anchorStatuses.get(comment.id) === "orphaned") {
+      entry.orphaned.push(comment);
+    } else if (
       comment.level === "line" &&
       comment.side !== null &&
       comment.endLine !== null
@@ -356,6 +366,12 @@ export function buildRows(
     }
     const fileComments = comments.get(fi);
     for (const comment of fileComments?.file ?? []) {
+      pushThread(fi, comment);
+    }
+    // Anchor-orphaned threads share the file slot but come after the
+    // file-level comments: orphans read as an appendix, while intentional
+    // file-level notes keep top billing.
+    for (const comment of fileComments?.orphaned ?? []) {
       pushThread(fi, comment);
     }
     if (composer?.level === "file" && composer.path === file.path) {

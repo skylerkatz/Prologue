@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type {
+  AnchorStatus,
   Comment,
   DiffLine,
   FileDiff,
@@ -115,6 +116,11 @@ function statesFor(
 
 const noComments = new Map<number, never>();
 const noReplies = new Map<number, Comment[]>();
+const noStatuses = new Map<number, AnchorStatus>();
+
+function orphanedStatuses(...ids: number[]): Map<number, AnchorStatus> {
+  return new Map(ids.map((id) => [id, "orphaned" as const]));
+}
 
 function kinds(rows: Row[]): string[] {
   return rows.map((r) => r.kind);
@@ -273,7 +279,7 @@ describe("markdown preview", () => {
         endLine: null,
       }),
       comment({ id: 2, filePath: "README.md" }),
-    ]);
+    ], noStatuses);
     const rows = buildRows(
       files,
       statesFor(files, state),
@@ -390,7 +396,7 @@ describe("indexComments", () => {
       comment({ id: 1, filePath: "src/b.ts", side: "new", endLine: 11 }),
       comment({ id: 2, level: "file", filePath: "src/b.ts", side: null, startLine: null, endLine: null }),
       comment({ id: 3, filePath: "src/a.ts", side: "old", startLine: 11, endLine: 11 }),
-    ]);
+    ], noStatuses);
     expect(index.get(1)?.line.get("new:11")?.map((c) => c.id)).toEqual([1]);
     expect(index.get(1)?.file.map((c) => c.id)).toEqual([2]);
     expect(index.get(0)?.line.get("old:11")?.map((c) => c.id)).toEqual([3]);
@@ -402,8 +408,22 @@ describe("indexComments", () => {
       comment({ id: 1, level: "review", filePath: null }),
       comment({ id: 2, parentId: 1 }),
       comment({ id: 3, filePath: "gone/elsewhere.ts" }),
-    ]);
+    ], noStatuses);
     expect(index.size).toBe(0);
+  });
+
+  it("routes anchor-orphaned comments to the file's orphaned slot, never the line index", () => {
+    const files = [file()];
+    const index = indexComments(
+      files,
+      [
+        comment({ id: 1, side: "new", endLine: 11 }),
+        comment({ id: 2, side: "new", endLine: 11 }),
+      ],
+      orphanedStatuses(2),
+    );
+    expect(index.get(0)?.line.get("new:11")?.map((c) => c.id)).toEqual([1]);
+    expect(index.get(0)?.orphaned.map((c) => c.id)).toEqual([2]);
   });
 });
 
@@ -417,7 +437,7 @@ describe("buildRows: comments, threads, and composers", () => {
     const rows = buildRows(
       files,
       states(),
-      indexComments(files, [newSide, oldSide]),
+      indexComments(files, [newSide, oldSide], noStatuses),
       noReplies,
       null,
       false,
@@ -443,10 +463,47 @@ describe("buildRows: comments, threads, and composers", () => {
     ]);
   });
 
+  it("renders orphaned threads in the file slot, after file-level comments", () => {
+    const fileLevel = comment({ id: 20, level: "file", side: null, startLine: null, endLine: null });
+    // Orphaned at a line the diff no longer contains: it must not vanish.
+    const orphan = comment({ id: 21, side: "new", startLine: 99, endLine: 99 });
+    const reply = comment({ id: 22, parentId: 21, filePath: null, side: null, startLine: null, endLine: null });
+    const rows = buildRows(
+      files,
+      states(),
+      indexComments(files, [orphan, fileLevel], orphanedStatuses(21)),
+      new Map([[21, [reply]]]),
+      null,
+      false,
+    );
+    const ids = rows
+      .filter((r) => r.kind === "comment")
+      .map((r) => (r as Extract<Row, { kind: "comment" }>).comment.id);
+    // File-level note first, then the orphan appendix with its reply.
+    expect(ids).toEqual([20, 21, 22]);
+    expect(kinds(rows).slice(0, 4)).toEqual(["file", "comment", "comment", "comment"]);
+  });
+
+  it("never counts orphans in the hidden-comments indicator", () => {
+    // New line 5 sits in the 1..9 gap; as a line comment it would count as
+    // hidden under hide-whitespace, but orphans live in the file slot.
+    const orphan = comment({ id: 23, side: "new", startLine: 5, endLine: 5 });
+    const flagged = buildRows(
+      files,
+      states(),
+      indexComments(files, [orphan], orphanedStatuses(23)),
+      noReplies,
+      null,
+      true,
+    );
+    expect(flagged.filter((r) => r.kind === "hiddenComments")).toEqual([]);
+    expect(flagged.filter((r) => r.kind === "comment")).toHaveLength(1);
+  });
+
   it("contributes no row for a comment hosted inside a collapsed gap, but counts it under hide-whitespace", () => {
     // New line 5 sits in the 1..9 gap: no hunk line hosts it.
     const gapComment = comment({ id: 9, side: "new", startLine: 5, endLine: 5 });
-    const index = indexComments(files, [gapComment]);
+    const index = indexComments(files, [gapComment], noStatuses);
     const plain = buildRows(files, states(), index, noReplies, null, false);
     expect(plain.filter((r) => r.kind === "comment")).toEqual([]);
     expect(plain.filter((r) => r.kind === "hiddenComments")).toEqual([]);
@@ -465,7 +522,7 @@ describe("buildRows: comments, threads, and composers", () => {
     const open = buildRows(
       files,
       states(),
-      indexComments(files, [root]),
+      indexComments(files, [root], noStatuses),
       replies,
       null,
       false,
@@ -478,7 +535,7 @@ describe("buildRows: comments, threads, and composers", () => {
     const closed = buildRows(
       files,
       states(),
-      indexComments(files, [resolvedRoot]),
+      indexComments(files, [resolvedRoot], noStatuses),
       replies,
       null,
       false,
@@ -513,7 +570,7 @@ describe("buildRows: comments, threads, and composers", () => {
     const replyRows = buildRows(
       files,
       states(),
-      indexComments(files, [root]),
+      indexComments(files, [root], noStatuses),
       new Map([[12, [reply]]]),
       { level: "reply", path: "src/a.ts", rootId: 12 },
       false,

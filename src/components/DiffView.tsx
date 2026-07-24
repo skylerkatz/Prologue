@@ -771,8 +771,8 @@ export function DiffView({
   const { copied, copyPath } = useCopyPath(repoPath);
 
   const commentIndex = useMemo(
-    () => indexComments(summary.files, comments),
-    [summary.files, comments],
+    () => indexComments(summary.files, comments, anchorStatuses),
+    [summary.files, comments, anchorStatuses],
   );
 
   const rows = useMemo(
