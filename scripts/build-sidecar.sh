@@ -13,6 +13,12 @@ cd "$(dirname "$0")/.."
 command -v cargo >/dev/null 2>&1 || export PATH="$HOME/.cargo/bin:$PATH"
 
 TRIPLE="${TAURI_ENV_TARGET_TRIPLE:-$(rustc --print host-tuple)}"
+# The triple is spliced into rm/cp staging paths below — keep it a plain
+# filename token so a hostile build env can't traverse out of binaries/.
+if [[ ! "$TRIPLE" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+  echo "invalid target triple: '$TRIPLE'" >&2
+  exit 1
+fi
 
 cargo build --release -p prologue --manifest-path src-tauri/Cargo.toml
 

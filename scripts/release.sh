@@ -11,7 +11,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 REPO="skylerkatz/Prologue"
-KEY_FILE="$HOME/.tauri/prologue.key"
+# Updater signing key lives in 1Password ("Prologue Tauri signing key").
+KEY_REF="op://Employee/lrs2pe46ddw7sfvuembtju5tyy/password"
 
 VERSION="${1:-}"
 VERSION="${VERSION#v}"
@@ -19,10 +20,20 @@ if [[ -z "$VERSION" ]]; then
   echo "usage: scripts/release.sh <version>  (e.g. scripts/release.sh 0.2.0)" >&2
   exit 1
 fi
+# The version lands in the git tag and the updater manifest URL — anything
+# but plain MAJOR.MINOR.PATCH would produce a broken release.
+if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "invalid version '$VERSION' — expected MAJOR.MINOR.PATCH (e.g. 0.2.0)" >&2
+  exit 1
+fi
 
-if [[ ! -f "$KEY_FILE" ]]; then
-  echo "missing updater signing key: $KEY_FILE" >&2
-  echo "generate one with: npm run tauri signer generate -- -w $KEY_FILE" >&2
+if ! command -v op >/dev/null 2>&1; then
+  echo "1Password CLI (op) not found — needed to read the updater signing key" >&2
+  exit 1
+fi
+if ! op read "$KEY_REF" >/dev/null; then
+  echo "cannot read updater signing key from 1Password ($KEY_REF)" >&2
+  echo "make sure 1Password is unlocked and the CLI is signed in (op signin)" >&2
   exit 1
 fi
 
@@ -72,7 +83,7 @@ node -e '
 
 # The release overlay turns on updater artifacts (.app.tar.gz + .sig), which
 # need the signing key — everyday `npm run tauri build` stays key-free.
-TAURI_SIGNING_PRIVATE_KEY="$(cat "$KEY_FILE")" \
+TAURI_SIGNING_PRIVATE_KEY="$(op read "$KEY_REF")" \
 TAURI_SIGNING_PRIVATE_KEY_PASSWORD="" \
   npm run tauri build -- --config src-tauri/tauri.release.conf.json
 
