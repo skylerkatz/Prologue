@@ -18,6 +18,7 @@ import {
   lineNumber,
   lineSide,
   previewEligible,
+  previewWantsDiff,
   reviewedFlips,
   rowKey,
   type FileViewState,
@@ -302,6 +303,31 @@ describe("markdown preview", () => {
       false,
     );
     expect(kinds(rows)).toEqual(["file", "preview"]);
+  });
+
+  it("wants the diff for every previewed file, added files included", () => {
+    const fresh = initialFileState(true, true);
+    // Changed files need hunks for change markers; added files need them
+    // just as much — the block click-to-comment jump targets a line
+    // inside a hunk, and without the diff it degrades to the file-level
+    // composer.
+    expect(previewWantsDiff(file({ path: "README.md" }), fresh)).toBe(true);
+    expect(
+      previewWantsDiff(file({ path: "GUIDE.md", status: "added" }), fresh),
+    ).toBe(true);
+  });
+
+  it("stops wanting the diff once it is settled or guarded", () => {
+    const loaded = { ...loadedState(standardDiff()), previewMode: true };
+    expect(previewWantsDiff(file({ path: "README.md" }), loaded)).toBe(false);
+    const failed = { ...initialFileState(true, true), error: "boom" };
+    expect(previewWantsDiff(file({ path: "README.md" }), failed)).toBe(false);
+    const guarded = file({ path: "CHANGELOG.md", additions: 6000 });
+    const fresh = initialFileState(true, true);
+    expect(previewWantsDiff(guarded, fresh)).toBe(false);
+    expect(previewWantsDiff(guarded, { ...fresh, forceLoad: true })).toBe(
+      true,
+    );
   });
 
   it("preview rows carry a path-stable key and a height estimate", () => {

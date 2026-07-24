@@ -56,6 +56,24 @@ export function previewEligible(file: FileSummary): boolean {
   );
 }
 
+/** Whether a visible preview row should still fetch the file's diff.
+ * The rendered view needs the hunks for change markers, and the block
+ * click-to-comment jump needs a hunk to land the line selection in —
+ * which is why added files are NOT skipped here even though they render
+ * without markers: their single all-addition hunk is what a block click
+ * jumps into. Same guard rules as source view; error and already-loaded
+ * states are settled. */
+export function previewWantsDiff(
+  file: FileSummary,
+  state: FileViewState,
+): boolean {
+  return (
+    state.diff === null &&
+    state.error === null &&
+    (guardReason(file) === null || state.forceLoad)
+  );
+}
+
 /**
  * Files whose reviewed-ness flipped between two review-state maps, with the
  * `expanded` value each card should take: marking collapses, unmarking

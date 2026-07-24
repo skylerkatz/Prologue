@@ -34,6 +34,7 @@ import {
   lineNumber,
   lineSide,
   previewEligible,
+  previewWantsDiff,
   reviewedFlips,
   rowKey,
   type ComposerLocation,
@@ -520,8 +521,9 @@ export function DiffView({
   // Auto-flip commenting: rich view is read-only, so a comment gesture
   // there (clicking a marked block, the `c` key) lands the file back in
   // source view at the corresponding new-side line with the composer open.
-  // Without hunks to target (added files, diff not loaded) it still flips,
-  // falling back to the file-level composer under the header.
+  // Without hunks to target (diff not yet loaded — the preview effect
+  // fetches it for every previewed file, added ones included) it still
+  // flips, falling back to the file-level composer under the header.
   const jumpToSource = useCallback(
     (path: string, newLine: number) => {
       const diff = statesRef.current.get(path)?.diff ?? null;
@@ -925,16 +927,14 @@ export function DiffView({
         if (state.fileContent === null && state.previewError === null) {
           loadFileContent(file);
         }
-        // Change markers intersect the hunks with the rendered blocks, so
-        // the preview wants the diff too (added files render clean without
-        // it). Same guard/budget rules as source view; until it lands the
-        // document just shows unmarked.
+        // Change markers intersect the hunks with the rendered blocks, and
+        // the block click-to-comment jump needs a hunk to land the line
+        // selection in, so the preview wants the diff too. Same guard/
+        // budget rules as source view; until it lands the document just
+        // shows unmarked.
         if (
-          file.status !== "added" &&
-          state.diff === null &&
-          state.error === null &&
-          activeLoads.current < MAX_CONCURRENT_LOADS &&
-          (guardReason(file) === null || state.forceLoad)
+          previewWantsDiff(file, state) &&
+          activeLoads.current < MAX_CONCURRENT_LOADS
         ) {
           loadFile(file);
         }
