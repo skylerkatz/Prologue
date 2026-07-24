@@ -69,10 +69,10 @@ pub fn render_text(review: &Review, guide: &Guide, summary: Option<&DiffSummary>
     let width = total.to_string().len().max(2);
     for (index, section) in guide.sections.iter().enumerate() {
         // Titles, summaries, and file paths are untrusted (LLM-generated or
-        // from the branch); keep terminal escapes out of them.
-        let title = crate::show::sanitize(&section.title);
-        writeln!(out, "\n{:0width$}/{:0width$} {}", index + 1, total, title).unwrap();
-        for line in crate::show::sanitize(&section.summary).lines() {
+        // from the branch) — like every renderer, this returns them raw and
+        // main's print_text boundary strips terminal escapes on the way out.
+        writeln!(out, "\n{:0width$}/{:0width$} {}", index + 1, total, section.title).unwrap();
+        for line in section.summary.lines() {
             if line.is_empty() {
                 out.push('\n');
             } else {
@@ -80,7 +80,7 @@ pub fn render_text(review: &Review, guide: &Guide, summary: Option<&DiffSummary>
             }
         }
         for path in &section.files {
-            writeln!(out, "  {}", crate::show::sanitize(&file_line(path, summary))).unwrap();
+            writeln!(out, "  {}", file_line(path, summary)).unwrap();
         }
     }
     out
@@ -234,7 +234,9 @@ mod tests {
         guide.sections[0].title = "Title \u{1b}[2K wiped".to_owned();
         guide.sections[0].summary = "Line\r\u{1b}[1A overwritten".to_owned();
 
-        let text = render_text(&review, &guide, None);
+        // Renderers return content raw; main's print_text boundary applies
+        // `sanitize` to the whole output — this is that composition.
+        let text = crate::show::sanitize(&render_text(&review, &guide, None));
         assert!(text.contains("Title ^[[2K wiped"), "{text}");
         assert!(text.contains("  Line^M^[[1A overwritten"), "{text}");
         assert!(!text.contains('\u{1b}'), "{text}");

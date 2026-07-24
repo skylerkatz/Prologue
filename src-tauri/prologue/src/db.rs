@@ -3,7 +3,7 @@
 //! seatbelt (`prologue_core::db::open`); the read path opens at the SQLite
 //! level with `SQLITE_OPEN_READ_ONLY` and never migrates.
 
-use prologue_core::db::{APP_IDENTIFIER, SCHEMA_VERSION};
+use prologue_core::db::{ensure_no_schema_sql, harden_connection, APP_IDENTIFIER, SCHEMA_VERSION};
 use prologue_core::rusqlite::{Connection, OpenFlags};
 use std::path::{Path, PathBuf};
 
@@ -29,6 +29,10 @@ pub fn open_reviews_db(path: &Path) -> Result<Connection, String> {
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )
     .map_err(|e| format!("Failed to open review database: {e}"))?;
+    // READ_ONLY stops writes, not SQL embedded in the file's schema — a
+    // crafted --db carrying a malicious view would still run it on SELECT.
+    // Same hardening as core's write path, from the same helper.
+    harden_connection(&conn)?;
     // The app may hold the write lock briefly (WAL checkpoint); wait a
     // moment instead of failing immediately.
     conn.busy_timeout(std::time::Duration::from_millis(500))
@@ -90,7 +94,9 @@ fn check_readable_version(conn: &Connection, path: &Path) -> Result<(), String> 
              v{SCHEMA_VERSION}) — launch the Prologue app once to migrate it"
         ));
     }
-    Ok(())
+    // Shared with core's seatbelt: a file carrying views or triggers is
+    // running someone else's SQL and is refused outright.
+    ensure_no_schema_sql(conn, path)
 }
 
 #[cfg(test)]
@@ -202,6 +208,44 @@ mod tests {
             .query_row("SELECT MAX(version) FROM schema_migrations", [], |r| r.get(0))
             .unwrap();
         assert_eq!(version, SCHEMA_VERSION);
+    }
+
+    /// F5's exact attack vector: a crafted --db that passes the version
+    /// seatbelt but replaces a queried table with a VIEW carrying foreign
+    /// SQL. READ_ONLY does not stop view SQL from running on SELECT, so the
+    /// file must be refused before any query touches it.
+    #[test]
+    fn the_read_path_refuses_a_crafted_database_with_a_reviews_view() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = at_version_db(&dir);
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "ALTER TABLE reviews RENAME TO reviews_real;
+                 CREATE VIEW reviews AS SELECT * FROM reviews_real;",
+            )
+            .unwrap();
+        }
+
+        let err = open_reviews_db(&path).unwrap_err();
+        assert!(err.contains("not a Prologue reviews database"), "{err}");
+    }
+
+    /// The read connection gets the same session hardening as the write
+    /// path (trusted_schema off, defensive mode) — shared helper, no drift.
+    #[test]
+    fn the_read_connection_is_hardened_like_the_write_one() {
+        use prologue_core::rusqlite::config::DbConfig;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = at_version_db(&dir);
+
+        for conn in [open_reviews_db(&path).unwrap(), open_reviews_db_for_write(&path).unwrap()] {
+            let trusted: i64 =
+                conn.pragma_query_value(None, "trusted_schema", |r| r.get(0)).unwrap();
+            assert_eq!(trusted, 0);
+            assert!(conn.db_config(DbConfig::SQLITE_DBCONFIG_DEFENSIVE).unwrap());
+        }
     }
 
     #[test]

@@ -4,6 +4,13 @@
 //! deliberately does not exist here — closing a thread is the reviewer's
 //! act, in the app.
 
+// Everything on stdout leaves through one of three deliberate boundaries —
+// `print_text` (sanitized human output), `print_json` (serde-escaped), or
+// the export's byte-exact `write_all`. The lint turns any future raw
+// `print!`/`println!` into a clippy error (CI runs with `-D warnings`), so
+// no new output site can bypass sanitization by accident.
+#![warn(clippy::print_stdout)]
+
 mod db;
 mod guide;
 mod resolve;
@@ -238,18 +245,18 @@ fn run(cli: Cli) -> Result<(), String> {
                 .filter(|r| resolve::review_in_scope(r, repo.as_deref(), cwd_repo.as_deref()))
                 .collect();
             if json {
-                println!("{}", to_json(&reviews)?);
+                print_json(&reviews)?;
             } else if reviews.is_empty() {
                 if repo.is_some() || cwd_repo.is_some() {
-                    println!(
+                    print_text(
                         "No reviews found for this repository — `prologue reviews --all` \
-                         lists every repository"
+                         lists every repository\n",
                     );
                 } else {
-                    println!("No reviews found");
+                    print_text("No reviews found\n");
                 }
             } else {
-                print!("{}", reviews_table(&conn, &reviews)?);
+                print_text(&reviews_table(&conn, &reviews)?);
             }
         }
         Command::Show { review, file, diff, json } => {
@@ -258,9 +265,9 @@ fn run(cli: Cli) -> Result<(), String> {
                 // `requires` guarantees --file is present.
                 let file_diff = show::file_diff(&review, &file.unwrap())?;
                 if json {
-                    println!("{}", to_json(&file_diff)?);
+                    print_json(&file_diff)?;
                 } else {
-                    print!("{}", show::render_file_diff_text(&file_diff));
+                    print_text(&show::render_file_diff_text(&file_diff));
                 }
             } else {
                 let mut data = show::show_data(&conn, review)?;
@@ -268,9 +275,9 @@ fn run(cli: Cli) -> Result<(), String> {
                     data.threads.retain(|t| t.root.file_path.as_deref() == Some(path));
                 }
                 if json {
-                    println!("{}", to_json(&data)?);
+                    print_json(&data)?;
                 } else {
-                    print!("{}", show::render_text(&data));
+                    print_text(&show::render_text(&data));
                 }
             }
         }
@@ -278,10 +285,10 @@ fn run(cli: Cli) -> Result<(), String> {
             let review = resolve::resolve_review(&conn, review.as_deref(), &cwd)?;
             let guide = guide::find_guide(&conn, &review)?;
             if json {
-                println!("{}", to_json(&guide)?);
+                print_json(&guide)?;
             } else {
                 let summary = guide::current_summary(&review);
-                print!("{}", guide::render_text(&review, &guide, summary.as_ref()));
+                print_text(&guide::render_text(&review, &guide, summary.as_ref()));
             }
         }
         Command::Export { review, format } => {
@@ -294,7 +301,8 @@ fn run(cli: Cli) -> Result<(), String> {
                 false,
             )?;
             // Byte-for-byte what the app puts on the clipboard — no added
-            // trailing newline.
+            // trailing newline, and deliberately NOT sanitized: export is
+            // data meant for piping, and callers get it exactly as stored.
             std::io::stdout()
                 .write_all(text.as_bytes())
                 .map_err(|e| format!("Failed to write output: {e}"))?;
@@ -418,8 +426,7 @@ fn with_anchor_hint(err: CoreError, file: Option<&str>) -> String {
 
 fn print_created(comment: &Comment, json: bool) -> Result<(), String> {
     if json {
-        println!("{}", to_json(comment)?);
-        return Ok(());
+        return print_json(comment);
     }
     let place = match (comment.parent_id, comment.level) {
         (Some(root), _) => format!("reply to thread C{root}"),
@@ -436,10 +443,10 @@ fn print_created(comment: &Comment, json: bool) -> Result<(), String> {
         ),
     };
     let head = comment.commit_sha.get(..7).unwrap_or(&comment.commit_sha);
-    println!(
-        "C{} created — {place}, review {}, author {}, head {head}",
+    print_text(&format!(
+        "C{} created — {place}, review {}, author {}, head {head}\n",
         comment.id, comment.review_id, comment.author
-    );
+    ));
     Ok(())
 }
 
@@ -447,6 +454,24 @@ fn to_json<T: serde::Serialize>(value: &T) -> Result<String, String> {
     // Compact on purpose: the output is read by agents, where pretty
     // printing only spends tokens on whitespace.
     serde_json::to_string(value).map_err(|e| format!("Failed to serialize output: {e}"))
+}
+
+/// The one stdout boundary for human-readable output: everything printed
+/// for people passes through [`show::sanitize`], so no text site — current
+/// or future — can emit raw control bytes from review content, repo paths,
+/// branch names, or authors. `prologue export` bypasses it on purpose
+/// (byte-exact data meant for piping).
+#[allow(clippy::print_stdout)]
+fn print_text(text: &str) {
+    print!("{}", show::sanitize(text));
+}
+
+/// The `--json` stdout boundary: serde_json escapes control characters
+/// itself, so the payload stays raw and machine-faithful.
+#[allow(clippy::print_stdout)]
+fn print_json<T: serde::Serialize>(value: &T) -> Result<(), String> {
+    println!("{}", to_json(value)?);
+    Ok(())
 }
 
 fn reviews_table(conn: &Connection, reviews: &[Review]) -> Result<String, String> {
@@ -591,6 +616,31 @@ mod tests {
         assert!(parse_line_range("0").is_err());
         assert!(parse_line_range("a-b").is_err());
         assert!(parse_line_range("42-").is_err());
+    }
+
+    /// The reviews table prints repo/branch/base straight from the database;
+    /// the print_text boundary (sanitize over the whole rendered table) is
+    /// what keeps crafted names from reaching the terminal raw.
+    #[test]
+    fn reviews_table_fields_are_neutralized_by_the_text_boundary() {
+        use prologue_core::diff::DiffMode;
+
+        let dir = tempfile::tempdir().unwrap();
+        let conn = prologue_core::testutil::open_test_db(&dir);
+        let review = review::open_review_impl(
+            &conn,
+            "/repo\u{1b}[2K",
+            "bra\u{1b}]0;title\u{7}nch",
+            "ba\rse",
+            DiffMode::Committed,
+        )
+        .unwrap();
+
+        let text = show::sanitize(&reviews_table(&conn, &[review]).unwrap());
+        assert!(!text.contains('\u{1b}'), "{text}");
+        assert!(!text.contains('\r'), "{text}");
+        assert!(text.contains("^[[2K"), "{text}");
+        assert!(text.contains("ba^Mse"), "{text}");
     }
 
     #[test]

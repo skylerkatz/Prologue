@@ -66,8 +66,11 @@ fn location(thread: &Thread) -> String {
 /// Map C0 control characters (except `\n` and `\t`) and DEL to caret
 /// notation, and remaining controls (the C1 range) to U+FFFD, so review
 /// content cannot smuggle terminal escape sequences (SGR conceal, cursor
-/// movement, OSC clipboard/title writes) into the text output. The `--json`
-/// paths stay raw — serde_json escapes controls itself.
+/// movement, OSC clipboard/title writes) into the text output. This is the
+/// engine behind `main`'s `print_text` boundary — renderers here return the
+/// text raw and every human-readable print is sanitized whole, once, on the
+/// way out. The `--json` paths stay raw — serde_json escapes controls
+/// itself.
 pub(crate) fn sanitize(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for c in text.chars() {
@@ -117,17 +120,16 @@ pub fn render_text(data: &ShowData) -> String {
 
     for thread in &data.threads {
         let root = &thread.root;
-        writeln!(out, "\nC{} [{}] {}", root.id, root.state.as_str(), sanitize(&location(thread)))
-            .unwrap();
+        writeln!(out, "\nC{} [{}] {}", root.id, root.state.as_str(), location(thread)).unwrap();
         if let Some(anchor) = &root.code_anchor {
             for line in &anchor.lines {
-                writeln!(out, "  > {}", sanitize(line)).unwrap();
+                writeln!(out, "  > {line}").unwrap();
             }
         }
-        push_indented(&mut out, &sanitize(&root.body), "  ");
+        push_indented(&mut out, &root.body, "  ");
         for reply in &thread.replies {
             writeln!(out, "  ↳ C{} (reply)", reply.id).unwrap();
-            push_indented(&mut out, &sanitize(&reply.body), "    ");
+            push_indented(&mut out, &reply.body, "    ");
         }
     }
     out
@@ -147,9 +149,9 @@ pub fn file_diff(review: &Review, path: &str) -> Result<FileDiff, String> {
 }
 
 pub fn render_file_diff_text(diff: &FileDiff) -> String {
-    let mut out = sanitize(&diff.path);
+    let mut out = diff.path.clone();
     if let Some(old) = &diff.old_path {
-        write!(out, " (renamed from {})", sanitize(old)).unwrap();
+        write!(out, " (renamed from {old})").unwrap();
     }
     out.push('\n');
     if diff.binary {
@@ -157,7 +159,7 @@ pub fn render_file_diff_text(diff: &FileDiff) -> String {
         return out;
     }
     for hunk in &diff.hunks {
-        out.push_str(&sanitize(&hunk.header));
+        out.push_str(&hunk.header);
         if !hunk.header.ends_with('\n') {
             out.push('\n');
         }
@@ -181,7 +183,7 @@ fn render_line(line: &DiffLine) -> String {
         num(line.old_lineno),
         num(line.new_lineno),
         marker,
-        sanitize(&line.content)
+        line.content
     )
 }
 
@@ -289,8 +291,10 @@ mod tests {
         let body = "clipboard \u{1b}]52;c;payload\u{7} grab";
         create_comment_impl(&conn, &spec, comment(review.id, None, body)).unwrap();
 
+        // Renderers return content raw; main's print_text boundary applies
+        // `sanitize` to the whole output — this is that composition.
         let data = show_data(&conn, review).unwrap();
-        let text = render_text(&data);
+        let text = sanitize(&render_text(&data));
         assert!(text.contains("clipboard ^[]52;c;payload^G grab"), "{text}");
         assert!(!text.contains('\u{1b}'), "{text}");
         // The JSON path stays raw — serde_json escapes controls itself.
