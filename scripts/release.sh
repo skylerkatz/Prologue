@@ -31,7 +31,10 @@ if ! command -v op >/dev/null 2>&1; then
   echo "1Password CLI (op) not found — needed to read the updater signing key" >&2
   exit 1
 fi
-if ! op read "$KEY_REF" >/dev/null; then
+# Read the key once, up front. A prefix-assignment `VAR=$(op read …) cmd`
+# would NOT abort under `set -e` if op fails, letting the build run with an
+# empty key — so capture it here and assert it's non-empty before any work.
+if ! SIGNING_KEY="$(op read "$KEY_REF")" || [[ -z "$SIGNING_KEY" ]]; then
   echo "cannot read updater signing key from 1Password ($KEY_REF)" >&2
   echo "make sure 1Password is unlocked and the CLI is signed in (op signin)" >&2
   exit 1
@@ -83,7 +86,7 @@ node -e '
 
 # The release overlay turns on updater artifacts (.app.tar.gz + .sig), which
 # need the signing key — everyday `npm run tauri build` stays key-free.
-TAURI_SIGNING_PRIVATE_KEY="$(op read "$KEY_REF")" \
+TAURI_SIGNING_PRIVATE_KEY="$SIGNING_KEY" \
 TAURI_SIGNING_PRIVATE_KEY_PASSWORD="" \
   npm run tauri build -- --config src-tauri/tauri.release.conf.json
 
