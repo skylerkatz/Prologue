@@ -1,5 +1,4 @@
 import { memo, useCallback, useMemo, useState } from "react";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Element, Root, RootContent } from "hast";
@@ -9,6 +8,7 @@ import {
   type DeletionAnchor,
   type FileMarkers,
 } from "../diff/markers";
+import { MarkdownLink } from "./MarkdownLink";
 
 /**
  * Rendered new-side markdown for a file's rich view. Raw HTML in the
@@ -44,26 +44,7 @@ export const MarkdownPreview = memo(function MarkdownPreview({
   // every other div (none, normally — raw HTML is stripped) passes through.
   const components = useMemo<Components>(
     () => ({
-      // Links never navigate the chrome-less window (no address bar, no
-      // back button — a relative href would soft-brick it): http(s)
-      // targets open in the system browser via the opener plugin, every
-      // other scheme is dropped. The Rust side backs this up with an
-      // on_navigation guard pinned to the app origin.
-      a(props) {
-        const { node: _node, href, ...rest } = props;
-        return (
-          <a
-            {...rest}
-            href={href}
-            onClick={(event) => {
-              event.preventDefault();
-              if (href !== undefined && /^https?:\/\//i.test(href)) {
-                void openUrl(href);
-              }
-            }}
-          />
-        );
-      },
+      a: MarkdownLink,
       div(props) {
         const { node: _node, ...rest } = props;
         const anchorAttr = (rest as Record<string, unknown>)[

@@ -121,3 +121,22 @@ describe("MarkdownPreview markers", () => {
     expect(marker).toBeGreaterThan(third);
   });
 });
+
+describe("MarkdownPreview links", () => {
+  // Behavior details live in MarkdownLink.test.tsx; this pins that the
+  // preview actually routes anchors through the shared wrapper.
+  it("uses the shared link wrapper", () => {
+    const html = renderToStaticMarkup(
+      <MarkdownPreview
+        content="[site](https://example.com) and [docs](./docs.md)"
+        path="README.md"
+        markers={null}
+        onJumpToSource={noop}
+      />,
+    );
+    expect(html).toContain('<a href="https://example.com">site</a>');
+    expect(html).toContain(
+      '<span class="md-link-inert" title="./docs.md">docs</span>',
+    );
+  });
+});

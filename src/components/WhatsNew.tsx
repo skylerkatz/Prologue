@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import releaseNotes from "../release-notes.json";
+import { markdownLinkComponents } from "./MarkdownLink";
 
 interface ReleaseNote {
   version: string;
@@ -64,7 +65,12 @@ export function WhatsNew({ onClose }: WhatsNewProps) {
               <span className="whats-new-date">{entry.date}</span>
             </h3>
             <div className="markdown-preview whats-new-notes">
-              <Markdown remarkPlugins={[remarkGfm]}>{entry.notes}</Markdown>
+              <Markdown
+                remarkPlugins={[remarkGfm]}
+                components={markdownLinkComponents}
+              >
+                {entry.notes}
+              </Markdown>
             </div>
           </section>
         ))}
