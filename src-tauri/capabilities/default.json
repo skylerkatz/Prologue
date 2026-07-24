@@ -8,6 +8,7 @@
     "clipboard-manager:allow-write-text",
     "dialog:allow-open",
     "dialog:allow-message",
+    "opener:default",
     "process:allow-restart",
     "store:default",
     "updater:default"

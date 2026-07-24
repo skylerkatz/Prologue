@@ -50,6 +50,37 @@ fn set_hide_resolved_checked(app: tauri::AppHandle, checked: bool) {
     }
 }
 
+/// Build the main window from its tauri.conf.json entry with a navigation
+/// guard attached (run() disables the automatic creation — the builder is
+/// the only place a handler can hook in). The webview must only ever host
+/// the app itself: tauri://localhost in production (http://tauri.localhost
+/// on Windows), the Vite dev server in dev. Any other navigation — e.g. a
+/// markdown link that slipped past the frontend's interception — is
+/// rejected; external links go through the opener plugin to the system
+/// browser instead.
+fn create_main_window(app: &tauri::App) -> tauri::Result<()> {
+    let config = app
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|w| w.label == "main")
+        .expect("main window missing from tauri.conf.json")
+        .clone();
+    tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?
+        .on_navigation(|url| match url.scheme() {
+            "tauri" => true,
+            "http" | "https" => {
+                url.host_str() == Some("tauri.localhost")
+                    || (cfg!(debug_assertions)
+                        && matches!(url.host_str(), Some("localhost" | "127.0.0.1")))
+            }
+            _ => false,
+        })
+        .build()?;
+    Ok(())
+}
+
 /// Customize the default menu: "Install 'prologue' Command Line Tool…" in
 /// the app submenu after About, "Refresh" / "Archived Reviews…" / "Hide
 /// Resolved Comments" in View, and "Keyboard Shortcuts" in Help.
@@ -157,6 +188,15 @@ fn setup_menu(app: &tauri::App) -> tauri::Result<()> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let mut context = tauri::generate_context!();
+    // Config windows are auto-created before setup() runs, with no hook
+    // point for a navigation handler; disable that and build the main
+    // window in setup() instead, where on_navigation can pin the webview
+    // to the app origin (see create_main_window).
+    for window in &mut context.config_mut().app.windows {
+        window.create = false;
+    }
+
     let builder = tauri::Builder::default()
         // Must stay the first registered plugin so a second launch bails out
         // before setup() opens reviews.db — two instances would otherwise
@@ -169,6 +209,7 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -194,6 +235,10 @@ pub fn run() {
             // behind the app's back; surface them as `comments-changed`.
             watcher::start_db_watching(app.handle().clone(), dir)?;
             setup_menu(app)?;
+            // Last: the window's page load races the rest of setup, so
+            // every managed state above must exist before the webview
+            // can issue its first IPC call.
+            create_main_window(app)?;
             Ok(())
         })
         .on_menu_event(|app, event| match event.id().as_ref() {
@@ -280,7 +325,7 @@ pub fn run() {
             set_repo_menu_enabled,
             set_hide_resolved_checked
         ])
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("error while running tauri application");
 }
 

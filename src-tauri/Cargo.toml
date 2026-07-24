@@ -40,6 +40,9 @@ serde_json = "1"
 tauri = { version = "2", features = [] }
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-dialog = "2"
+# External http(s) links from rendered markdown open in the system browser;
+# the webview itself never navigates off the app origin (see on_navigation).
+tauri-plugin-opener = "2"
 tauri-plugin-process = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-store = "2"

@@ -202,9 +202,15 @@ pub fn install(env: &InstallEnv, force: bool) -> Result<InstallReport, String> {
 
 /// `force` skips the /Applications guard — a dev/testing override so the
 /// action can be exercised against a debug build (documented in README).
+/// Release builds reject it: the command is IPC-exposed, so a webview
+/// foothold could otherwise symlink the CLI to a non-/Applications copy.
 #[tauri::command]
 pub fn install_cli(force: Option<bool>) -> Result<InstallReport, String> {
-    install(&InstallEnv::detect()?, force.unwrap_or(false))
+    let force = force.unwrap_or(false);
+    if force && !cfg!(debug_assertions) {
+        return Err("the force override is only available in debug builds".into());
+    }
+    install(&InstallEnv::detect()?, force)
 }
 
 #[cfg(test)]
