@@ -1,0 +1,22 @@
+scripts/release.sh
+  s_6b3d2e9237d74a::t_082d84d8f88624 86
+  s_6b3d2e9237d74a::t_ff9dee25e9cd5f 14-15,23-28,30-36
+scripts/build-sidecar.sh
+  s_6b3d2e9237d74a::t_04eb04e44d2473 16-21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "237d5b6130d34442286055f4b80993d983cde754",
+  "prompts": {},
+  "sessions": {
+    "s_6b3d2e9237d74a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "83dc3e9b-1636-4e35-828c-0fe738f9eac5",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
