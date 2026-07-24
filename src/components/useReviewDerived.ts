@@ -1,6 +1,26 @@
 import { useMemo } from "react";
-import { groupReplies, type FileReviewState } from "../types";
+import { groupReplies, type Comment, type FileReviewState } from "../types";
 import type { ReviewSession } from "./useReviewSession";
+
+/**
+ * Thread roots stranded by their file leaving the diff entirely. Anchor-
+ * orphaned comments whose file is still present are NOT included — they
+ * render inside that file's section (tagged as orphaned there), so only
+ * file-gone threads fall through to the global bucket. Replies always
+ * follow their root, so they are never orphaned on their own.
+ */
+export function fileGoneRoots(
+  comments: Comment[],
+  presentPaths: ReadonlySet<string>,
+): Comment[] {
+  return comments.filter(
+    (c) =>
+      c.parentId === null &&
+      c.level !== "review" &&
+      c.filePath !== null &&
+      !presentPaths.has(c.filePath),
+  );
+}
 
 /**
  * Derivations the review surfaces render, computed from the session state:
@@ -8,7 +28,7 @@ import type { ReviewSession } from "./useReviewSession";
  * for each surface (review panel, inline diff, orphaned bucket).
  */
 export function useReviewDerived(session: ReviewSession, hideResolved: boolean) {
-  const { view, comments, reviewedFiles, anchorStatuses } = session;
+  const { view, comments, reviewedFiles } = session;
 
   /** Per-file review state derived from the displayed summary: a stored
    * fingerprint that still matches is "reviewed"; one that no longer matches
@@ -59,23 +79,18 @@ export function useReviewDerived(session: ReviewSession, hideResolved: boolean) 
   );
 
   /**
-   * Thread roots whose place in the diff is gone: line comments the
-   * re-anchor pass orphaned, plus file/line comments on files that left the
-   * diff. They render in the orphaned bucket, never inline at a stale
-   * position. Replies always follow their root, so they are never orphaned
-   * on their own.
+   * Thread roots whose file left the diff entirely. Only these render in
+   * the global orphaned bucket; anchor-orphaned comments on files still
+   * present render inside that file's section instead (see `diffComments`).
    */
   const orphanedComments = useMemo(() => {
     const paths = new Set(view?.summary.files.map((f) => f.path) ?? []);
-    return visibleComments.filter(
-      (c) =>
-        c.parentId === null &&
-        c.level !== "review" &&
-        (anchorStatuses.get(c.id) === "orphaned" ||
-          (c.filePath !== null && !paths.has(c.filePath))),
-    );
-  }, [visibleComments, anchorStatuses, view]);
+    return fileGoneRoots(visibleComments, paths);
+  }, [visibleComments, view]);
 
+  /** Everything the diff surfaces render, including anchor-orphaned
+   * comments whose file is still in the diff — those land in their file's
+   * section (tagged as orphaned) rather than at a stale line. */
   const diffComments = useMemo(() => {
     const orphaned = new Set(orphanedComments.map((c) => c.id));
     return visibleComments.filter((c) => !orphaned.has(c.id));

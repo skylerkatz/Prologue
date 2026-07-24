@@ -4,7 +4,7 @@ import { Chevron } from "./Chevron";
 import { CommentThread, useThreadEditing } from "./Comments";
 
 interface OrphanedCommentsProps {
-  /** Thread roots whose anchor (or file) is gone from the current diff. */
+  /** Thread roots whose file is gone from the current diff. */
   comments: Comment[];
   /** Replies grouped by root; orphaned threads keep theirs. */
   repliesByRoot: RepliesByRoot;
@@ -15,10 +15,12 @@ interface OrphanedCommentsProps {
 }
 
 /**
- * The orphaned bucket: comments whose code can no longer be located in the
- * diff. They are shown here — with their last known location and captured
- * code — instead of being silently dropped or misplaced inline. Whole
- * threads orphan together: replies stay under their root.
+ * The orphaned bucket: comments whose file is no longer in the diff, so
+ * there is no file section left to host them. They are shown here — with
+ * their last known location and captured code — instead of being silently
+ * dropped. (Anchor-orphaned comments on files still present render inside
+ * that file's section, not here.) Whole threads orphan together: replies
+ * stay under their root.
  */
 export function OrphanedComments({
   comments,
@@ -56,7 +58,7 @@ export function OrphanedComments({
         </span>
         {expanded && (
           <span className="orphaned-hint">
-            The commented code is no longer in this diff — resolve, dismiss, or
+            The commented file is no longer in this diff — resolve, dismiss, or
             keep for reference.
           </span>
         )}
