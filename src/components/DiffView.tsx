@@ -68,6 +68,7 @@ import {
 } from "./Comments";
 import { Chevron } from "./Chevron";
 import { MarkdownPreview } from "./MarkdownPreview";
+import { OrphanOrigin } from "./OrphanedComments";
 import { useCopyPath } from "./useCopyPath";
 
 /** Parallel `get_file_diff` calls; each recomputes the repo diff in Rust. */
@@ -1479,13 +1480,18 @@ const RowContent = memo(function RowContent({
     }
     case "comment": {
       const isReply = row.comment.parentId !== null;
+      // Only thread roots carry an anchor status; replies inherit their
+      // root's context and render untagged below it.
+      const orphaned = anchorStatuses.get(row.comment.id) === "orphaned";
       return (
         <div className="inline-comment">
+          {orphaned && <OrphanOrigin comment={row.comment} showPath={false} />}
           <CommentCard
             comment={row.comment}
             editing={editingId === row.comment.id}
             drafts={drafts}
             codeChanged={anchorStatuses.get(row.comment.id) === "changed"}
+            orphaned={orphaned}
             replyCount={isReply ? 0 : (replies.get(row.comment.id)?.length ?? 0)}
             onEditStart={onEditStart}
             onEditCancel={onEditCancel}

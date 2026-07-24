@@ -3,6 +3,42 @@ import type { Comment, CommentState, RepliesByRoot } from "../types";
 import { Chevron } from "./Chevron";
 import { CommentThread, useThreadEditing } from "./Comments";
 
+/**
+ * Where an orphaned thread used to anchor: its last known line range and the
+ * captured code snippet. Shared between the global bucket (which also names
+ * the file) and in-file orphan cards (whose host file card already does —
+ * they pass `showPath={false}`).
+ */
+export function OrphanOrigin({
+  comment,
+  showPath = true,
+}: {
+  comment: Comment;
+  showPath?: boolean;
+}) {
+  return (
+    <>
+      <div className="orphaned-origin">
+        {showPath && <code>{comment.filePath}</code>}
+        {comment.startLine !== null && (
+          <span className="orphaned-lines">
+            was at{" "}
+            {comment.startLine === comment.endLine
+              ? `line ${comment.startLine}`
+              : `lines ${comment.startLine}–${comment.endLine}`}
+            {comment.side === "old" ? " (old)" : ""}
+          </span>
+        )}
+      </div>
+      {comment.codeAnchor !== null && (
+        <pre className="orphaned-anchor">
+          {comment.codeAnchor.lines.join("\n")}
+        </pre>
+      )}
+    </>
+  );
+}
+
 interface OrphanedCommentsProps {
   /** Thread roots whose file is gone from the current diff. */
   comments: Comment[];
@@ -66,23 +102,7 @@ export function OrphanedComments({
       {expanded &&
         comments.map((comment) => (
           <div key={comment.id} className="orphaned-comment">
-            <div className="orphaned-origin">
-              <code>{comment.filePath}</code>
-              {comment.startLine !== null && (
-                <span className="orphaned-lines">
-                  was at{" "}
-                  {comment.startLine === comment.endLine
-                    ? `line ${comment.startLine}`
-                    : `lines ${comment.startLine}–${comment.endLine}`}
-                  {comment.side === "old" ? " (old)" : ""}
-                </span>
-              )}
-            </div>
-            {comment.codeAnchor !== null && (
-              <pre className="orphaned-anchor">
-                {comment.codeAnchor.lines.join("\n")}
-              </pre>
-            )}
+            <OrphanOrigin comment={comment} />
             <CommentThread
               root={comment}
               replies={repliesByRoot.get(comment.id) ?? []}

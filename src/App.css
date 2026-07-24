@@ -1847,6 +1847,14 @@ body.sidebar-resizing * {
   white-space: nowrap;
 }
 
+/* Orphaned variant: informational, not a warning — the thread already
+   reads as an appendix in its file section, so it mutes instead of
+   alarming like the code-changed flag above. */
+.comment-flag-orphaned {
+  color: var(--text-muted);
+  border-color: var(--text-muted);
+}
+
 /* Same footprint as .comment-body so closed cards keep their padding. */
 .comment-body-toggle {
   display: block;

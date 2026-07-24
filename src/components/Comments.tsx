@@ -141,6 +141,9 @@ interface CommentCardProps {
   drafts: DraftStore;
   /** The commented code changed since the comment was made (re-review cue). */
   codeChanged?: boolean;
+  /** The comment's anchor is orphaned: its lines left the diff, so the
+   * thread renders in the file section instead of at a line. */
+  orphaned?: boolean;
   /** Hide every mutating control (archived reviews are read-only). */
   readOnly?: boolean;
   /** How many replies this thread root has; deleting it cascades them. */
@@ -161,6 +164,7 @@ export function CommentCard({
   editing,
   drafts,
   codeChanged = false,
+  orphaned = false,
   readOnly = false,
   replyCount = 0,
   onEditStart,
@@ -242,6 +246,14 @@ export function CommentCard({
             title="The commented code changed since this comment was made — re-review it."
           >
             ⚠ code changed since commented
+          </span>
+        )}
+        {orphaned && (
+          <span
+            className="comment-flag comment-flag-orphaned"
+            title="The commented lines are no longer in this diff"
+          >
+            Orphaned
           </span>
         )}
         {closed && replyCount > 0 && (
