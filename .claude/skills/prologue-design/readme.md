@@ -28,14 +28,14 @@ One product, four surfaces (all in the UI kit at `ui_kits/prologue/`):
 - Counts always signed and colored: `+7 −3` (green/red, mono, U+2212 minus).
 
 ## Visual foundations
-- **Palette**: warm cream chrome (`--bg-app #faf7f0`) with white content cards; deep teal (`#0e2a2e–#173e42`) reserved for the title bar, repo pill, and avatars; amber-orange (`#f6a33c–#e07b1a`) is the single accent — primary buttons, selection, comment rails, the ribbon. Diff tints stay conventional soft green/red; the hunk header is the only cool tint (`#e6f0f4`).
+- **Palette**: warm cream chrome (`--bg-app #faf7f0`) confined to the toolbar, sidebar, and welcome screen; the content stage (review panel + diff area) is white (`--bg-card`). Deep teal (`#0e2a2e–#173e42`) reserved for the title bar, repo pill, and avatars; amber-orange (`#f6a33c–#e07b1a`) is the single accent — the one primary button, selection, comment rails, the ribbon. Diff tints stay conventional soft green/red; hunk headers and expand rows are neutral warm-gray (`--hunk-bg`, `--bg-strip`), never orange or blue. On white surfaces, wells and strips use `--bg-well` — cream never reappears inside the stage.
 - **Type**: Lora (serif) for the wordmark + section headings only; IBM Plex Sans for UI copy; IBM Plex Mono for anything git — paths, branches, diff code, comment IDs, timestamps in headers. Mono is the dominant voice.
 - **Backgrounds**: flat fills, no imagery, no gradients in the UI (gradients live only inside the app icon).
 - **Borders**: 1px `--border #e3ddd0` on every card and control; borders do the separating, shadows are whispers (`--shadow-card`) except floating menus/dialogs (`--shadow-menu`).
 - **Radii**: 4px badges → 6px buttons/menus → 8px cards → 10px panels. Pills (`999px`) for count badges and state chips.
 - **Selection**: orange, not blue — selected file row gets `--surface-selected` plus a 3px orange ribbon bookmark on its left edge; selected diff lines get `--line-selected-bg`.
 - **Comment cards**: white, 1px border, 8px radius, **3px orange left rail**; header row = teal avatar circle with mono ID, bold "You", meta, spacer, quiet text actions. Replies indent once (24px) on `--bg-subtle` and never nest further.
-- **Hover states**: background shifts to `--bg-subtle` (rows, menu items) or border darkens to `--accent` (outlined buttons). Primary buttons darken to `--accent-strong`. No scale/transform effects.
+- **Hover states**: background shifts to `--bg-well` on white surfaces (menu items, rows, wells) or `--bg-subtle` on cream chrome; quiet gray text buttons (per-file "+ Add comment", expand rows) gain `--accent-strong` text on hover. Primary buttons darken to `--accent-strong`. "Viewed" state is green (`--added`), not orange. No scale/transform effects.
 - **Focus**: `--accent` border on inputs; no glow rings.
 - **Motion**: essentially none — instant state changes; toasts fade in/out only. This is a dense pro tool.
 - **Density**: 13px UI base, 12px/21px diff lines, controls ~28–32px tall. Content max-width for comment cards ~864px.
