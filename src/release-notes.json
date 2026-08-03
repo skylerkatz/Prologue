@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.4.1",
+    "date": "2026-08-03",
+    "notes": "## Other\n\n- A calmer, more focused look — the review and diff area now sit on a clean white stage, with the warm cream confined to the toolbar and sidebar\n- Quieter diffs: hunk headers and expand-lines rows use neutral tones instead of blue and orange tints, so the code stands out\n- Orange is reserved for the primary action, selection, and comment rails; Viewed checkmarks are now green"
+  },
+  {
     "version": "0.4.0",
     "date": "2026-07-24",
     "notes": "## New\n\n- Orphaned comments stay with their file — when the commented lines leave the diff but the file is still present, the thread appears in that file's card with an Orphaned tag, its last known location, and the captured code; the bucket at the top of the review now only holds comments whose file left the diff entirely\n- Text in rendered markdown previews can be selected and copied\n- Comment on brand-new markdown files from the preview — click any paragraph to jump to its line in the source diff, ready to comment\n\n## Fixed\n\n- Links in markdown previews and release notes open in your system browser instead of navigating the app window away — cmd-click and middle-click included\n\n## Other\n\n- Security hardening across the app, CLI, and release pipeline: the window is pinned to the app origin, comment text can no longer inject terminal escape sequences into CLI output, database reads are read-only, and review data is validated at every boundary"
