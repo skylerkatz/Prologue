@@ -1,0 +1,24 @@
+.claude/skills/prologue-design/tokens/colors.css
+  s_654d40da94b842::t_18731dc6f1c9c6 45,50-51
+  s_654d40da94b842::t_43547d960db8a1 18-23
+  s_654d40da94b842::t_a89d5be5809e9e 66
+.claude/skills/prologue-design/readme.md
+  s_654d40da94b842::t_d89c6f88d9162b 31
+  s_654d40da94b842::t_986a39f68dbfd8 38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "c37a46794f541c8700197517736c2f09fd3b8134",
+  "prompts": {},
+  "sessions": {
+    "s_654d40da94b842": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "caaf38d8-1999-481d-b309-88b98c0f7cb3",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
