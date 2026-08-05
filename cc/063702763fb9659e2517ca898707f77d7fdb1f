@@ -1,0 +1,18 @@
+package-lock.json
+  h_9d6cac527f0299 3,9
+package.json
+  h_9d6cac527f0299 4
+src-tauri/tauri.conf.json
+  h_9d6cac527f0299 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "cc063702763fb9659e2517ca898707f77d7fdb1f",
+  "prompts": {},
+  "humans": {
+    "h_9d6cac527f0299": {
+      "author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
