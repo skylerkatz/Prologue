@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.4.2",
+    "date": "2026-08-05",
+    "notes": "## Fixed\n\n- Lines revealed with the expand controls between hunks are now syntax highlighted, matching the rest of the diff"
+  },
+  {
     "version": "0.4.1",
     "date": "2026-08-03",
     "notes": "## Other\n\n- A calmer, more focused look — the review and diff area now sit on a clean white stage, with the warm cream confined to the toolbar and sidebar\n- Quieter diffs: hunk headers and expand-lines rows use neutral tones instead of blue and orange tints, so the code stands out\n- Orange is reserved for the primary action, selection, and comment rails; Viewed checkmarks are now green"
