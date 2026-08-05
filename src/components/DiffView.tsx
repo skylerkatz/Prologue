@@ -38,6 +38,7 @@ import {
   reviewedFlips,
   rowKey,
   type ComposerLocation,
+  type ContextRun,
   type FileViewState,
   type Row,
 } from "../diff/rows";
@@ -82,7 +83,12 @@ const fileKey = (file: FileSummary): string =>
   `${file.path}\u0000${file.fingerprint}`;
 const hunkKey = (file: FileSummary, hi: number): string =>
   `${fileKey(file)}\u0000${hi}`;
-/** The `fileKey` prefix of a `hunkKey`. */
+/** Highlight key for a revealed gap-context run. The run extent is part of
+ * the key, so growing a reveal re-tokenizes the widened run as one block.
+ * A single `\u0000` after the file prefix keeps `hunkKeyFile` valid on it. */
+const ctxKey = (file: FileSummary, ctx: ContextRun): string =>
+  `${fileKey(file)}\u0000g${ctx.gi}:${ctx.start}-${ctx.end}`;
+/** The `fileKey` prefix of a `hunkKey` or `ctxKey`. */
 const hunkKeyFile = (key: string): string =>
   key.slice(0, key.lastIndexOf("\u0000"));
 
@@ -964,28 +970,12 @@ export function DiffView({
     }
   });
 
-  // Lazily tokenize hunks whose lines are in the viewport. Same cadence as
-  // the fetch effect above; the requested-set makes re-runs cheap no-ops.
+  // Lazily tokenize hunks and revealed gap-context runs whose lines are in
+  // the viewport. Same cadence as the fetch effect above; the requested-set
+  // makes re-runs cheap no-ops.
   useEffect(() => {
-    for (const item of items) {
-      const row = rows[item.index];
-      if ((row.kind !== "line" && row.kind !== "hunk") || row.hi === undefined) {
-        continue;
-      }
-      const lang = langs[row.fi];
-      if (lang === null) {
-        continue;
-      }
-      const key = hunkKey(summary.files[row.fi], row.hi);
-      if (highlightRequested.current.has(key)) {
-        continue;
-      }
-      const diff = states.get(summary.files[row.fi].path)?.diff;
-      if (diff === undefined || diff === null) {
-        continue;
-      }
+    const request = (key: string, contents: string[], lang: string) => {
       highlightRequested.current.add(key);
-      const contents = diff.hunks[row.hi].lines.map((line) => line.content);
       tokenizeLines(contents, lang)
         .then((tokens) => {
           if (tokens !== null) {
@@ -995,6 +985,42 @@ export function DiffView({
         .catch(() => {
           // Tokenization failures keep the plain-text rendering.
         });
+    };
+    for (const item of items) {
+      const row = rows[item.index];
+      if (row.kind !== "line" && row.kind !== "hunk") {
+        continue;
+      }
+      const lang = langs[row.fi];
+      if (lang === null) {
+        continue;
+      }
+      const file = summary.files[row.fi];
+      const state = states.get(file.path);
+      if (row.kind === "line" && row.ctx !== undefined) {
+        const key = ctxKey(file, row.ctx);
+        if (state === undefined || highlightRequested.current.has(key)) {
+          continue;
+        }
+        const contents: string[] = [];
+        for (let n = row.ctx.start; n <= row.ctx.end; n++) {
+          contents.push(state.context.get(n) ?? "");
+        }
+        request(key, contents, lang);
+        continue;
+      }
+      if (row.hi === undefined) {
+        continue;
+      }
+      const key = hunkKey(file, row.hi);
+      if (highlightRequested.current.has(key)) {
+        continue;
+      }
+      const diff = state?.diff;
+      if (diff === undefined || diff === null) {
+        continue;
+      }
+      request(key, diff.hunks[row.hi].lines.map((line) => line.content), lang);
     }
   });
 
@@ -1467,7 +1493,11 @@ const RowContent = memo(function RowContent({
       const tokens =
         row.hi !== undefined && row.li !== undefined
           ? highlights.get(hunkKey(files[row.fi], row.hi))?.[row.li]
-          : undefined;
+          : row.ctx !== undefined && row.line.newLineno !== null
+            ? highlights.get(ctxKey(files[row.fi], row.ctx))?.[
+                row.line.newLineno - row.ctx.start
+              ]
+            : undefined;
       return (
         <LineRow
           line={row.line}

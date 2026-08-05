@@ -158,6 +158,15 @@ export function computeGaps(diff: FileDiff): Gap[] {
   return gaps;
 }
 
+/** A contiguous run of revealed gap-context lines (new-side, inclusive).
+ * Its identity changes whenever a reveal grows the run, so cached syntax
+ * tokens for the old extent are naturally superseded. */
+export interface ContextRun {
+  gi: number;
+  start: number;
+  end: number;
+}
+
 export type Row =
   | { kind: "file"; fi: number }
   | { kind: "notice"; fi: number; reason: GuardReason }
@@ -173,8 +182,16 @@ export type Row =
   | { kind: "preview"; fi: number }
   | { kind: "hunk"; fi: number; hi: number; header: string }
   /** `hi`/`li` (hunk index, line index within the hunk) are set for hunk
-   * lines; expanded gap-context lines carry neither. */
-  | { kind: "line"; fi: number; line: DiffLine; hi?: number; li?: number }
+   * lines; expanded gap-context lines carry `ctx` instead — the contiguous
+   * revealed run they belong to, the unit syntax highlighting tokenizes. */
+  | {
+      kind: "line";
+      fi: number;
+      line: DiffLine;
+      hi?: number;
+      li?: number;
+      ctx?: ContextRun;
+    }
   | { kind: "comment"; fi: number; comment: Comment }
   | { kind: "composer"; fi: number }
   | {
@@ -501,10 +518,12 @@ function pushGapRows(
   const bottomStart = gap.end - reveal.bottom + 1;
 
   const pushContext = (from: number, to: number) => {
+    const ctx: ContextRun = { gi, start: from, end: to };
     for (let n = from; n <= to; n++) {
       rows.push({
         kind: "line",
         fi,
+        ctx,
         line: {
           kind: "context",
           oldLineno: n - gap.oldOffset,
