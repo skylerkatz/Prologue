@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.4.3",
+    "date": "2026-08-05",
+    "notes": "## Fixed\n\n- The window can now be dragged by its title bar, and double-clicking the title bar zooms it — like any other macOS window"
+  },
+  {
     "version": "0.4.2",
     "date": "2026-08-05",
     "notes": "## Fixed\n\n- Lines revealed with the expand controls between hunks are now syntax highlighted, matching the rest of the diff"
