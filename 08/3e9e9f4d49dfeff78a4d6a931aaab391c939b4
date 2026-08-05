@@ -1,0 +1,19 @@
+src-tauri/capabilities/default.json
+  s_b6950f4780bd68::t_4ad1ec85640a63 8-9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "083e9e9f4d49dfeff78a4d6a931aaab391c939b4",
+  "prompts": {},
+  "sessions": {
+    "s_b6950f4780bd68": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c6f41ae4-f897-440e-bf4f-6de5ecb7d9d5",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
