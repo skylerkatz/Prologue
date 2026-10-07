@@ -109,23 +109,29 @@ export function ReviewShell({
   } | null>(null);
 
   // View > Archived Reviews… (native menu) — replaces the old toolbar button.
+  // Native menu clicks never reach the help sheet's outside-click dismiss,
+  // so each menu overlay closes the other: the archive closes on Esc from
+  // its own listener, and stacked under the sheet it would close first.
   useTauriEvent(MENU_VIEW_ARCHIVED_EVENT, () => {
     setShowFileJump(false);
+    setShowHelp(false);
     setShowArchive(true);
   });
 
   // Help > Keyboard Shortcuts — same overlay as the `?` key.
   useTauriEvent(MENU_SHOW_SHORTCUTS_EVENT, () => {
     setShowFileJump(false);
+    setShowArchive(false);
     setShowHelp(true);
   });
 
   // `?` toggles the shortcut cheat sheet; Esc closes it. Esc only reaches
-  // here when the sheet is topmost: FileJump swallows its own Esc, and ⌘P
-  // is suppressed while the sheet is up, so the two never stack. Otherwise
-  // Esc cancels a running guide generation. Overlays that own Esc (the
-  // archive, What's New) close on it from a document listener, which runs
-  // before this window one, and preventDefault it so it never gets here.
+  // here when the sheet is topmost: FileJump swallows its own Esc, ⌘P is
+  // suppressed while the sheet is up, and the menus never stack it with the
+  // archive. Otherwise Esc cancels a running guide generation. Overlays that
+  // own Esc (the archive, What's New) close on it from a document listener,
+  // which runs before this window one, and preventDefault it so it never
+  // gets here.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) {
