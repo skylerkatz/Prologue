@@ -1,7 +1,6 @@
 import { useCallback } from "react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
-import type { ToastMessage } from "./useToast";
-import { useToast } from "./useToast";
+import { useToast, type ToastMessage } from "./useToast";
 
 /**
  * Double-clicking a file name copies its repo-relative path; ⌥ double-click
