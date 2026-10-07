@@ -1,5 +1,5 @@
-Bottom-center toast confirming clipboard exports ("Copied Markdown to clipboard") or showing errors. Fades in/out; no other motion.
+Bottom-center toast confirming clipboard exports ("Copied JSON to clipboard") or showing errors. Fades in/out; no other motion.
 
 ```jsx
-<Toast>Copied Markdown to clipboard</Toast>
+<Toast>Copied JSON to clipboard</Toast>
 ```

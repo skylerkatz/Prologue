@@ -15,11 +15,11 @@ One product, four surfaces (all in the UI kit at `ui_kits/prologue/`):
 1. **Review screen** — toolbar, file sidebar, review-comments panel, virtualized diff with inline comment threads.
 2. **Welcome page** — repo picker + recent repositories.
 3. **Archived reviews** — read-only overlay dialog.
-4. **Export menu + toast** — clipboard export of open comments (Markdown/JSON/agent-prompt variants).
+4. **Export + Guide buttons, toast** — `Export` copies the review's open comments as JSON (⌘-click prepends the agent prompt) and confirms with a toast; `Guide` generates or regenerates the review guide (small `--renamed` dot when the guide is stale; `Generating…` and disabled while running; Esc cancels). Both are single buttons — no dropdown menus.
 
 ## Content fundamentals
 - **Voice**: terse, technical, confident. Sentence case everywhere except uppercase micro-headers (`3 FILES CHANGED`, `RECENT REPOSITORIES`).
-- **Person**: the reviewer is "You" (comments are authored locally; there are no other users). Tooltips address the user directly: "Copy the review's open comments to the clipboard".
+- **Person**: the reviewer is "You" (comments are authored locally; there are no other users). Tooltips address the user directly: "Copy open comments as JSON · ⌘-click to include the agent prompt".
 - **Comment IDs**: every comment gets a mono ID (`C1`, `C2`…) used as its avatar glyph and export handle.
 - **Labels are verbs or nouns, never both**: `Reply`, `Resolve`, `Dismiss`, `Edit`, `Delete`, `Reopen`, `Refresh`, `Export`, `+ Add comment`.
 - **Destructive actions confirm inline**, never via dialog: "Really delete? Its 3 replies will be deleted too" / "Keep".

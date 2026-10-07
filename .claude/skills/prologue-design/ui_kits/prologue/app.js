@@ -1,5 +1,5 @@
 /* Prologue UI kit — interactive recreation of the mockup.
-   Welcome → Review; export menu + toast; archived overlay; comment threads. */
+   Welcome → Review; export + guide buttons, toast; archived overlay; comment threads. */
 const { useState } = React;
 
 /* ---------- primitives (cosmetic twins of components/) ---------- */
@@ -228,21 +228,26 @@ function FileCard({ file, threads, hideWs, onGutter, selectedKey, composerAt, on
   );
 }
 
-/* ---------- export menu ---------- */
-function ExportMenu({ disabled, onCopied }) {
-  const [open, setOpen] = useState(false);
+/* ---------- export + guide buttons ---------- */
+function ExportButton({ disabled, onCopied }) {
+  // ⌘-click prepends the agent prompt; formatting happens in Rust in the app.
   return (
-    <span style={{ position: "relative" }}>
-      <Btn sm={false} disabled={disabled} onClick={() => setOpen(!open)} title="Copy the review's open comments to the clipboard">Export ▾</Btn>
-      {open && (
-        <div role="menu" style={{ position: "absolute", top: "calc(100% + 4px)", right: 0, zIndex: 30, display: "flex", flexDirection: "column", minWidth: 208, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 6, boxShadow: "var(--shadow-menu)", overflow: "hidden" }}>
-          {["Markdown", "JSON", "Agent prompt + Markdown", "Agent prompt + JSON"].map((l, i) => (
-            <button key={l} onClick={() => { setOpen(false); onCopied(l); }} style={{ background: "none", border: "none", borderTop: i ? "1px solid var(--border)" : "none", padding: "8px 13px", fontSize: 13, textAlign: "left", cursor: "pointer" }}
-              onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg-subtle)"} onMouseLeave={(e) => e.currentTarget.style.background = "none"}>{l}</button>
-          ))}
-        </div>
-      )}
-    </span>
+    <Btn disabled={disabled} onClick={(e) => onCopied(e.metaKey ? "agent prompt + JSON" : "JSON")}
+      title={disabled ? "No open comments to export" : "Copy open comments as JSON · ⌘-click to include the agent prompt"}>Export</Btn>
+  );
+}
+function GuideButton() {
+  // Mock run: the app shells out to the `claude` CLI; Esc cancels it there.
+  const [stale, setStale] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const run = () => { setGenerating(true); window.setTimeout(() => { setGenerating(false); setStale(false); }, 1500); };
+  return (
+    <Btn disabled={generating} onClick={run}
+      title={generating ? "Generating the review guide — press Esc to cancel" : stale ? "The diff has changed since the guide was generated — click to regenerate" : "Regenerate the review guide"}
+      style={{ display: "inline-flex", alignItems: "center" }}>
+      {generating ? "Generating…" : "Guide"}
+      {!generating && stale && <span aria-hidden="true" style={{ width: 7, height: 7, marginLeft: 6, borderRadius: 999, background: "var(--renamed)" }} />}
+    </Btn>
   );
 }
 
@@ -359,7 +364,8 @@ function Review({ onArchive }) {
           {hideWs && <span style={{ width: 7, height: 7, borderRadius: 999, background: "var(--accent)" }} />}
           Hide whitespace
         </button>
-        <ExportMenu disabled={openThreadCount === 0} onCopied={(l) => pop(`Copied ${l} to clipboard`)} />
+        <GuideButton />
+        <ExportButton disabled={openThreadCount === 0} onCopied={(l) => pop(`Copied ${l} to clipboard`)} />
         <Btn onClick={onArchive} title="Browse archived reviews (read-only)">Archived</Btn>
         <Btn title="Refresh branches and diff">↻ Refresh</Btn>
       </header>
