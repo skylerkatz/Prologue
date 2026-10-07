@@ -66,7 +66,7 @@ export function FileJump({ files, onSelect, onClose }: FileJumpProps) {
       }
     } else if (e.key === "Escape") {
       e.preventDefault();
-      // Keep Esc local to the palette (the archive overlay also listens).
+      // Keep Esc local to the palette (the archive overlay also closes on Esc).
       e.stopPropagation();
       onClose();
     }

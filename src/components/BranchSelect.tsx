@@ -85,7 +85,7 @@ export function BranchSelect({ value, branches, onChange }: BranchSelectProps) {
       }
     } else if (e.key === "Escape") {
       e.preventDefault();
-      // Keep Esc local to the menu (the archive overlay also listens).
+      // Keep Esc local to the menu (the archive overlay also closes on Esc).
       e.stopPropagation();
       setOpen(false);
       buttonRef.current?.focus();

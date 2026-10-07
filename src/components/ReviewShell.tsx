@@ -123,9 +123,9 @@ export function ReviewShell({
   // `?` toggles the shortcut cheat sheet; Esc closes it. Esc only reaches
   // here when the sheet is topmost: FileJump swallows its own Esc, and ⌘P
   // is suppressed while the sheet is up, so the two never stack. Otherwise
-  // Esc cancels a running guide generation, unless an overlay is on top:
-  // the archive (no Esc of its own) or one that consumed the key with
-  // preventDefault (What's New).
+  // Esc cancels a running guide generation. Overlays that own Esc (the
+  // archive, What's New) close on it from a document listener, which runs
+  // before this window one, and preventDefault it so it never gets here.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) {
@@ -153,7 +153,7 @@ export function ReviewShell({
       } else if (e.key === "Escape" && showHelp) {
         e.preventDefault();
         setShowHelp(false);
-      } else if (e.key === "Escape" && guideGenerating && !showArchive) {
+      } else if (e.key === "Escape" && guideGenerating) {
         e.preventDefault();
         onCancelGuide();
       }

@@ -24,6 +24,18 @@ export function ArchivedReviews({ repoPath, onClose }: ArchivedReviewsProps) {
   const threadEditing = useThreadEditing(noop);
 
   useEffect(() => {
+    const closeOnEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        // Consumed: ReviewShell's global Esc (guide cancel) skips it.
+        e.preventDefault();
+        onClose();
+      }
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
+
+  useEffect(() => {
     let cancelled = false;
     listArchivedReviews(repoPath)
       .then((list) => {
