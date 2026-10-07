@@ -47,9 +47,8 @@ export function GuideButton({
     return () => window.clearTimeout(timer);
   }, [error, clearError]);
 
-  const stale = guide !== null && isStale;
-  const disabled = generating || !hasTarget || emptyDiff || !cliAvailable;
-  const title = generating
+  // Any gate disables the button, and its tooltip says why.
+  const blocked = generating
     ? "Generating the review guide — press Esc to cancel"
     : !hasTarget
       ? "Guides need an active review"
@@ -57,23 +56,26 @@ export function GuideButton({
         ? "No changes to guide"
         : !cliAvailable
           ? "Install Claude Code to generate guides"
-          : guide === null
-            ? `Generate a review guide — ${CONSENT}`
-            : stale
-              ? `The diff has changed since the guide was generated — click to regenerate (${CONSENT})`
-              : `Regenerate the review guide — ${CONSENT}`;
+          : null;
+  const title =
+    blocked ??
+    (guide === null
+      ? `Generate a review guide — ${CONSENT}`
+      : isStale
+        ? `The diff has changed since the guide was generated — click to regenerate (${CONSENT})`
+        : `Regenerate the review guide — ${CONSENT}`);
 
   return (
     <>
       <button
         type="button"
         className="refresh-button"
-        disabled={disabled}
+        disabled={blocked !== null}
         title={title}
         onClick={onGenerate}
       >
         {generating ? "Generating…" : "Guide"}
-        {!generating && stale && (
+        {!generating && isStale && (
           <span className="guide-stale-dot" aria-hidden="true" />
         )}
       </button>
