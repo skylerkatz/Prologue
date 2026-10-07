@@ -1,0 +1,31 @@
+src/components/DiffView.tsx
+  s_74133aa4a98695::t_b3391c00486474 75,781,1321
+src/components/GuideButton.tsx
+  s_74133aa4a98695::t_b3391c00486474 3,83
+src/components/FileList.tsx
+  s_74133aa4a98695::t_b3391c00486474 11,154,266
+src/components/useToast.tsx
+  s_74133aa4a98695::t_224585cb74bb62 1-30,38-43
+  s_74133aa4a98695::t_aaa95ea1a4f685 31-37
+src/components/ExportButton.tsx
+  s_74133aa4a98695::t_b3391c00486474 4,28,46,49,72
+src/components/useCopyPath.ts
+  s_74133aa4a98695::t_aaa95ea1a4f685 3-4
+  s_74133aa4a98695::t_a9b5d9bd6d4eac 1,8-9,12,15,21-28,34,37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7eb3a3ab6f584c7ca3f17ba4fa1b6f0dc4bffa6c",
+  "prompts": {},
+  "sessions": {
+    "s_74133aa4a98695": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "80f22a62-7790-44ea-9008-864f7472c654",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
