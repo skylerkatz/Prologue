@@ -32,6 +32,8 @@ export function WhatsNew({ onClose }: WhatsNewProps) {
   useEffect(() => {
     const closeOnEscape = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        // Consumed: ReviewShell's global Esc (guide cancel) skips it.
+        e.preventDefault();
         onClose();
       }
     };
