@@ -1,0 +1,23 @@
+src/App.css
+  s_e3d7936270a7fc::t_ff72d4bb2ea327 551
+src/components/ExportButton.tsx
+  s_e3d7936270a7fc::t_ff72d4bb2ea327 1-99
+src/components/ReviewShell.tsx
+  s_e3d7936270a7fc::t_ff72d4bb2ea327 12,212,272
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1a0d1be037adb3944cf19d0a0109e0a8390e2885",
+  "prompts": {},
+  "sessions": {
+    "s_e3d7936270a7fc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d6a49611-e67b-4386-9315-0198e7b0f670",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
