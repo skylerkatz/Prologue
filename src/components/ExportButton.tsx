@@ -1,14 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import type { MouseEvent } from "react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { errorText, exportReview } from "../ipc";
 import type { ExportFormat, DiffMode } from "../types";
-
-const OPTIONS: ReadonlyArray<{ format: ExportFormat; label: string }> = [
-  { format: "markdown", label: "Markdown" },
-  { format: "json", label: "JSON" },
-  { format: "prompt-markdown", label: "Agent prompt + Markdown" },
-  { format: "prompt-json", label: "Agent prompt + JSON" },
-];
 
 /** The displayed diff the export must describe; null when there is nothing
  * exportable (no active review). */
@@ -20,40 +14,22 @@ export interface ExportTarget {
   reviewId: number;
 }
 
-interface ExportMenuProps {
+interface ExportButtonProps {
   target: ExportTarget | null;
-  /** Open comments on the review; zero disables the menu. */
+  /** Open comments on the review; zero disables the button. */
   openCount: number;
 }
 
 /**
- * Toolbar dropdown copying the review's open comments to the clipboard in
- * one of the four export formats. Formatting happens in Rust; this only
- * invokes, copies, and confirms with a toast.
+ * Toolbar button copying the review's open comments to the clipboard as
+ * JSON, or with the agent prompt prepended on ⌘-click. Formatting happens in
+ * Rust; this only invokes, copies, and confirms with a toast.
  */
-export function ExportMenu({ target, openCount }: ExportMenuProps) {
-  const [open, setOpen] = useState(false);
+export function ExportButton({ target, openCount }: ExportButtonProps) {
   const [toast, setToast] = useState<{ text: string; error: boolean } | null>(
     null,
   );
-  const rootRef = useRef<HTMLDivElement>(null);
   const toastTimer = useRef<number | undefined>(undefined);
-
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-    const closeOnOutsideClick = (e: MouseEvent) => {
-      if (
-        rootRef.current !== null &&
-        !rootRef.current.contains(e.target as Node)
-      ) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", closeOnOutsideClick);
-    return () => document.removeEventListener("mousedown", closeOnOutsideClick);
-  }, [open]);
 
   useEffect(() => () => window.clearTimeout(toastTimer.current), []);
 
@@ -67,7 +43,6 @@ export function ExportMenu({ target, openCount }: ExportMenuProps) {
   };
 
   const copy = async (format: ExportFormat, label: string) => {
-    setOpen(false);
     if (target === null) {
       return;
     }
@@ -87,9 +62,15 @@ export function ExportMenu({ target, openCount }: ExportMenuProps) {
     }
   };
 
+  // ⌘ only: on macOS Ctrl-click is a context-menu click.
+  const onClick = (e: MouseEvent<HTMLButtonElement>) =>
+    void (e.metaKey
+      ? copy("prompt-json", "agent prompt + JSON")
+      : copy("json", "JSON"));
+
   const disabled = target === null || openCount === 0;
   return (
-    <div className="export-menu" ref={rootRef}>
+    <>
       <button
         type="button"
         className="refresh-button"
@@ -99,26 +80,12 @@ export function ExportMenu({ target, openCount }: ExportMenuProps) {
             ? "Exporting needs an active review"
             : openCount === 0
               ? "No open comments to export"
-              : "Copy the review's open comments to the clipboard"
+              : "Copy open comments as JSON · ⌘-click to include the agent prompt"
         }
-        onClick={() => setOpen((prev) => !prev)}
+        onClick={onClick}
       >
-        Export ▾
+        Export
       </button>
-      {open && (
-        <div className="export-options" role="menu">
-          {OPTIONS.map(({ format, label }) => (
-            <button
-              key={format}
-              type="button"
-              role="menuitem"
-              onClick={() => void copy(format, label)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
       {toast !== null && (
         <div
           className={toast.error ? "copy-toast error" : "copy-toast"}
@@ -127,6 +94,6 @@ export function ExportMenu({ target, openCount }: ExportMenuProps) {
           {toast.text}
         </div>
       )}
-    </div>
+    </>
   );
 }

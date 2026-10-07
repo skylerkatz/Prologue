@@ -548,7 +548,7 @@ button.primary:hover {
   cursor: default;
 }
 
-/* Export dropdown + copy confirmation toast */
+/* Toolbar dropdown (Guide menu) + copy confirmation toast */
 
 .export-menu {
   position: relative;

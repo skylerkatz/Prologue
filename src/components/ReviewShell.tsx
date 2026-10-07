@@ -9,7 +9,7 @@ import type { BranchList, RepoInfo, DiffMode } from "../types";
 import { ArchivedReviews } from "./ArchivedReviews";
 import { BranchSelect } from "./BranchSelect";
 import { DiffView } from "./DiffView";
-import { ExportMenu, type ExportTarget } from "./ExportMenu";
+import { ExportButton, type ExportTarget } from "./ExportButton";
 import { FileJump } from "./FileJump";
 import { FileList } from "./FileList";
 import { GuideMenu } from "./GuideMenu";
@@ -209,7 +209,7 @@ export function ReviewShell({
     };
   }, [view, guideState.grouped, guideState.sections]);
 
-  /** What the Export menu would export: the displayed diff's pinned params
+  /** What the Export button would export: the displayed diff's pinned params
    * plus its active review; null (disabled) when there is neither. */
   const exportTarget = useMemo<ExportTarget | null>(
     () =>
@@ -269,7 +269,7 @@ export function ReviewShell({
           hasTarget={exportTarget !== null}
           emptyDiff={view !== null && view.summary.files.length === 0}
         />
-        <ExportMenu target={exportTarget} openCount={openCount} />
+        <ExportButton target={exportTarget} openCount={openCount} />
       </header>
       <main className="diff-main">
         {error !== null ? (
