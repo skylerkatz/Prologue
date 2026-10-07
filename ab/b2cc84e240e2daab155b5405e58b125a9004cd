@@ -1,0 +1,26 @@
+src/components/ReviewShell.tsx
+  s_6e6e2490345092::t_fedde8e74cb94d 126-128,156
+src/components/FileJump.tsx
+  s_6e6e2490345092::t_fedde8e74cb94d 69
+src/components/BranchSelect.tsx
+  s_6e6e2490345092::t_fedde8e74cb94d 88
+src/components/ArchivedReviews.tsx
+  s_6e6e2490345092::t_fedde8e74cb94d 27-37
+  s_6e6e2490345092::t_3dbdb71b72acc8 26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "abb2cc84e240e2daab155b5405e58b125a9004cd",
+  "prompts": {},
+  "sessions": {
+    "s_6e6e2490345092": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6234ce10-14be-40c6-9c1e-ddbd43f16246",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
