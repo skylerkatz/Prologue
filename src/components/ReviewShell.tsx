@@ -12,7 +12,7 @@ import { DiffView } from "./DiffView";
 import { ExportButton, type ExportTarget } from "./ExportButton";
 import { FileJump } from "./FileJump";
 import { FileList } from "./FileList";
-import { GuideMenu } from "./GuideMenu";
+import { GuideButton } from "./GuideButton";
 import { ModeToggle } from "./ModeToggle";
 import { OrphanedComments } from "./OrphanedComments";
 import { ReviewCommentsPanel } from "./ReviewCommentsPanel";
@@ -82,6 +82,7 @@ export function ReviewShell({
     openCounts,
   } = useReviewDerived(session, hideResolved);
   const guideState = useGuide(session);
+  const { generating: guideGenerating, onCancel: onCancelGuide } = guideState;
   const {
     onToggleReviewed,
     onSetFilesReviewed,
@@ -121,7 +122,8 @@ export function ReviewShell({
 
   // `?` toggles the shortcut cheat sheet; Esc closes it. Esc only reaches
   // here when the sheet is topmost: FileJump swallows its own Esc, and ⌘P
-  // is suppressed while the sheet is up, so the two never stack.
+  // is suppressed while the sheet is up, so the two never stack. Otherwise
+  // Esc cancels a running guide generation (the sheet keeps precedence).
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) {
@@ -149,11 +151,14 @@ export function ReviewShell({
       } else if (e.key === "Escape" && showHelp) {
         e.preventDefault();
         setShowHelp(false);
+      } else if (e.key === "Escape" && guideGenerating) {
+        e.preventDefault();
+        onCancelGuide();
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [showHelp, showFileJump, showArchive]);
+  }, [showHelp, showFileJump, showArchive, guideGenerating, onCancelGuide]);
 
   // ⌘P (or Ctrl+P) opens the file-jump palette over the diff.
   const canJump =
@@ -264,7 +269,7 @@ export function ReviewShell({
           hidden={hideWhitespace}
           onChange={onHideWhitespaceChange}
         />
-        <GuideMenu
+        <GuideButton
           {...guideState}
           hasTarget={exportTarget !== null}
           emptyDiff={view !== null && view.summary.files.length === 0}

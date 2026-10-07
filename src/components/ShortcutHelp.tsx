@@ -22,6 +22,7 @@ const SECTIONS: { title: string; rows: ShortcutRow[] }[] = [
       { keys: ["v"], label: "Toggle viewed on the current file" },
       { keys: ["⌘↩"], label: "Submit the comment you're writing" },
       { keys: ["Esc"], label: "Cancel the comment you're writing" },
+      { keys: ["Esc"], label: "Cancel guide generation" },
     ],
   },
   {
