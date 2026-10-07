@@ -1,0 +1,19 @@
+src/App.css
+  s_dc51b8edfa7003::t_99da7028d815cc 551
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ea81fd626f1967c6b727ebdda84bf6070aac65ea",
+  "prompts": {},
+  "sessions": {
+    "s_dc51b8edfa7003": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3a1c076f-6088-46fa-b420-ca64a0438c5f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
