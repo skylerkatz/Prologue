@@ -8,6 +8,7 @@ import type {
 import type { ResolvedGuideSection } from "../diff/guideOrder";
 import { splitInlineCode } from "../diff/inlineCode";
 import { useCopyPath } from "./useCopyPath";
+import { Toast } from "./useToast";
 
 const STATUS_LABELS: Record<FileStatus, string> = {
   added: "A",
@@ -150,7 +151,7 @@ export function FileList({
 }: FileListProps) {
   // Purely visual: the ribbon bookmark on the row last clicked.
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
-  const { copied, copyPath } = useCopyPath(repoPath);
+  const { toast, copyPath } = useCopyPath(repoPath);
   const reviewedCount = summary.files.filter(
     (f) => reviewStates.get(f.path) === "reviewed",
   ).length;
@@ -262,13 +263,7 @@ export function FileList({
       ) : (
         <ul>{summary.files.map(renderRow)}</ul>
       )}
-      {copied && (
-        <div className="copy-toast" role="status">
-          {copied === "absolute"
-            ? "Copied absolute path to clipboard"
-            : "Copied file path to clipboard"}
-        </div>
-      )}
+      {toast !== null && <Toast {...toast} />}
     </div>
   );
 }

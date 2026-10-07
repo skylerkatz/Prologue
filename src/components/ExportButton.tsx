@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { errorText, exportReview } from "../ipc";
 import type { DiffMode } from "../types";
+import { Toast, useToast } from "./useToast";
 
 /** The displayed diff the export must describe; null when there is nothing
  * exportable (no active review). */
@@ -25,21 +25,7 @@ interface ExportButtonProps {
  * Rust; this only invokes, copies, and confirms with a toast.
  */
 export function ExportButton({ target, openCount }: ExportButtonProps) {
-  const [toast, setToast] = useState<{ text: string; error: boolean } | null>(
-    null,
-  );
-  const toastTimer = useRef<number | undefined>(undefined);
-
-  useEffect(() => () => window.clearTimeout(toastTimer.current), []);
-
-  const showToast = (text: string, error: boolean) => {
-    window.clearTimeout(toastTimer.current);
-    setToast({ text, error });
-    toastTimer.current = window.setTimeout(
-      () => setToast(null),
-      error ? 5000 : 2500,
-    );
-  };
+  const { toast, showToast } = useToast();
 
   const copy = async (withPrompt: boolean) => {
     if (target === null) {
@@ -57,10 +43,10 @@ export function ExportButton({ target, openCount }: ExportButtonProps) {
       await writeText(text);
       showToast(
         `Copied ${withPrompt ? "agent prompt + JSON" : "JSON"} to clipboard`,
-        false,
+        2500,
       );
     } catch (e) {
-      showToast(errorText(e), true);
+      showToast(errorText(e), 5000, true);
     }
   };
 
@@ -83,14 +69,7 @@ export function ExportButton({ target, openCount }: ExportButtonProps) {
       >
         Export
       </button>
-      {toast !== null && (
-        <div
-          className={toast.error ? "copy-toast error" : "copy-toast"}
-          role="status"
-        >
-          {toast.text}
-        </div>
-      )}
+      {toast !== null && <Toast {...toast} />}
     </>
   );
 }

@@ -72,6 +72,7 @@ import { Chevron } from "./Chevron";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { OrphanOrigin } from "./OrphanedComments";
 import { useCopyPath } from "./useCopyPath";
+import { Toast } from "./useToast";
 
 /** Parallel `get_file_diff` calls; each recomputes the repo diff in Rust. */
 const MAX_CONCURRENT_LOADS = 3;
@@ -777,7 +778,7 @@ export function DiffView({
 
   // Double-click on a file card's name copies its repo-relative path;
   // ⌥ double-click copies the absolute path.
-  const { copied, copyPath } = useCopyPath(repoPath);
+  const { toast, copyPath } = useCopyPath(repoPath);
 
   const commentIndex = useMemo(
     () => indexComments(summary.files, comments, anchorStatuses),
@@ -1317,13 +1318,7 @@ export function DiffView({
           );
         })}
       </div>
-      {copied && (
-        <div className="copy-toast" role="status">
-          {copied === "absolute"
-            ? "Copied absolute path to clipboard"
-            : "Copied file path to clipboard"}
-        </div>
-      )}
+      {toast !== null && <Toast {...toast} />}
     </div>
   );
 }

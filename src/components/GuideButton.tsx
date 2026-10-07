@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import type { GuideState } from "./useGuide";
+import { Toast } from "./useToast";
 
 type GuideButtonProps = Pick<
   GuideState,
@@ -79,11 +80,7 @@ export function GuideButton({
           <span className="guide-stale-dot" aria-hidden="true" />
         )}
       </button>
-      {error !== null && (
-        <div className="copy-toast error" role="status">
-          {error}
-        </div>
-      )}
+      {error !== null && <Toast text={error} error />}
     </>
   );
 }
