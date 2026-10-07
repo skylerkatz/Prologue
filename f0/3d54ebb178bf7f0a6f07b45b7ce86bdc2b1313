@@ -1,0 +1,24 @@
+src/components/GuideButton.tsx
+  s_dc51b8edfa7003::t_7348d3500db5a5 1-85
+src/components/ShortcutHelp.tsx
+  s_dc51b8edfa7003::t_69a12ac45c1150 25
+src/components/ReviewShell.tsx
+  s_dc51b8edfa7003::t_5e55dca4d18e7c 85
+  s_dc51b8edfa7003::t_332c2ee8727ee8 15,125-126,154-156,161,272
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f03d54ebb178bf7f0a6f07b45b7ce86bdc2b1313",
+  "prompts": {},
+  "sessions": {
+    "s_dc51b8edfa7003": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3a1c076f-6088-46fa-b420-ca64a0438c5f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
