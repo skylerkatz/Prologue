@@ -548,73 +548,7 @@ button.primary:hover {
   cursor: default;
 }
 
-/* Toolbar dropdown (Guide menu) + copy confirmation toast */
-
-.export-menu {
-  position: relative;
-}
-
-.export-options {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  z-index: 30;
-  display: flex;
-  flex-direction: column;
-  min-width: 208px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  box-shadow: var(--shadow-menu);
-  overflow: hidden;
-}
-
-.export-options button {
-  background: none;
-  border: none;
-  padding: 8px 13px;
-  font-size: 13px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.export-options button:hover {
-  background: var(--bg-well);
-}
-
-.export-options button + button {
-  border-top: 1px solid var(--border);
-}
-
-/* Fine print inside a toolbar dropdown (the Guide menu's privacy note). */
-.menu-note {
-  margin: 0;
-  padding: 7px 13px;
-  border-top: 1px solid var(--border);
-  background: var(--bg-well);
-  color: var(--text-muted);
-  font-size: 11.5px;
-  line-height: 1.45;
-}
-
-/* The Guide menu's staleness callout: same amber as changed-since-review.
-   It leads the dropdown, so the fine-print rule flips to the bottom edge. */
-.menu-note.stale {
-  border-top: none;
-  border-bottom: 1px solid var(--border);
-  color: var(--renamed);
-}
-
-/* A gated menu item (Regenerate without the CLI) recedes instead of hiding
-   so its tooltip can say why. */
-.export-options button:disabled {
-  color: var(--text-muted);
-  cursor: default;
-}
-
-.export-options button:disabled:hover {
-  background: none;
-}
+/* Toolbar button extras: Guide staleness cue + copy confirmation toast */
 
 /* Quiet staleness cue on the Guide button — the sidebar's
    changed-since-review dot, relocated to the toolbar. */
