@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import type { MouseEvent } from "react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { errorText, exportReview } from "../ipc";
-import type { ExportFormat, DiffMode } from "../types";
+import type { DiffMode } from "../types";
 
 /** The displayed diff the export must describe; null when there is nothing
  * exportable (no active review). */
@@ -42,7 +41,7 @@ export function ExportButton({ target, openCount }: ExportButtonProps) {
     );
   };
 
-  const copy = async (format: ExportFormat, label: string) => {
+  const copy = async (withPrompt: boolean) => {
     if (target === null) {
       return;
     }
@@ -53,20 +52,17 @@ export function ExportButton({ target, openCount }: ExportButtonProps) {
         target.head,
         target.mode,
         target.reviewId,
-        format,
+        withPrompt ? "prompt-json" : "json",
       );
       await writeText(text);
-      showToast(`Copied ${label} to clipboard`, false);
+      showToast(
+        `Copied ${withPrompt ? "agent prompt + JSON" : "JSON"} to clipboard`,
+        false,
+      );
     } catch (e) {
       showToast(errorText(e), true);
     }
   };
-
-  // ⌘ only: on macOS Ctrl-click is a context-menu click.
-  const onClick = (e: MouseEvent<HTMLButtonElement>) =>
-    void (e.metaKey
-      ? copy("prompt-json", "agent prompt + JSON")
-      : copy("json", "JSON"));
 
   const disabled = target === null || openCount === 0;
   return (
@@ -82,7 +78,8 @@ export function ExportButton({ target, openCount }: ExportButtonProps) {
               ? "No open comments to export"
               : "Copy open comments as JSON · ⌘-click to include the agent prompt"
         }
-        onClick={onClick}
+        // ⌘ only: on macOS Ctrl-click is a context-menu click.
+        onClick={(e) => void copy(e.metaKey)}
       >
         Export
       </button>
