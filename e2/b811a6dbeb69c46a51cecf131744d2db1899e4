@@ -1,0 +1,39 @@
+.claude/skills/prologue-design/readme.md
+  s_0bc5bfcb539024::t_af470774dffe6c 18,22
+.claude/skills/prologue-design/ui_kits/prologue/app.js
+  s_23172bca69bc19::t_822b261516e537 2,231-233,235-250,367-368
+.claude/skills/prologue-design/HANDOFF.md
+  s_0bc5bfcb539024::t_6595902c87b859 17
+.claude/skills/prologue-design/components/core/Toast.prompt.md
+  s_0bc5bfcb539024::t_e60358b725dd7d 1,4
+.claude/skills/prologue-design/components/core/core.card.html
+  s_0bc5bfcb539024::t_3f017a8cc78f55 4,29
+.claude/skills/prologue-design/ui_kits/prologue/README.md
+  s_0bc5bfcb539024::t_11f45087d66bfe 5,9
+.claude/skills/prologue-design/ui_kits/prologue/index.html
+  s_0bc5bfcb539024::t_6cd9355f1bf422 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e2b811a6dbeb69c46a51cecf131744d2db1899e4",
+  "prompts": {},
+  "sessions": {
+    "s_0bc5bfcb539024": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84da507a-c99a-427c-a751-3f8ca08aa3b9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    },
+    "s_23172bca69bc19": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ead17b67-b5cc-4a38-aed5-71aa8f1d42de",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
