@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.5.0",
+    "date": "2026-10-09",
+    "notes": "## New\n\n- Export is now a single button: click to copy the review as JSON, or ⌘-click to copy it with the agent prompt\n- Guide is now a single button: click to generate a guide, and click again to regenerate it. An orange dot still shows when the diff has changed since the guide was made\n- Press Esc to cancel a guide while it's generating\n- Press Esc to close the archived reviews panel\n\n## Fixed\n\n- Opening Keyboard Shortcuts or Archived Reviews from the menu now closes the other panel instead of stacking on top of it\n\n## Other\n\n- Markdown export has been removed from the app; the `prologue` CLI still supports it"
+  },
+  {
     "version": "0.4.3",
     "date": "2026-08-05",
     "notes": "## Fixed\n\n- The window can now be dragged by its title bar, and double-clicking the title bar zooms it — like any other macOS window"
