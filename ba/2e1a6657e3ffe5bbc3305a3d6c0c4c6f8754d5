@@ -1,0 +1,19 @@
+src-tauri/prologue/src/resolve.rs
+  s_2d0c615ca603dd::t_066c8f2d2888b5 33-34,46,71-72,244-252,272
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ba2e1a6657e3ffe5bbc3305a3d6c0c4c6f8754d5",
+  "prompts": {},
+  "sessions": {
+    "s_2d0c615ca603dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "470cc72b-f054-4df1-942a-4fe54af74433",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
