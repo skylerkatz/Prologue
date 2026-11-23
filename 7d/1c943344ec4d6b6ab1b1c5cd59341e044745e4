@@ -1,0 +1,53 @@
+src/components/ExportButton.tsx
+  s_2d0c615ca603dd::t_74c4964f40120c 80
+  s_2d0c615ca603dd::t_fde267af87647e 77-79,81-83
+  s_2d0c615ca603dd::t_f55e1a80224a94 22-34,37,39,44,48,56,59
+  s_2d0c615ca603dd::t_12c00284c617b1 3
+  s_2d0c615ca603dd::t_112bc4429b8511 38
+src-tauri/prologue-core/src/replies.rs
+  s_2d0c615ca603dd::t_a1dab962536bcd 3-7,71-85,452-469
+  s_2d0c615ca603dd::t_2ff0734cdc2a8d 11-13,281,338,340-341,558-560
+  s_2d0c615ca603dd::t_56e401f0916bd1 584-585,591-596
+  s_2d0c615ca603dd::t_27dd0ecd568cf6 1-2,8-10,14-70,86-115,122-280,282-337,339,342-355,358-359,362-451,470-471,482-557,561-583,586-590,597-636
+  s_2d0c615ca603dd::t_ed08555519c5f6 116-121
+  s_2d0c615ca603dd::t_a85e2f8ed9e73e 472-481
+  s_2d0c615ca603dd::t_6a562f866bc978 356-357,360-361
+src-tauri/prologue-core/src/export.rs
+  s_2d0c615ca603dd::t_a1dab962536bcd 870-875
+  s_2d0c615ca603dd::t_de65735367fb8d 356-360,385-387,393-400,402-406
+  s_2d0c615ca603dd::t_d23bcdd6242558 19-23,43,109,127-136,361-384,388-392,401,407-416,434,441,891
+  s_2d0c615ca603dd::t_787b5d0cd00383 857-869,876-890
+  s_2d0c615ca603dd::t_3efb1ea71415cd 856,892
+src-tauri/prologue-core/src/lib.rs
+  s_2d0c615ca603dd::t_2c6e835076e30d 13
+src-tauri/prologue/src/main.rs
+  s_2d0c615ca603dd::t_10c0e1fab3a4fc 23,27,125-128,133-147,194-198,208-209,258-260,262,398,403-417,422-466,647-657,684-690,834-841
+  s_2d0c615ca603dd::t_a1dab962536bcd 121-124,129-132,397,399-402,691-696
+src-tauri/prologue-core/Cargo.toml
+  s_2d0c615ca603dd::t_a1dab962536bcd 14-15
+.claude/skills/prologue-review/SKILL.md
+  s_2d0c615ca603dd::t_b10b850cd27a21 51-53,57-58,60-61
+  s_2d0c615ca603dd::t_c39776594aa860 54-56,59,62-67
+  s_2d0c615ca603dd::t_277b79ecb8620c 16-17
+  s_2d0c615ca603dd::t_eee123cd195439 68
+src-tauri/Cargo.lock
+  s_2d0c615ca603dd::t_978dae530331e6 3394
+src/generated/ipc-types.ts
+  s_2d0c615ca603dd::t_48dc4e02baa262 102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7d1c943344ec4d6b6ab1b1c5cd59341e044745e4",
+  "prompts": {},
+  "sessions": {
+    "s_2d0c615ca603dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "470cc72b-f054-4df1-942a-4fe54af74433",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
