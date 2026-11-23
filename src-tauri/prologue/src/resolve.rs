@@ -30,7 +30,8 @@ impl ReviewRef {
 }
 
 /// The repository containing `start` (upward `.git` discovery) and its
-/// checked-out branch.
+/// checked-out branch. A detached checkout yields `HEAD` — the name the app
+/// files a detached checkout's review under.
 pub fn repo_and_branch(start: &Path) -> Result<(PathBuf, String), String> {
     let repo = git2::Repository::discover(start)
         .map_err(|_| format!("Not inside a git repository: {}", start.display()))?;
@@ -42,7 +43,7 @@ pub fn repo_and_branch(start: &Path) -> Result<(PathBuf, String), String> {
         "The repository has no commits yet — nothing to review".to_owned()
     })?;
     if !head.is_branch() {
-        return Err("Detached HEAD — pass a review id or repo@branch explicitly".to_owned());
+        return Ok((workdir, "HEAD".to_owned()));
     }
     let branch = head
         .shorthand()
@@ -67,8 +68,8 @@ fn paths_match(stored: &str, query: &Path) -> bool {
 }
 
 /// The working tree of the repository containing `start`, if any. Unlike
-/// `repo_and_branch`, an empty repository or a detached HEAD still counts —
-/// listing needs no branch. Bare repositories and paths outside any
+/// `repo_and_branch`, an empty repository still counts — listing needs no
+/// branch. Bare repositories and paths outside any
 /// repository yield None.
 pub fn containing_workdir(start: &Path) -> Option<PathBuf> {
     git2::Repository::discover(start).ok()?.workdir().map(Path::to_path_buf)
@@ -241,6 +242,15 @@ mod tests {
     }
 
     #[test]
+    fn repo_and_branch_reports_a_detached_checkout_as_head() {
+        let fixture = FixtureRepo::new();
+        let head = fixture.commit_file("a.txt", "one\n", "initial");
+        fixture.repo.set_head_detached(head).unwrap();
+        let (_, branch) = repo_and_branch(fixture.dir.path()).unwrap();
+        assert_eq!(branch, "HEAD");
+    }
+
+    #[test]
     fn containing_workdir_tolerates_head_states_repo_and_branch_rejects() {
         let fixture = FixtureRepo::new();
         let head = fixture.commit_file("src/deep/f.txt", "x\n", "initial");
@@ -259,10 +269,9 @@ mod tests {
         assert!(containing_workdir(empty.dir.path()).is_some());
         assert!(repo_and_branch(empty.dir.path()).is_err());
 
-        // A detached HEAD still scopes (repo_and_branch would error).
+        // A detached HEAD still scopes.
         fixture.repo.set_head_detached(head).unwrap();
         assert!(containing_workdir(fixture.dir.path()).is_some());
-        assert!(repo_and_branch(fixture.dir.path()).is_err());
     }
 
     #[test]
