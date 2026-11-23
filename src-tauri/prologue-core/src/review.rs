@@ -267,7 +267,15 @@ enum StaleReason {
 /// fast-forward merge is therefore only detected once the base moves on (or
 /// the branch is deleted). An unresolvable base means merged-ness cannot be
 /// determined — not stale.
+///
+/// `HEAD` (what a detached checkout reviews) is never stale: it is not a
+/// branch, so it can be neither deleted nor merged, and its tip routinely
+/// sits on or behind the base — e.g. a detached checkout of an older commit
+/// with uncommitted work, which must still show that work.
 fn stale_reason(repo: &Repository, branch: &str, base_ref: &str) -> Option<StaleReason> {
+    if branch == "HEAD" {
+        return None;
+    }
     let exists = repo.find_branch(branch, BranchType::Local).is_ok()
         || repo.find_branch(branch, BranchType::Remote).is_ok();
     if !exists {
@@ -738,6 +746,37 @@ mod tests {
             stale_reason(&fixture.repo, "never-existed", "main"),
             Some(StaleReason::Deleted)
         );
+    }
+
+    #[test]
+    fn detached_head_is_never_stale() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = test_db(&dir);
+        let fixture = fixture();
+        // Detach at main's tip, a strict ancestor of feature: a real branch
+        // there would read as merged into feature.
+        let main_tip = fixture.repo.revparse_single("main").unwrap().id();
+        fixture.repo.set_head_detached(main_tip).unwrap();
+        assert_eq!(stale_reason(&fixture.repo, "HEAD", "feature"), None);
+        // Equal tips with the base, too.
+        assert_eq!(stale_reason(&fixture.repo, "HEAD", "main"), None);
+
+        let opened = open_review_checked_impl(
+            &conn,
+            &fixture.repo,
+            &fixture.path(),
+            "HEAD",
+            "feature",
+            DiffMode::All,
+        )
+        .unwrap();
+        assert!(!opened.branch_merged);
+        let review = opened.review.unwrap();
+        assert_eq!(review.status, ReviewStatus::Active);
+
+        // The repo-wide stale scan leaves it active as well.
+        let archived = archive_stale_reviews_impl(&conn, &fixture.repo, &fixture.path()).unwrap();
+        assert!(archived.is_empty());
     }
 
     #[test]
