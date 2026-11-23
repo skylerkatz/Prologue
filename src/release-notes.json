@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.6.0",
+    "date": "2026-11-23",
+    "notes": "## New\n\n- ⇧-click Export to copy a prompt for an agent that can’t reach your Mac, like an Amp orb. The agent finishes with one terminal command that you paste locally to add its replies to the review\n- `prologue import-replies` adds those replies. It checks every comment and commit first, adds nothing if anything is wrong, and skips replies a thread already has. Use `--dry-run` to preview\n\n## Fixed\n\n- Reviews of a detached HEAD (for example, an Amp live-sync checkout) now show your staged and unstaged changes instead of saying HEAD is merged\n- The `prologue` CLI works in a detached checkout instead of asking for a review id"
+  },
+  {
     "version": "0.5.0",
     "date": "2026-10-09",
     "notes": "## New\n\n- Export is now a single button: click to copy the review as JSON, or ⌘-click to copy it with the agent prompt\n- Guide is now a single button: click to generate a guide, and click again to regenerate it. An orange dot still shows when the diff has changed since the guide was made\n- Press Esc to cancel a guide while it's generating\n- Press Esc to close the archived reviews panel\n\n## Fixed\n\n- Opening Keyboard Shortcuts or Archived Reviews from the menu now closes the other panel instead of stacking on top of it\n\n## Other\n\n- Markdown export has been removed from the app; the `prologue` CLI still supports it"
