@@ -1,0 +1,22 @@
+src-tauri/prologue-core/src/review.rs
+  s_2d0c615ca603dd::t_586808d2e183ca 270-274,276-278
+  s_2d0c615ca603dd::t_7ac7e7a3cbb954 752-769,771-781
+  s_2d0c615ca603dd::t_4cf65a3287e0ef 770
+  s_2d0c615ca603dd::t_8716495de8e291 751
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "033f02a40f769551e8e969f6cb0e8add5b5ae89a",
+  "prompts": {},
+  "sessions": {
+    "s_2d0c615ca603dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "470cc72b-f054-4df1-942a-4fe54af74433",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
