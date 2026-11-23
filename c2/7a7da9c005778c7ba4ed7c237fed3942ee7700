@@ -1,0 +1,20 @@
+src/release-notes.json
+  s_2d0c615ca603dd::t_434bc8564ec159 3-6
+  s_2d0c615ca603dd::t_62ed6c5ed569d0 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c27a7da9c005778c7ba4ed7c237fed3942ee7700",
+  "prompts": {},
+  "sessions": {
+    "s_2d0c615ca603dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "470cc72b-f054-4df1-942a-4fe54af74433",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
