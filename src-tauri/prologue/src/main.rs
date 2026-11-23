@@ -20,10 +20,11 @@ use clap::{Parser, Subcommand, ValueEnum};
 use prologue_core::diff::DiffSpec;
 use prologue_core::error::CoreError;
 use prologue_core::export::{self, ExportFormat};
+use prologue_core::replies::{self, ImportReport};
 use prologue_core::review::{self, Comment, CommentLevel, CommentSide, NewComment, Review};
 use prologue_core::rusqlite::Connection;
 use std::fmt::Write as _;
-use std::io::Write as _;
+use std::io::{Read as _, Write as _};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -117,6 +118,33 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Post a remote agent's replies (from a `remote-prompt-*` export): the
+    /// one-line `--base64 DATA` command it hands back, or the replies JSON on
+    /// stdin / --file — bare, or in ```prologue-replies blocks (the last
+    /// wins). All-or-nothing, and safe to re-run.
+    ImportReplies {
+        /// Review id or repo@branch (default: the review the block names,
+        /// else inferred from the cwd's repository and checked-out branch)
+        review: Option<String>,
+        /// The replies JSON, base64-encoded (what the remote prompt's
+        /// one-line command carries)
+        #[arg(long, value_name = "DATA", conflicts_with = "file")]
+        base64: Option<String>,
+        /// Read from this file instead of stdin ("-" is stdin)
+        #[arg(long, value_name = "PATH")]
+        file: Option<PathBuf>,
+        /// Who the replies are from (defaults to the PROLOGUE_AUTHOR
+        /// environment variable, then 'agent'; the app badges non-reviewer
+        /// authors)
+        #[arg(long, env = "PROLOGUE_AUTHOR", default_value = "agent")]
+        author: String,
+        /// Validate and show what would be posted; write nothing
+        #[arg(long)]
+        dry_run: bool,
+        /// Print the import report as JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Reply to a comment's thread (replies attach to the thread root;
     /// closed threads refuse replies)
     Reply {
@@ -163,6 +191,11 @@ enum FormatArg {
     #[value(alias = "prompt-markdown")]
     PromptMd,
     PromptJson,
+    /// For an agent that can't reach this machine: it answers with a
+    /// ```prologue-replies block for `prologue import-replies`
+    #[value(alias = "remote-prompt-markdown")]
+    RemotePromptMd,
+    RemotePromptJson,
 }
 
 impl From<FormatArg> for ExportFormat {
@@ -172,6 +205,8 @@ impl From<FormatArg> for ExportFormat {
             FormatArg::Json => ExportFormat::Json,
             FormatArg::PromptMd => ExportFormat::PromptMarkdown,
             FormatArg::PromptJson => ExportFormat::PromptJson,
+            FormatArg::RemotePromptMd => ExportFormat::RemotePromptMarkdown,
+            FormatArg::RemotePromptJson => ExportFormat::RemotePromptJson,
         }
     }
 }
@@ -220,10 +255,11 @@ fn run(cli: Cli) -> Result<(), String> {
         Some(path) => path,
         None => db::default_db_path()?,
     };
-    // Only the two write commands get a writable connection; every read
-    // stays on a query_only one.
+    // Only the write commands get a writable connection; every read stays
+    // on a query_only one. (`import-replies --dry-run` still opens for write:
+    // it validates exactly what a real run would.)
     let conn = match &cli.command {
-        Command::Comment { .. } | Command::Reply { .. } => {
+        Command::Comment { .. } | Command::Reply { .. } | Command::ImportReplies { .. } => {
             db::open_reviews_db_for_write(&db_path)?
         }
         _ => db::open_reviews_db(&db_path)?,
@@ -358,8 +394,74 @@ fn run(cli: Cli) -> Result<(), String> {
             )?;
             print_created(&created, json)?;
         }
+        Command::ImportReplies { review, base64, file, author, dry_run, json } => {
+            validate_author(&author)?;
+            let block = match base64 {
+                Some(data) => replies::parse_base64_payload(&data)?,
+                None => replies::parse_last_replies_block(&read_input(file.as_deref())?)?,
+            };
+            // An explicit REVIEW wins (core then rejects a block naming
+            // another review); otherwise the block's own review id, which
+            // the export prompt told the agent to keep.
+            let review = match (review, block.review) {
+                (Some(arg), _) => resolve::resolve_review(&conn, Some(&arg), &cwd)?,
+                (None, Some(id)) => review::get_review(&conn, id)?,
+                (None, None) => resolve::resolve_review(&conn, None, &cwd)?,
+            };
+            let report = replies::import_replies_impl(&conn, &review, &block, &author, dry_run)?;
+            if json {
+                print_json(&report)?;
+            } else {
+                print_text(&import_report_text(&report));
+            }
+        }
     }
     Ok(())
+}
+
+/// The whole of `--file PATH`, or stdin when it is absent or "-".
+fn read_input(file: Option<&std::path::Path>) -> Result<String, String> {
+    match file {
+        Some(path) if path != std::path::Path::new("-") => std::fs::read_to_string(path)
+            .map_err(|e| format!("Cannot read {}: {e}", path.display())),
+        _ => {
+            let mut input = String::new();
+            std::io::stdin()
+                .read_to_string(&mut input)
+                .map_err(|e| format!("Cannot read stdin: {e}"))?;
+            Ok(input)
+        }
+    }
+}
+
+fn import_report_text(report: &ImportReport) -> String {
+    let mut out = String::new();
+    let verb = if report.dry_run { "would reply" } else { "replied" };
+    for reply in &report.replies {
+        let sha = reply.commit_sha.as_deref().map_or("review head".to_owned(), |s| {
+            s.get(..7).unwrap_or(s).to_owned()
+        });
+        let id = reply.reply_id.map(|id| format!(" (C{id})")).unwrap_or_default();
+        let first_line = reply.body.lines().next().unwrap_or("");
+        writeln!(out, "C{} {verb}{id} @ {sha}: {first_line}", reply.thread_id).unwrap();
+    }
+    for skip in &report.skipped {
+        writeln!(out, "C{} skipped: {}", skip.thread_id, skip.reason).unwrap();
+    }
+    if !report.unanswered.is_empty() {
+        let ids: Vec<String> = report.unanswered.iter().map(|id| format!("C{id}")).collect();
+        writeln!(out, "no reply for open thread(s): {}", ids.join(", ")).unwrap();
+    }
+    let summary = if report.dry_run { "Dry run — nothing written" } else { "Done" };
+    writeln!(
+        out,
+        "{summary}: {} {verb}, {} skipped (review {})",
+        report.replies.len(),
+        report.skipped.len(),
+        report.review_id
+    )
+    .unwrap();
+    out
 }
 
 /// `C12` or `12` → 12.
@@ -542,7 +644,17 @@ mod tests {
         assert!(Cli::try_parse_from(["prologue", "guide", "--generate"]).is_err());
         assert!(Cli::try_parse_from(["prologue", "guide", "--regenerate"]).is_err());
 
-        for format in ["md", "markdown", "json", "prompt-md", "prompt-markdown", "prompt-json"] {
+        for format in [
+            "md",
+            "markdown",
+            "json",
+            "prompt-md",
+            "prompt-markdown",
+            "prompt-json",
+            "remote-prompt-md",
+            "remote-prompt-markdown",
+            "remote-prompt-json",
+        ] {
             Cli::try_parse_from(["prologue", "export", "7", "--format", format]).unwrap();
         }
         assert!(Cli::try_parse_from(["prologue", "export", "7", "--format", "xml"]).is_err());
@@ -569,6 +681,19 @@ mod tests {
             .unwrap();
         assert!(Cli::try_parse_from(["prologue", "reply", "--body", "done"]).is_err());
         assert!(Cli::try_parse_from(["prologue", "reply", "C12"]).is_err());
+
+        Cli::try_parse_from(["prologue", "import-replies"]).unwrap();
+        Cli::try_parse_from([
+            "prologue", "import-replies", "7", "--file", "-", "--author", "amp", "--dry-run",
+            "--json",
+        ])
+        .unwrap();
+        Cli::try_parse_from(["prologue", "import-replies", "--base64", "eyJ9"]).unwrap();
+        // One input at a time.
+        assert!(Cli::try_parse_from([
+            "prologue", "import-replies", "--base64", "eyJ9", "--file", "x.json",
+        ])
+        .is_err());
     }
 
     #[test]
@@ -706,6 +831,14 @@ mod tests {
         assert!(matches!(ExportFormat::from(FormatArg::Json), ExportFormat::Json));
         assert!(matches!(ExportFormat::from(FormatArg::PromptMd), ExportFormat::PromptMarkdown));
         assert!(matches!(ExportFormat::from(FormatArg::PromptJson), ExportFormat::PromptJson));
+        assert!(matches!(
+            ExportFormat::from(FormatArg::RemotePromptMd),
+            ExportFormat::RemotePromptMarkdown
+        ));
+        assert!(matches!(
+            ExportFormat::from(FormatArg::RemotePromptJson),
+            ExportFormat::RemotePromptJson
+        ));
     }
 
     /// Thread lifecycle must not exist as subcommands — not hidden, not

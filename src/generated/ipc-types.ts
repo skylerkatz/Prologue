@@ -99,7 +99,7 @@ parentId?: number, body: string,
 author?: string, };
 export type AnchorStatus = "anchored" | "changed" | "orphaned";
 export type ReanchorResult = { commentId: number, status: AnchorStatus, startLine: number | null, endLine: number | null, };
-export type ExportFormat = "markdown" | "json" | "prompt-markdown" | "prompt-json";
+export type ExportFormat = "markdown" | "json" | "prompt-markdown" | "prompt-json" | "remote-prompt-markdown" | "remote-prompt-json";
 export type GuideSection = { title: string, summary: string, files: Array<string>, };
 export type Guide = { 
 /**

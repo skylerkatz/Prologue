@@ -10,6 +10,7 @@ pub mod error;
 pub mod export;
 pub mod guide;
 pub mod intraline;
+pub mod replies;
 pub mod repo;
 pub mod review;
 // Test-only git fixtures; the `testutil` feature lets sibling crates (the

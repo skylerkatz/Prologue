@@ -3391,6 +3391,7 @@ dependencies = [
 name = "prologue-core"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "git2",
  "prologue-core",
  "rusqlite",

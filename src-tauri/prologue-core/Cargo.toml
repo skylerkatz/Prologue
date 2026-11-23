@@ -11,6 +11,8 @@ edition = "2021"
 git2 = { version = "0.20", default-features = false }
 rusqlite = { version = "0.40.1", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
+# Decodes `prologue import-replies --base64` payloads (remote agents).
+base64 = "0.22"
 serde_json = "1"
 tempfile = { version = "3", optional = true }
 ts-rs = { version = "10", optional = true }

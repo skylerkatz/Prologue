@@ -16,6 +16,11 @@ pub enum ExportFormat {
     Json,
     PromptMarkdown,
     PromptJson,
+    /// The prompt for an agent that cannot reach this machine (e.g. an Amp
+    /// orb): instead of running `prologue reply`, it ends with a
+    /// `prologue-replies` block that `prologue import-replies` posts.
+    RemotePromptMarkdown,
+    RemotePromptJson,
 }
 
 /// One open thread root plus whether it is orphaned in the current diff (its
@@ -35,6 +40,7 @@ struct ExportComment<'a> {
 /// first, then per-file groups sorted by path (file-level before line-level,
 /// line-level by start line).
 struct ExportData<'a> {
+    review_id: i64,
     repo: String,
     branch: &'a str,
     base_ref: &'a str,
@@ -100,6 +106,7 @@ pub fn export_review_impl(
     }
 
     let data = ExportData {
+        review_id,
         repo: Path::new(&spec.repo_path)
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
@@ -117,8 +124,16 @@ pub fn export_review_impl(
     Ok(match format {
         ExportFormat::Markdown => render_markdown(&data),
         ExportFormat::Json => render_json(&data)?,
-        ExportFormat::PromptMarkdown => render_prompt(&data, ExportFormat::Markdown)?,
-        ExportFormat::PromptJson => render_prompt(&data, ExportFormat::Json)?,
+        ExportFormat::PromptMarkdown => {
+            render_prompt(&data, ExportFormat::Markdown, ReplyChannel::Cli)?
+        }
+        ExportFormat::PromptJson => render_prompt(&data, ExportFormat::Json, ReplyChannel::Cli)?,
+        ExportFormat::RemotePromptMarkdown => {
+            render_prompt(&data, ExportFormat::Markdown, ReplyChannel::Block)?
+        }
+        ExportFormat::RemotePromptJson => {
+            render_prompt(&data, ExportFormat::Json, ReplyChannel::Block)?
+        }
     })
 }
 
@@ -338,7 +353,67 @@ fn render_json(data: &ExportData) -> Result<String, String> {
     .map_err(|e| format!("Failed to encode export JSON: {e}"))
 }
 
-fn render_prompt(data: &ExportData, payload: ExportFormat) -> Result<String, String> {
+/// Where the remote prompt has the agent write its replies JSON: outside
+/// any checkout, so tools that sync the agent's working tree (Amp's live
+/// sync) never carry it back, and it can't be committed by accident.
+const REMOTE_REPLIES_FILE: &str = "/tmp/prologue-replies.json";
+
+/// How the agent reports back what it did per thread.
+#[derive(Clone, Copy)]
+enum ReplyChannel {
+    /// It runs `prologue reply` itself — same machine as the database.
+    Cli,
+    /// It can't reach the database, so it ends with a `prologue-replies`
+    /// block for the reviewer to import.
+    Block,
+}
+
+fn reply_instructions(data: &ExportData, channel: ReplyChannel) -> String {
+    match channel {
+        ReplyChannel::Cli => "As you address each comment, record what you did by replying to its \
+             thread with the `prologue` CLI:\n\n\
+             - prologue reply C12 --body \"extracted the duplicated query into a helper\"\n\
+             - prologue reply C13 --body \"no change needed: the null case is already handled upstream\"\n\n\
+             Reply to every top-level comment ID exactly once, as you finish it — including \
+             comments that need no change (say why). Your replies land in the review app \
+             directly and carry the head SHA at reply time. Resolving or dismissing threads is \
+             the reviewer's decision in the app, never yours.\n"
+            .to_owned(),
+        ReplyChannel::Block => format!(
+            "The review app is not reachable from where you are running, so do not run any \
+             `prologue` command. Instead, once every comment is addressed and your changes are \
+             committed, hand the reviewer ONE terminal command that records your replies:\n\n\
+             1. Write the replies as JSON to {file} (outside the repository, so it never \
+             syncs or gets committed), in this shape:\n\n\
+             ```json\n\
+             {{\"review\": {review}, \"replies\": [\n\
+             \x20 {{\"id\": \"C12\", \"body\": \"extracted the duplicated query into a helper\", \"sha\": \"<full SHA of the commit that addresses it>\"}},\n\
+             \x20 {{\"id\": \"C13\", \"body\": \"no change needed: the null case is already handled upstream\"}}\n\
+             ]}}\n\
+             ```\n\n\
+             \x20  - Include every top-level comment ID exactly once — including comments that \
+             need no change (say why) — and keep \"review\": {review}.\n\
+             \x20  - \"sha\" is the commit that addresses the comment; omit it when you changed \
+             nothing for that comment.\n\n\
+             2. Build the command with your shell, never by hand, so the encoding is exact:\n\n\
+             ```sh\n\
+             printf 'prologue import-replies --base64 %s\\n' \"$(base64 < {file} | tr -d '\\n')\"\n\
+             ```\n\n\
+             3. Your final message must be ONLY that command's one line of output, in a ```sh \
+             code block — no other text. The reviewer pastes it into a terminal on their own \
+             machine and each reply lands on its thread in the review app. Resolving or \
+             dismissing threads is the reviewer's decision there, never yours.\n",
+            file = REMOTE_REPLIES_FILE,
+            review = data.review_id,
+        ),
+    }
+}
+
+fn render_prompt(
+    data: &ExportData,
+    payload: ExportFormat,
+    channel: ReplyChannel,
+) -> Result<String, String> {
     let mut out = format!(
         "You are addressing code review comments for the repository \"{}\", branch \"{}\" \
          (diffed against {}; base SHA {}, head SHA {}, mode: {}).\n\n\
@@ -356,20 +431,14 @@ fn render_prompt(data: &ExportData, payload: ExportFormat) -> Result<String, Str
          - Some comments carry replies: clarifying context added under the original \
          comment. Read them as part of that comment and address the thread as a whole.\n\
          - Make the code changes only; do not try to update or resolve the review itself.\n\n\
-         As you address each comment, record what you did by replying to its thread with \
-         the `prologue` CLI:\n\n\
-         - prologue reply C12 --body \"extracted the duplicated query into a helper\"\n\
-         - prologue reply C13 --body \"no change needed: the null case is already handled upstream\"\n\n\
-         Reply to every top-level comment ID exactly once, as you finish it — including \
-         comments that need no change (say why). Your replies land in the review app \
-         directly and carry the head SHA at reply time. Resolving or dismissing threads is \
-         the reviewer's decision in the app, never yours.\n",
+         {}",
         data.repo,
         data.branch,
         data.base_ref,
         data.base_sha,
         data.head_sha,
         mode_note(data.mode),
+        reply_instructions(data, channel),
     );
     match payload {
         ExportFormat::Markdown => {
@@ -782,6 +851,43 @@ why delete this file?
             "{prompt_json}"
         );
         assert!(prompt_json.contains(&format!("```json\n{json}\n```")), "{prompt_json}");
+    }
+
+    #[test]
+    fn remote_prompts_ask_for_a_replies_block_instead_of_the_cli() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = test_db(&dir);
+        let fixture = fixture();
+        let (review_id, ..) = seeded_review(&conn, &fixture);
+
+        let markdown = export(&conn, &fixture, review_id, ExportFormat::Markdown).unwrap();
+        let remote =
+            export(&conn, &fixture, review_id, ExportFormat::RemotePromptMarkdown).unwrap();
+        assert!(remote.starts_with("You are addressing code review comments"), "{remote}");
+        assert!(remote.contains("locate the target by matching the anchor text"));
+        assert!(remote.contains("do not run any `prologue` command"), "{remote}");
+        assert!(!remote.contains("prologue reply C12"), "{remote}");
+        assert!(
+            remote.contains("printf 'prologue import-replies --base64 %s\\n'"),
+            "{remote}"
+        );
+        assert!(remote.contains("base64 < /tmp/prologue-replies.json | tr -d '\\n'"), "{remote}");
+        assert!(remote.contains("ONLY that command's one line of output"), "{remote}");
+        assert!(remote.contains(&format!("{{\"review\": {review_id}, \"replies\": [")), "{remote}");
+        assert!(remote.contains(&format!("keep \"review\": {review_id}")), "{remote}");
+        assert!(remote.contains("never yours"));
+        assert!(remote.ends_with(&markdown), "prompt must embed the markdown payload verbatim");
+
+        // The example is fenced as json, so importing the prompt itself finds
+        // no replies block — only the agent's answer can supply one.
+        let err = crate::replies::parse_last_replies_block(&remote).unwrap_err();
+        assert!(err.contains("No ```prologue-replies block"), "{err}");
+
+        let json = export(&conn, &fixture, review_id, ExportFormat::Json).unwrap();
+        let remote_json =
+            export(&conn, &fixture, review_id, ExportFormat::RemotePromptJson).unwrap();
+        assert!(remote_json.contains("do not run any `prologue` command"));
+        assert!(remote_json.contains(&format!("```json\n{json}\n```")), "{remote_json}");
     }
 
     #[test]

@@ -13,7 +13,8 @@ reviewer's act, in the app. Don't look for a workaround; there isn't one.
 
 Run it from inside the repository being reviewed: the review is inferred
 from the cwd's repo and checked-out branch, and `prologue reviews` lists
-only that repo's reviews. Anywhere else, pass a review id or `repo@branch`
+only that repo's reviews. A detached checkout maps to the review on branch
+`HEAD`, the name the app files it under. Anywhere else, pass a review id or `repo@branch`
 (find ids with `prologue reviews --all`).
 
 ## Read the review
@@ -46,6 +47,24 @@ prologue reply C13 --body "no change needed: the null case is handled upstream"
   reply, and the reply records the commit that answers it.
 - A resolved or dismissed thread refuses replies ("reopen it first") — that
   thread is settled; leave it alone unless the reviewer reopens it.
+
+## Remote agents (no access to this machine)
+
+An agent on another machine (e.g. an Amp orb) can't run `prologue`. Give it
+`prologue export --format remote-prompt-md` (in the app: ⇧-click Export)
+instead: it tells the agent to finish with ONE shell-safe line to paste
+locally once its commits are here:
+
+```sh
+prologue import-replies --base64 eyJyZXZpZXciOi…   # add --dry-run to check first
+```
+
+The replies JSON is base64-encoded so quotes, backticks and `$` in replies
+can't break the shell. The same JSON also imports from stdin, bare or in
+```` ```prologue-replies ```` blocks (the last wins). The import is
+all-or-nothing (every comment id and commit SHA is checked first) and safe
+to re-run (replies already present are skipped). Set `PROLOGUE_AUTHOR` (or
+pass `--author`) to name the agent.
 
 ## Adding new comments (flagging your own findings)
 
