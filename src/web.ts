@@ -9,6 +9,8 @@ import {
   MENU_VIEW_ARCHIVED_EVENT,
   REPO_CHANGED_EVENT,
 } from "./generated/events";
+import type { BranchList, DiffMode, RepoInfo, Review } from "./types";
+import type { LoadedReview } from "./ipc";
 
 /** What the server was started for (`prologue-server --repo … --base …`). */
 export interface WebConfig {
@@ -16,11 +18,87 @@ export interface WebConfig {
   baseRef: string | null;
   /** Send to Amp is configured (the webhook URL never leaves the server). */
   ampWebhook: boolean;
+  /** open_repo, list_branches, and find_active_review for the served repo,
+   * answered up front to save their round trips; null if any failed. */
+  start: {
+    repo: RepoInfo;
+    branchList: BranchList;
+    activeReview: Review | null;
+  } | null;
+}
+
+/**
+ * What prologue-server inlines into index.html so the first render needs
+ * no API round trip: the /api/config and /api/me answers, and the review
+ * the page opens first, with the coordinates it was computed for. Each
+ * part is null when the server could not produce it; the page then makes
+ * that call itself.
+ */
+interface Boot {
+  config: WebConfig;
+  me: WebViewer | null;
+  review: {
+    repoPath: string;
+    branch: string;
+    base: string;
+    mode: DiffMode;
+    ignoreWhitespace: boolean;
+    data: LoadedReview;
+  } | null;
+}
+
+let bootRead = false;
+let boot: Boot | null = null;
+
+function readBoot(): Boot | null {
+  if (!bootRead) {
+    bootRead = true;
+    try {
+      const text = document.getElementById("prologue-boot")?.textContent;
+      boot = text ? (JSON.parse(text) as Boot) : null;
+    } catch {
+      boot = null;
+    }
+  }
+  return boot;
+}
+
+/** The inlined review, once, and only for the exact view it was computed
+ * for; later loads (and a different stored mode) ask the server. */
+export function takeBootReview(
+  repoPath: string,
+  branch: string,
+  base: string,
+  mode: DiffMode,
+  ignoreWhitespace: boolean,
+): LoadedReview | null {
+  const review = readBoot()?.review ?? null;
+  if (review === null) {
+    return null;
+  }
+  boot!.review = null;
+  const matches =
+    review.repoPath === repoPath &&
+    review.branch === branch &&
+    review.base === base &&
+    review.mode === mode &&
+    review.ignoreWhitespace === ignoreWhitespace;
+  return matches ? review.data : null;
+}
+
+/** Tell the server which view this browser shows (localStorage is out of
+ * its reach), so the review it inlines next time is the one asked for. */
+export function rememberView(mode: DiffMode, ignoreWhitespace: boolean): void {
+  document.cookie = `prologue-view=${mode}.${ignoreWhitespace ? 1 : 0}; path=/; max-age=31536000; SameSite=Lax`;
 }
 
 let configPromise: Promise<WebConfig> | null = null;
 
 export function webConfig(): Promise<WebConfig> {
+  const inlined = readBoot()?.config;
+  if (inlined !== undefined) {
+    configPromise ??= Promise.resolve(inlined);
+  }
   configPromise ??= fetch("/api/config").then((res) => {
     if (!res.ok) {
       throw new Error(`Could not load the server config (${res.status})`);
@@ -49,6 +127,11 @@ export function loadWebViewer(): void {
     return;
   }
   viewerStarted = true;
+  const inlined = readBoot();
+  if (inlined !== null) {
+    viewer = inlined.me;
+    return;
+  }
   fetch("/api/me")
     .then((res) => (res.ok ? (res.json() as Promise<WebViewer | null>) : null))
     .then((me) => {

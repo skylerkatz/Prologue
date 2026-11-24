@@ -16,7 +16,7 @@ use crate::diff::{self, DiffMode, DiffSpec};
 pub use crate::anchor::CodeAnchor;
 pub use crate::comment::{
     comment_count, create_comment_impl, delete_comment_impl, get_comment, list_comments_impl,
-    reanchor_comments_impl, resolve_threads, resolve_threads_with, stored_threads,
+    reanchor_comments_impl, reanchor_comments_in, resolve_threads, resolve_threads_with, stored_threads,
     try_create_comment, update_comment_impl, update_comment_state_impl, Comment, CommentLevel,
     CommentState, NewComment, ReanchorResult, Thread,
 };

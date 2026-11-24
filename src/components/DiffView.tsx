@@ -55,6 +55,7 @@ import type {
   CommentState,
   DiffLine,
   DiffSummary,
+  FileDiff,
   FileReviewState,
   FileStatus,
   FileSummary,
@@ -73,6 +74,7 @@ import { MarkdownPreview } from "./MarkdownPreview";
 import { OrphanOrigin } from "./OrphanedComments";
 import { useCopyPath } from "./useCopyPath";
 import { Toast } from "./useToast";
+import { prefetchedFileDiff, type DiffParams } from "../diff/prefetch";
 
 /** Parallel `get_file_diff` calls; each recomputes the repo diff in Rust. */
 const MAX_CONCURRENT_LOADS = 3;
@@ -99,16 +101,37 @@ const hunkKeyFile = (key: string): string =>
 function initialStates(
   files: FileSummary[],
   reviewStates: ReadonlyMap<string, FileReviewState>,
+  params: DiffParams,
 ): Map<string, FileViewState> {
-  return new Map(
-    files.map((f) => [
-      f.path,
-      initialFileState(
-        reviewStates.get(f.path) !== "reviewed",
-        previewEligible(f),
-      ),
-    ]),
+  return new Map(files.map((f) => [f.path, freshFileState(f, reviewStates, params)]));
+}
+
+/** A file's state as it opens: hunks already in place when the web server
+ * sent them with the review (never for guarded files, which wait for
+ * "load anyway"), else loaded on scroll. */
+function freshFileState(
+  file: FileSummary,
+  reviewStates: ReadonlyMap<string, FileReviewState>,
+  params: DiffParams,
+): FileViewState {
+  const state = initialFileState(
+    reviewStates.get(file.path) !== "reviewed",
+    previewEligible(file),
   );
+  const diff = guardReason(file) === null ? prefetchedFileDiff(params, file) : null;
+  return diff === null ? state : withDiff(state, diff);
+}
+
+function withDiff(state: FileViewState, diff: FileDiff): FileViewState {
+  return {
+    ...state,
+    diff,
+    error: null,
+    reveals: Array.from({ length: diff.hunks.length + 1 }, () => ({
+      top: 0,
+      bottom: 0,
+    })),
+  };
 }
 
 const STATUS_LABELS: Record<FileStatus, string> = {
@@ -183,7 +206,14 @@ export function DiffView({
   // (see the block below) instead of remounting — so scroll position,
   // expansions, and the keyboard cursor survive a watcher-driven refresh.
   const [states, setStates] = useState<ReadonlyMap<string, FileViewState>>(
-    () => initialStates(summary.files, reviewStates),
+    () =>
+      initialStates(summary.files, reviewStates, {
+        repoPath,
+        base,
+        head,
+        mode,
+        ignoreWhitespace,
+      }),
   );
   // Syntax tokens per visible hunk, keyed by `hunkKey`; rows render plain
   // until their hunk's entry appears, so highlighting never gates paint.
@@ -270,7 +300,7 @@ export function DiffView({
       dragRef.current = null;
       anchorRef.current = null;
       cursorPathRef.current = null;
-      setStates(initialStates(summary.files, reviewStates));
+      setStates(initialStates(summary.files, reviewStates, params));
       setHighlights(new Map());
       applySelection(null);
       setComposer(null);
@@ -294,13 +324,7 @@ export function DiffView({
           nextStates.set(file.path, existing);
           kept.add(file.path);
         } else {
-          nextStates.set(
-            file.path,
-            initialFileState(
-              reviewStates.get(file.path) !== "reviewed",
-              previewEligible(file),
-            ),
-          );
+          nextStates.set(file.path, freshFileState(file, reviewStates, params));
         }
       }
       setStates(nextStates);
@@ -450,15 +474,7 @@ export function DiffView({
           if (!requested.current.has(key)) {
             return;
           }
-          updateState(file.path, (s) => ({
-            ...s,
-            diff,
-            error: null,
-            reveals: Array.from({ length: diff.hunks.length + 1 }, () => ({
-              top: 0,
-              bottom: 0,
-            })),
-          }));
+          updateState(file.path, (s) => withDiff(s, diff));
         })
         .catch((e: unknown) => {
           requested.current.delete(key);

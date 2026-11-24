@@ -15,6 +15,7 @@
 //! calls `src-tauri/src/commands.rs` makes; only the transport differs.
 
 mod amp;
+mod boot;
 
 use axum::extract::{Path as UrlPath, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -42,7 +43,8 @@ use std::time::Duration;
 use tokio::sync::broadcast;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt as _;
-use tower_http::services::{ServeDir, ServeFile};
+use tower_http::compression::{CompressionLayer, CompressionLevel};
+use tower_http::services::ServeDir;
 
 #[derive(Parser)]
 #[command(about = "Headless Prologue: the review UI over HTTP")]
@@ -116,6 +118,8 @@ struct AppState {
     watched: Arc<Mutex<Option<String>>>,
     events: broadcast::Sender<ServerEvent>,
     amp: Option<amp::AmpSink>,
+    /// The built frontend; index.html is served with the boot state added.
+    dist: PathBuf,
 }
 
 impl AppState {
@@ -323,6 +327,27 @@ fn run_command(
                 &conn, &repo, &repo_path, &branch, &base_ref, mode,
             )?)
         }
+        "load_review" => ok(boot::load_review(
+            state,
+            &a.get::<String>("repoPath")?,
+            &a.get::<String>("branch")?,
+            &a.get::<String>("base")?,
+            a.get("mode")?,
+            a.get("ignoreWhitespace")?,
+            user,
+        )?),
+        // The comments-changed refetch in one round trip: re-anchor, then
+        // read the comments as moved.
+        "reload_comments" => {
+            let spec = a.spec()?;
+            let review_id: i64 = a.get("reviewId")?;
+            let conn = state.db.lock()?;
+            let anchors = review::reanchor_comments_impl(&conn, &spec, review_id, true)?;
+            ok(json!({
+                "anchors": anchors,
+                "comments": review::list_comments_impl(&conn, review_id)?,
+            }))
+        }
         "find_active_review" => {
             let repo_path: String = a.get("repoPath")?;
             let branch: String = a.get("branch")?;
@@ -518,8 +543,50 @@ async fn invoke(
     }
 }
 
-async fn config(State(state): State<Arc<AppState>>) -> Json<WebConfig> {
-    Json(state.config.clone())
+/// `/api/config`: the config plus what the UI would otherwise fetch one
+/// call at a time before its first diff request (open_repo, list_branches,
+/// find_active_review). Each of those is a full round trip through the
+/// portal, so answering them here saves three on every page load.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ConfigResponse {
+    #[serde(flatten)]
+    config: WebConfig,
+    /// None when any lookup failed; the UI then makes the calls itself
+    /// and shows their error.
+    start: Option<WebStart>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WebStart {
+    repo: Value,
+    branch_list: Value,
+    active_review: Value,
+}
+
+fn web_start(state: &AppState) -> Result<WebStart, Failure> {
+    let path = state.config.repo_path.clone();
+    let repo = run_command(state, "open_repo", json!({ "path": path }), None)?;
+    let branch_list = run_command(state, "list_branches", json!({ "repoPath": repo["path"] }), None)?;
+    let active_review = run_command(
+        state,
+        "find_active_review",
+        json!({ "repoPath": repo["path"], "branch": branch_list["current"] }),
+        None,
+    )?;
+    Ok(WebStart { repo, branch_list, active_review })
+}
+
+async fn config(State(state): State<Arc<AppState>>) -> Json<ConfigResponse> {
+    let start = tokio::task::spawn_blocking({
+        let state = Arc::clone(&state);
+        move || web_start(&state).ok()
+    })
+    .await
+    .ok()
+    .flatten();
+    Json(ConfigResponse { config: state.config.clone(), start })
 }
 
 /// Echoes the portal's identity headers so the UI can tell the viewer's own
@@ -554,15 +621,38 @@ async fn event_stream(
     )
 }
 
+/// Vite content-hashes everything under /assets, so a name never changes
+/// meaning: browsers may keep it for good instead of revalidating each load.
+async fn immutable(mut res: Response) -> Response {
+    if res.status() == StatusCode::OK {
+        res.headers_mut().insert(
+            axum::http::header::CACHE_CONTROL,
+            axum::http::HeaderValue::from_static("public, max-age=31536000, immutable"),
+        );
+    }
+    res
+}
+
 fn router(state: Arc<AppState>, dist: &std::path::Path) -> Router {
-    // Unknown paths fall back to index.html (single-page app).
-    let frontend = ServeDir::new(dist).fallback(ServeFile::new(dist.join("index.html")));
+    let assets = Router::new()
+        .fallback_service(ServeDir::new(dist.join("assets")))
+        .layer(axum::middleware::map_response(immutable));
+    // Other paths: files at the dist root, else the app (client routes).
+    let frontend =
+        ServeDir::new(dist).fallback(get(boot::index).with_state(Arc::clone(&state)));
     Router::new()
         .route("/api/invoke/{command}", post(invoke))
         .route("/api/events", get(event_stream))
         .route("/api/config", get(config))
         .route("/api/me", get(me))
+        .route("/", get(boot::index))
+        .route("/index.html", get(boot::index))
+        .nest("/assets", assets)
         .fallback_service(frontend)
+        // JSON and HTML get compressed here; the SSE stream is exempt by
+        // default (buffering would hold events back). Brotli at quality 4
+        // costs milliseconds even on the 600 KB highlighter chunk.
+        .layer(CompressionLayer::new().quality(CompressionLevel::Precise(4)))
         .with_state(state)
 }
 
@@ -611,6 +701,7 @@ fn build_state(cli: &Cli) -> Result<Arc<AppState>, String> {
         watched: Arc::new(Mutex::new(None)),
         events: events_tx,
         amp,
+        dist: cli.dist_dir(),
     });
 
     // External writers (the prologue CLI) commit to reviews.db behind the
@@ -680,6 +771,7 @@ mod tests {
             watched: Arc::new(Mutex::new(None)),
             events: broadcast::channel(4).0,
             amp: None,
+            dist: PathBuf::new(),
         }
     }
 
@@ -885,6 +977,154 @@ mod tests {
                 .len()
         };
         assert_eq!((marks(Some(&ada)), marks(Some(&grace)), marks(None)), (1, 0, 0));
+    }
+
+    /// load_review answers what the separate calls would, in one: the
+    /// opened review, its comments with anchors, this viewer's marks, and
+    /// hunks identical to get_file_diff's for the files that open expanded
+    /// (not ones this viewer already marked reviewed).
+    #[test]
+    fn load_review_matches_the_separate_calls() {
+        let fixture = FixtureRepo::standard_review_fixture();
+        let dir = tempfile::tempdir().unwrap();
+        let state = state_for(&fixture, &dir);
+        let ada = AmpUser { id: "ada".into(), display_name: "Ada".into(), email: None };
+        let repo_path = fixture.path();
+        let spec = json!({ "repoPath": repo_path, "base": "main", "head": "feature", "mode": "committed" });
+        let load = |who: Option<&AmpUser>| {
+            let mut args = spec.clone();
+            args["branch"] = json!("feature");
+            args["ignoreWhitespace"] = json!(false);
+            call_as(&state, who, "load_review", args).unwrap()
+        };
+
+        let first = load(Some(&ada));
+        let review_id = first["review"]["id"].as_i64().unwrap();
+        assert_eq!(first["review"]["status"], "active");
+        let mut args = spec.clone();
+        args["comment"] = json!({ "reviewId": review_id, "level": "line", "filePath": "code.txt",
+                                  "side": "new", "startLine": 6, "endLine": 6, "body": "why?" });
+        call_as(&state, Some(&ada), "create_comment", args).unwrap();
+        let code = first["summary"]["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["path"] == "code.txt")
+            .unwrap()
+            .clone();
+        call_as(
+            &state,
+            Some(&ada),
+            "mark_file_reviewed",
+            json!({ "reviewId": review_id, "filePath": "code.txt", "fingerprint": code["fingerprint"] }),
+        )
+        .unwrap();
+
+        let prefetched = |loaded: &Value| -> Vec<String> {
+            loaded["fileDiffs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|d| d["path"].as_str().unwrap().to_owned())
+                .collect()
+        };
+        let for_ada = load(Some(&ada));
+        assert_eq!(for_ada["review"]["id"], review_id, "resumes, not a new review");
+        assert_eq!(for_ada["comments"][0]["body"], "why?");
+        assert_eq!(for_ada["anchors"][0]["status"], "anchored");
+        assert_eq!(for_ada["reviewedFiles"].as_array().unwrap().len(), 1);
+        assert_eq!(prefetched(&for_ada), vec!["d.txt"], "Ada's reviewed file stays collapsed");
+
+        let for_grace = load(None);
+        assert_eq!(for_grace["reviewedFiles"].as_array().unwrap().len(), 0);
+        assert_eq!(prefetched(&for_grace), vec!["code.txt", "d.txt"]);
+        let mut args = spec.clone();
+        args["path"] = json!("code.txt");
+        args["ignoreWhitespace"] = json!(false);
+        assert_eq!(for_grace["fileDiffs"][0], call(&state, "get_file_diff", args).unwrap());
+
+        let mut args = spec;
+        args["reviewId"] = json!(review_id);
+        let reloaded = call(&state, "reload_comments", args).unwrap();
+        assert_eq!((&reloaded["anchors"], &reloaded["comments"]), (&for_ada["anchors"], &for_ada["comments"]));
+    }
+
+    /// The page inlines user-written comment text in a <script>; a body
+    /// that says `</script>` must not end the element.
+    #[test]
+    fn inlined_boot_state_cannot_close_its_script() {
+        let body = json!({ "body": "</script><script>alert(1)</script> & <!--" });
+        let inlined = boot::script_json(&body);
+        assert!(!inlined.contains('<') && !inlined.contains('>'), "{inlined}");
+        assert_eq!(serde_json::from_str::<Value>(&inlined).unwrap(), body);
+    }
+
+    /// Hashed assets are cached for good, but only when they exist; the
+    /// page itself is never cached (it carries live review state), and a
+    /// missing file is a 404, not the app.
+    #[tokio::test]
+    async fn assets_are_immutable_and_the_page_is_not_cached() {
+        use axum::body::Body;
+        use axum::http::Request;
+        use tower::ServiceExt as _;
+        let fixture = FixtureRepo::standard_review_fixture();
+        let dir = tempfile::tempdir().unwrap();
+        let dist = dir.path().join("dist");
+        std::fs::create_dir_all(dist.join("assets")).unwrap();
+        std::fs::write(dist.join("index.html"), "<html><head></head><body></body></html>").unwrap();
+        std::fs::write(dist.join("assets/index-abc123.js"), "export {}").unwrap();
+        let mut state = state_for(&fixture, &dir);
+        state.dist = dist.clone();
+        let app = router(Arc::new(state), &dist);
+        let get = |path: &str| {
+            let app = app.clone();
+            let req = Request::get(path).body(Body::empty()).unwrap();
+            async move { app.oneshot(req).await.unwrap() }
+        };
+        let cache = |res: &Response| {
+            res.headers()
+                .get("cache-control")
+                .map(|v| v.to_str().unwrap().to_owned())
+        };
+
+        let asset = get("/assets/index-abc123.js").await;
+        assert_eq!(asset.status(), StatusCode::OK);
+        assert_eq!(cache(&asset).as_deref(), Some("public, max-age=31536000, immutable"));
+        let missing = get("/assets/index-gone.js").await;
+        assert_eq!((missing.status(), cache(&missing)), (StatusCode::NOT_FOUND, None));
+        assert_eq!(get("/favicon.ico").await.status(), StatusCode::NOT_FOUND);
+        for page in ["/", "/some/client/route"] {
+            let res = get(page).await;
+            assert_eq!(res.status(), StatusCode::OK, "{page}");
+            assert_eq!(cache(&res).as_deref(), Some("no-cache"), "{page}");
+            let html = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+            assert!(String::from_utf8_lossy(&html).contains(r#"id="prologue-boot""#), "{page}");
+        }
+    }
+
+    /// /api/config answers the UI's startup calls the way the commands
+    /// would: the configured base overrides auto-detection, and the
+    /// current branch's active review comes back so its base is resumed.
+    #[test]
+    fn config_carries_the_startup_answers() {
+        let fixture = FixtureRepo::standard_review_fixture();
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = state_for(&fixture, &dir);
+        state.config.base_ref = Some("feature".to_owned());
+        let start = web_start(&state).ok().unwrap();
+        assert_eq!(start.repo["path"], json!(fixture.path()));
+        assert_eq!(start.branch_list["defaultBase"], "feature");
+        assert_eq!(start.active_review, Value::Null);
+
+        let branch = start.branch_list["current"].clone();
+        call(
+            &state,
+            "open_review",
+            json!({ "repoPath": fixture.path(), "branch": branch, "baseRef": "main", "mode": "committed" }),
+        )
+        .unwrap();
+        let start = web_start(&state).ok().unwrap();
+        assert_eq!(start.active_review["baseRef"], "main");
     }
 
     #[test]

@@ -11,15 +11,23 @@ import {
   getDiffSummary,
   listComments,
   listReviewedFiles,
+  loadReview,
   openReview,
+  reloadComments,
   reanchorComments,
+  type GuideCliStatus,
 } from "../ipc";
+import { isTauri } from "../platform";
+import { takeBootReview } from "../web";
+import { primeFileDiffs } from "../diff/prefetch";
+import { warmHighlighter } from "../highlight/shiki";
 import { useTauriEvent } from "../useTauriEvent";
 import { COMMENTS_CHANGED_EVENT } from "../generated/events";
 import type {
   AnchorStatus,
   Comment,
   DiffSummary,
+  Guide,
   Review,
   DiffMode,
 } from "../types";
@@ -65,6 +73,8 @@ export interface ReviewSession {
   current: { current: PinnedReview | null };
   setComments: Dispatch<SetStateAction<Comment[]>>;
   setReviewedFiles: Dispatch<SetStateAction<ReadonlyMap<string, string>>>;
+  /** Web mode: the guide and engine status read with the review. */
+  guideSeed: GuideSeed | null;
 }
 
 /**
@@ -97,12 +107,82 @@ async function fetchReviewData(
   };
 }
 
+const NO_REVIEW_DATA = {
+  anchors: new Map<number, AnchorStatus>(),
+  comments: [] as Comment[],
+  reviewedFiles: new Map<string, string>(),
+};
+
+/** The app's load: local IPC calls are cheap, so it makes them one by one. */
+async function loadInApp(
+  repoPath: string,
+  branch: string,
+  base: string,
+  mode: DiffMode,
+  ignoreWhitespace: boolean,
+) {
+  // The summary is independent of review bookkeeping, so it runs in
+  // parallel with the auto-archive pass (reviews whose branch merged or
+  // vanished) — which must itself land before resuming (or starting)
+  // this branch's review.
+  const [summary] = await Promise.all([
+    getDiffSummary(repoPath, base, branch, mode, ignoreWhitespace),
+    archiveStaleReviews(repoPath),
+  ]);
+  const opened = await openReview(repoPath, branch, base, mode);
+  const data =
+    opened.review !== null && opened.review.status === "active"
+      ? await fetchReviewData(repoPath, base, branch, mode, opened.review.id)
+      : NO_REVIEW_DATA;
+  return { summary, opened, data, seed: null };
+}
+
+/** Web mode's load: each call is a round trip through the portal, so the
+ * server does the whole load in one (`load_review`) — or already did, and
+ * inlined it into the page for the first render. */
+async function loadOnServer(
+  repoPath: string,
+  branch: string,
+  base: string,
+  mode: DiffMode,
+  ignoreWhitespace: boolean,
+) {
+  const loaded =
+    takeBootReview(repoPath, branch, base, mode, ignoreWhitespace) ??
+    (await loadReview(repoPath, branch, base, mode, ignoreWhitespace));
+  const params = { repoPath, base, head: branch, mode, ignoreWhitespace };
+  primeFileDiffs(params, loaded.summary.files, loaded.fileDiffs);
+  warmHighlighter(loaded.summary.files.map((f) => f.path));
+  return {
+    summary: loaded.summary,
+    opened: { review: loaded.review, branchMerged: loaded.branchMerged },
+    data: {
+      anchors: new Map<number, AnchorStatus>(
+        loaded.anchors.map((r) => [r.commentId, r.status]),
+      ),
+      comments: loaded.comments,
+      reviewedFiles: new Map<string, string>(
+        loaded.reviewedFiles.map((r) => [r.filePath, r.fingerprint]),
+      ),
+    },
+    seed: { guide: loaded.guide, guideCli: loaded.guideCli },
+  };
+}
+
+/** The guide state `load_review` already read for a view, so useGuide need
+ * not ask again for that generation. */
+export interface GuideSeed {
+  generation: number;
+  guide: Guide | null;
+  guideCli: GuideCliStatus;
+}
+
 /**
  * Owns the review session for one (repo, branch, base, mode, whitespace)
  * combination: computes the diff summary, resumes (or starts) the branch's
- * review, and keeps its comments and reviewed marks fresh — including the
- * `comments-changed` re-read when external writers (the prologue CLI)
- * commit to reviews.db behind the app's back.
+ * review, and keeps its comments fresh — including the `comments-changed`
+ * re-read when other writers (the prologue CLI, other web viewers) commit
+ * to reviews.db.
  */
 export function useReviewSession(
   repoPath: string,
@@ -127,6 +207,7 @@ export function useReviewSession(
   const generation = useRef(0);
   const current = useRef<PinnedReview | null>(null);
   const refetchSeq = useRef(0);
+  const [guideSeed, setGuideSeed] = useState<GuideSeed | null>(null);
 
   useEffect(() => {
     if (!branch || !baseBranch) {
@@ -136,27 +217,13 @@ export function useReviewSession(
     setLoading(true);
     setError(null);
     (async () => {
-      // The summary is independent of review bookkeeping, so it runs in
-      // parallel with the auto-archive pass (reviews whose branch merged or
-      // vanished) — which must itself land before resuming (or starting)
-      // this branch's review.
-      const [summary] = await Promise.all([
-        getDiffSummary(repoPath, baseBranch, branch, mode, hideWhitespace),
-        archiveStaleReviews(repoPath),
-      ]);
-      const opened = await openReview(repoPath, branch, baseBranch, mode);
+      const { summary, opened, data, seed } = isTauri()
+        ? await loadInApp(repoPath, branch, baseBranch, mode, hideWhitespace)
+        : await loadOnServer(repoPath, branch, baseBranch, mode, hideWhitespace);
       const active =
         opened.review !== null && opened.review.status === "active"
           ? opened.review
           : null;
-      const data =
-        active !== null
-          ? await fetchReviewData(repoPath, baseBranch, branch, mode, active.id)
-          : {
-              anchors: new Map<number, AnchorStatus>(),
-              comments: [] as Comment[],
-              reviewedFiles: new Map<string, string>(),
-            };
       if (cancelled) {
         return;
       }
@@ -171,6 +238,7 @@ export function useReviewSession(
       };
       current.current = active !== null ? { review: active, view: nextView } : null;
       setView(nextView);
+      setGuideSeed(seed && { ...seed, generation: generation.current });
       setReview(opened.review);
       setBranchMerged(opened.branchMerged);
       setComments(data.comments);
@@ -219,14 +287,19 @@ export function useReviewSession(
       // Comments only: reviewed marks are this viewer's own progress, and
       // re-reading them here would flip another web viewer's Viewed boxes
       // (and collapse files) mid-review, or undo a toggle still in flight.
-      const results = await reanchorComments(
+      const args = [
         pinned.review.repoPath,
         pinned.view.base,
         pinned.view.head,
         pinned.view.mode,
         pinned.review.id,
-      );
-      const comments = await listComments(pinned.review.id);
+      ] as const;
+      const { anchors: results, comments } = isTauri()
+        ? await reanchorComments(...args).then(async (anchors) => ({
+            anchors,
+            comments: await listComments(pinned.review.id),
+          }))
+        : await reloadComments(...args);
       // The view may have moved on (branch switch, refresh) meanwhile.
       if (
         current.current?.review.id !== pinned.review.id ||
@@ -254,5 +327,6 @@ export function useReviewSession(
     current,
     setComments,
     setReviewedFiles,
+    guideSeed,
   };
 }

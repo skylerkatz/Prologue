@@ -1,5 +1,6 @@
 import type { HighlighterCore, ThemedToken } from "shiki/core";
 import { GRAMMAR_LOADERS } from "./grammars";
+import { detectLang } from "./lang";
 
 /**
  * Lazy Shiki wrapper. Everything — the engine, its wasm, themes, and each
@@ -49,6 +50,26 @@ function ensureLang(highlighter: HighlighterCore, lang: string): Promise<void> {
     langPromises.set(lang, promise);
   }
   return promise;
+}
+
+/**
+ * Start loading the highlighter and the grammars these files need now,
+ * instead of on the first hunk render, which otherwise walks engine →
+ * wasm → grammar one round trip at a time (web mode, through a portal).
+ * The grammar chunks are requested right away, alongside the engine.
+ */
+export function warmHighlighter(paths: readonly string[]): void {
+  const langs = new Set(
+    paths
+      .map(detectLang)
+      .filter((l): l is string => l !== null && l in GRAMMAR_LOADERS),
+  );
+  for (const lang of langs) {
+    void GRAMMAR_LOADERS[lang]().catch(() => {});
+  }
+  getHighlighter()
+    .then((h) => Promise.all([...langs].map((l) => ensureLang(h, l))))
+    .catch(() => {});
 }
 
 /**

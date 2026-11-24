@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { appVersion, isTauri, pickDirectory, showMessage } from "./platform";
-import { webConfig } from "./web";
+import { rememberView, webConfig } from "./web";
 import {
   errorText,
   findActiveReview,
@@ -26,7 +26,7 @@ import {
   installAndRelaunch,
 } from "./updater";
 import type { Update } from "@tauri-apps/plugin-updater";
-import type { BranchList, RepoInfo, DiffMode } from "./types";
+import type { BranchList, RepoInfo, DiffMode, Review } from "./types";
 import { ReviewShell } from "./components/ReviewShell";
 import { WhatsNew, hasNotesFor } from "./components/WhatsNew";
 import { TitleBar } from "./components/TitleBar";
@@ -90,11 +90,27 @@ function App() {
   useEffect(() => {
     if (!isTauri()) {
       webConfig()
-        .then((config) => openRepoAt(config.repoPath))
+        .then((config) =>
+          config.start !== null
+            ? showRepo(
+                config.start.repo,
+                config.start.branchList,
+                config.start.activeReview,
+              )
+            : openRepoAt(config.repoPath),
+        )
         .catch((e) => setError(errorText(e)));
     }
     // Once per page load; openRepoAt only uses state setters.
   }, []);
+
+  // Mirror the view into a cookie: the server inlines the review for this
+  // view into the next page load (it cannot read localStorage).
+  useEffect(() => {
+    if (!isTauri()) {
+      rememberView(mode, hideWhitespace);
+    }
+  }, [mode, hideWhitespace]);
 
   // One update check per launch; checkForUpdate resolves null in dev builds
   // and on network failure, so the banner only ever appears on a real hit.
@@ -132,29 +148,39 @@ function App() {
     try {
       const repo = await openRepo(path);
       const branchList = await listBranches(repo.path);
-      // Resume where the review left off: the branch's active review pins
-      // the base it was last computed against, so reopening the app doesn't
-      // snap back to the auto-detected default. Must happen before the
-      // review shell's open_review call, which writes the base back.
-      let baseBranch = branchList.defaultBase;
-      try {
-        const active = await findActiveReview(repo.path, branchList.current);
-        if (active !== null && branchList.branches.includes(active.baseRef)) {
-          baseBranch = active.baseRef;
-        }
-      } catch {
+      // Must happen before the review shell's open_review call, which
+      // writes the base back.
+      const active = await findActiveReview(repo.path, branchList.current).catch(
         // No stored base to restore; the detected default still works.
-      }
-      setOpenState({ repo, branchList });
-      setBranch(branchList.current);
-      setBaseBranch(baseBranch);
-      setRecents(await addRecentRepo(repo.path));
-      // Auto-refresh is an enhancement; if watching fails, the manual
-      // View > Refresh still covers everything.
-      startWatching(repo.path).catch(() => {});
+        () => null,
+      );
+      await showRepo(repo, branchList, active);
     } catch (e) {
       setError(errorText(e));
     }
+  }
+
+  /** Show an opened repo. Web mode gets these three answers from
+   * /api/config in one round trip instead of three. */
+  async function showRepo(
+    repo: RepoInfo,
+    branchList: BranchList,
+    active: Review | null,
+  ) {
+    // Resume where the review left off: the branch's active review pins
+    // the base it was last computed against, so reopening the app doesn't
+    // snap back to the auto-detected default.
+    const baseBranch =
+      active !== null && branchList.branches.includes(active.baseRef)
+        ? active.baseRef
+        : branchList.defaultBase;
+    setOpenState({ repo, branchList });
+    setBranch(branchList.current);
+    setBaseBranch(baseBranch);
+    // Auto-refresh is an enhancement; if watching fails, the manual
+    // View > Refresh still covers everything.
+    startWatching(repo.path).catch(() => {});
+    setRecents(await addRecentRepo(repo.path));
   }
 
   async function pickRepo() {

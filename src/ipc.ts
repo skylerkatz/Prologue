@@ -252,6 +252,45 @@ export interface GuideCliStatus {
   engine: GuideEngine | null;
 }
 
+/** What prologue-server's `load_review` answers: the review screen's first
+ * state from one computed diff, plus the hunks of the files that open
+ * expanded. Web mode only; the app makes the individual calls. */
+export interface LoadedReview {
+  summary: DiffSummary;
+  review: Review | null;
+  branchMerged: boolean;
+  anchors: ReanchorResult[];
+  comments: Comment[];
+  reviewedFiles: ReviewedFile[];
+  guide: Guide | null;
+  guideCli: GuideCliStatus;
+  fileDiffs: FileDiff[];
+}
+
+/** Open the branch's review and read everything it shows, in one round
+ * trip (web mode). */
+export function loadReview(
+  repoPath: string,
+  branch: string,
+  base: string,
+  mode: DiffMode,
+  ignoreWhitespace: boolean,
+): Promise<LoadedReview> {
+  return invoke("load_review", { repoPath, branch, base, mode, ignoreWhitespace });
+}
+
+/** Re-anchor and re-read a review's comments in one round trip (web mode;
+ * what the app does with reanchorComments then listComments). */
+export function reloadComments(
+  repoPath: string,
+  base: string,
+  head: string,
+  mode: DiffMode,
+  reviewId: number,
+): Promise<{ anchors: ReanchorResult[]; comments: Comment[] }> {
+  return invoke("reload_comments", { repoPath, base, head, mode, reviewId });
+}
+
 /** Probe for a guide engine so the Guide button can disable itself. */
 export function guideCliStatus(): Promise<GuideCliStatus> {
   return invoke("guide_cli_status");

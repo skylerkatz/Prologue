@@ -13,7 +13,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "sync"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
-tower-http = { version = "0.6", features = ["fs"] }
+tower-http = { version = "0.6", features = ["fs", "compression-br", "compression-gzip"] }
 # Send to Amp: the server, never the browser, calls the webhook (a credential).
 ureq = { version = "3", features = ["json"] }
 # Decodes the Amp portal's percent-encoded identity headers.
@@ -22,3 +22,4 @@ percent-encoding = "2"
 [dev-dependencies]
 prologue-core = { path = "../prologue-core", features = ["testutil"] }
 tempfile = "3"
+tower = { version = "0.5", features = ["util"] }

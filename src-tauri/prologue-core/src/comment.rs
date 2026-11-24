@@ -580,6 +580,23 @@ pub fn reanchor_comments_impl(
     reanchor_listed(conn, &repo_diff, &comments, persist)
 }
 
+/// [`reanchor_comments_impl`] against a diff the caller already computed
+/// (it must be the full diff, `ignore_whitespace = false`), for callers
+/// that read the summary and file hunks from the same diff. Returns the
+/// results and the comments as they stand after any moves.
+pub fn reanchor_comments_in(
+    conn: &Connection,
+    repo_diff: &diff::RepoDiff<'_>,
+    review_id: i64,
+) -> Result<(Vec<ReanchorResult>, Vec<Comment>), String> {
+    let comments = list_comments_impl(conn, review_id)?;
+    if !comments.iter().any(|c| c.code_anchor.is_some()) {
+        return Ok((Vec::new(), comments));
+    }
+    let results = reanchor_listed(conn, repo_diff, &comments, true)?;
+    Ok((results, list_comments_impl(conn, review_id)?))
+}
+
 /// The re-anchoring loop over already-listed comments, extracting every
 /// file's hunks from ONE computed diff. Runs against the canonical full
 /// diff (`RepoDiff` computed with `ignore_whitespace = false`) so orphan
