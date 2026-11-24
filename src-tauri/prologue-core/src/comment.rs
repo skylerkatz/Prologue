@@ -406,6 +406,7 @@ fn validate_author(author: &str) -> Result<(), String> {
 /// to the thread root, keeping threads one level deep; it carries only
 /// review_id, parent_id, body, and the head SHA at reply time — file, side,
 /// lines, and anchor stay NULL (the root's context speaks for the thread).
+#[allow(clippy::too_many_arguments)]
 fn create_reply(
     conn: &Connection,
     repo_path: &str,
