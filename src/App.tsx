@@ -189,6 +189,11 @@ function App() {
     try {
       const branchList = await listBranches(openState.repo.path);
       setOpenState({ repo: openState.repo, branchList });
+      // Web mode reviews whatever the server's checkout has out: a branch
+      // switch there moves the review with it.
+      if (!isTauri()) {
+        setBranch(branchList.current);
+      }
     } catch {
       // Keep the stale branch list; the diff itself still recomputes.
     }
@@ -259,7 +264,8 @@ function App() {
 
   return (
     <div className="app-shell">
-      <TitleBar branch={openState ? branch : null} />
+      {/* Web mode has no window chrome to dress up. */}
+      {isTauri() && <TitleBar branch={openState ? branch : null} />}
       {update !== null && (
         <div className="update-banner" role="status">
           <span className="update-banner-text">

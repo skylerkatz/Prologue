@@ -11,6 +11,7 @@ import { BranchSelect } from "./BranchSelect";
 import { DiffView } from "./DiffView";
 import { ExportButton, type ExportTarget } from "./ExportButton";
 import { AmpSentContext, useAmpSend } from "./useAmpSend";
+import { isTauri } from "../platform";
 import { FileJump } from "./FileJump";
 import { FileList } from "./FileList";
 import { GuideButton } from "./GuideButton";
@@ -242,19 +243,24 @@ export function ReviewShell({
     [view, review, branchMerged, repo.path],
   );
   const amp = useAmpSend(exportTarget, comments);
+  const webMode = !isTauri();
 
   return (
     <AmpSentContext.Provider value={amp?.sent ?? null}>
     <div className="review-shell">
       <header className="toolbar">
-        <button
-          type="button"
-          className="repo-button"
-          title={repo.path}
-          onClick={onSwitchRepo}
-        >
-          {repo.name}
-        </button>
+        {/* Web mode is tied to one checkout and always reviews its HEAD
+            (plus working changes), so there is no repo or branch to pick. */}
+        {!webMode && (
+          <button
+            type="button"
+            className="repo-button"
+            title={repo.path}
+            onClick={onSwitchRepo}
+          >
+            {repo.name}
+          </button>
+        )}
         <div className="control">
           <span>Base</span>
           <BranchSelect
@@ -263,17 +269,21 @@ export function ReviewShell({
             onChange={onBaseBranchChange}
           />
         </div>
-        <span className="arrow" aria-hidden="true">
-          ←
-        </span>
-        <div className="control">
-          <span>Branch</span>
-          <BranchSelect
-            value={branch}
-            branches={branchList.branches}
-            onChange={onBranchChange}
-          />
-        </div>
+        {!webMode && (
+          <>
+            <span className="arrow" aria-hidden="true">
+              ←
+            </span>
+            <div className="control">
+              <span>Branch</span>
+              <BranchSelect
+                value={branch}
+                branches={branchList.branches}
+                onChange={onBranchChange}
+              />
+            </div>
+          </>
+        )}
         <div className="toolbar-spacer" />
         <ModeToggle mode={mode} onChange={onModeChange} />
         <WhitespaceToggle
