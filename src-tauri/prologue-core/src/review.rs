@@ -464,18 +464,26 @@ pub fn find_active_review_impl(
     id.map(|id| get_review(conn, id)).transpose()
 }
 
+/// The reviewer the Mac app, the CLI, and web viewers without an Amp
+/// identity mark files as. Rows from before per-reviewer marks (schema v7)
+/// belong to it too, so the app keeps its existing progress.
+pub const LOCAL_REVIEWER: &str = "";
+
+/// One reviewer's marks: each person tracks their own progress through a
+/// shared review (`reviewer` is their Amp user id, or [`LOCAL_REVIEWER`]).
 pub fn list_reviewed_files_impl(
     conn: &Connection,
     review_id: i64,
+    reviewer: &str,
 ) -> Result<Vec<ReviewedFile>, String> {
     let mut stmt = conn
         .prepare(
             "SELECT file_path, fingerprint, reviewed_at
-             FROM reviewed_files WHERE review_id = ?1 ORDER BY file_path",
+             FROM reviewed_files WHERE review_id = ?1 AND reviewer = ?2 ORDER BY file_path",
         )
         .map_err(db_err)?;
     let rows = stmt
-        .query_map([review_id], |r| {
+        .query_map((review_id, reviewer), |r| {
             Ok(ReviewedFile {
                 file_path: r.get(0)?,
                 fingerprint: r.get(1)?,
@@ -493,19 +501,20 @@ pub fn list_reviewed_files_impl(
 pub fn mark_file_reviewed_impl(
     conn: &Connection,
     review_id: i64,
+    reviewer: &str,
     file_path: &str,
     fingerprint: &str,
 ) -> Result<ReviewedFile, String> {
     let changed = with_active_review_guard(conn, review_id, || {
         conn.execute(
             &format!(
-                "INSERT INTO reviewed_files (review_id, file_path, fingerprint)
-                 SELECT ?1, ?2, ?3
+                "INSERT INTO reviewed_files (review_id, reviewer, file_path, fingerprint)
+                 SELECT ?1, ?2, ?3, ?4
                  WHERE EXISTS (SELECT 1 FROM reviews WHERE id = ?1 AND status = 'active')
-                 ON CONFLICT(review_id, file_path) DO UPDATE
+                 ON CONFLICT(review_id, reviewer, file_path) DO UPDATE
                      SET fingerprint = excluded.fingerprint, reviewed_at = {NOW}"
             ),
-            (review_id, file_path, fingerprint),
+            (review_id, reviewer, file_path, fingerprint),
         )
     })?;
     if changed == 0 {
@@ -513,8 +522,8 @@ pub fn mark_file_reviewed_impl(
     }
     conn.query_row(
         "SELECT file_path, fingerprint, reviewed_at
-         FROM reviewed_files WHERE review_id = ?1 AND file_path = ?2",
-        (review_id, file_path),
+         FROM reviewed_files WHERE review_id = ?1 AND reviewer = ?2 AND file_path = ?3",
+        (review_id, reviewer, file_path),
         |r| {
             Ok(ReviewedFile {
                 file_path: r.get(0)?,
@@ -532,14 +541,15 @@ pub fn mark_file_reviewed_impl(
 pub fn unmark_file_reviewed_impl(
     conn: &Connection,
     review_id: i64,
+    reviewer: &str,
     file_path: &str,
 ) -> Result<(), String> {
     with_active_review_guard(conn, review_id, || {
         conn.execute(
             "DELETE FROM reviewed_files
-             WHERE review_id = ?1 AND file_path = ?2
+             WHERE review_id = ?1 AND reviewer = ?2 AND file_path = ?3
                AND EXISTS (SELECT 1 FROM reviews WHERE id = ?1 AND status = 'active')",
-            (review_id, file_path),
+            (review_id, reviewer, file_path),
         )
     })?;
     Ok(())
@@ -852,7 +862,7 @@ mod tests {
         // Archived comments stay readable...
         assert_eq!(list_comments_impl(&conn, review.id).unwrap().len(), 2);
         // ...but every mutation is refused.
-        let err = update_comment_impl(&conn, comment.id, "rewrite").unwrap_err();
+        let err = update_comment_impl(&conn, comment.id, "rewrite", None).unwrap_err();
         assert!(err.contains("read-only"), "{err}");
         let err = delete_comment_impl(&conn, comment.id).unwrap_err();
         assert!(err.contains("read-only"), "{err}");
@@ -920,23 +930,23 @@ mod tests {
         let conn = test_db(&dir);
         let review = open_review_impl(&conn, "/repo", "feature", "main", DiffMode::Committed).unwrap();
 
-        assert!(list_reviewed_files_impl(&conn, review.id).unwrap().is_empty());
+        assert!(list_reviewed_files_impl(&conn, review.id, LOCAL_REVIEWER).unwrap().is_empty());
 
-        let marked = mark_file_reviewed_impl(&conn, review.id, "src/a.rs", "aaa:bbb:644").unwrap();
+        let marked = mark_file_reviewed_impl(&conn, review.id, LOCAL_REVIEWER, "src/a.rs", "aaa:bbb:644").unwrap();
         assert_eq!(marked.file_path, "src/a.rs");
         assert_eq!(marked.fingerprint, "aaa:bbb:644");
-        mark_file_reviewed_impl(&conn, review.id, "src/b.rs", "ccc:ddd:644").unwrap();
+        mark_file_reviewed_impl(&conn, review.id, LOCAL_REVIEWER, "src/b.rs", "ccc:ddd:644").unwrap();
 
-        let listed = list_reviewed_files_impl(&conn, review.id).unwrap();
+        let listed = list_reviewed_files_impl(&conn, review.id, LOCAL_REVIEWER).unwrap();
         assert_eq!(
             listed.iter().map(|f| f.file_path.as_str()).collect::<Vec<_>>(),
             vec!["src/a.rs", "src/b.rs"]
         );
 
         // Re-marking (a "changed since review" file) replaces the fingerprint.
-        let remarked = mark_file_reviewed_impl(&conn, review.id, "src/a.rs", "aaa:eee:644").unwrap();
+        let remarked = mark_file_reviewed_impl(&conn, review.id, LOCAL_REVIEWER, "src/a.rs", "aaa:eee:644").unwrap();
         assert_eq!(remarked.fingerprint, "aaa:eee:644");
-        let listed = list_reviewed_files_impl(&conn, review.id).unwrap();
+        let listed = list_reviewed_files_impl(&conn, review.id, LOCAL_REVIEWER).unwrap();
         assert_eq!(listed.len(), 2);
         assert_eq!(listed[0].fingerprint, "aaa:eee:644");
     }
@@ -946,13 +956,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let conn = test_db(&dir);
         let review = open_review_impl(&conn, "/repo", "feature", "main", DiffMode::Committed).unwrap();
-        mark_file_reviewed_impl(&conn, review.id, "src/a.rs", "aaa:bbb:644").unwrap();
+        mark_file_reviewed_impl(&conn, review.id, LOCAL_REVIEWER, "src/a.rs", "aaa:bbb:644").unwrap();
 
-        unmark_file_reviewed_impl(&conn, review.id, "src/a.rs").unwrap();
-        assert!(list_reviewed_files_impl(&conn, review.id).unwrap().is_empty());
+        unmark_file_reviewed_impl(&conn, review.id, LOCAL_REVIEWER, "src/a.rs").unwrap();
+        assert!(list_reviewed_files_impl(&conn, review.id, LOCAL_REVIEWER).unwrap().is_empty());
         // Unmarking again (or a never-marked path) is not an error.
-        unmark_file_reviewed_impl(&conn, review.id, "src/a.rs").unwrap();
-        unmark_file_reviewed_impl(&conn, review.id, "never-marked.rs").unwrap();
+        unmark_file_reviewed_impl(&conn, review.id, LOCAL_REVIEWER, "src/a.rs").unwrap();
+        unmark_file_reviewed_impl(&conn, review.id, LOCAL_REVIEWER, "never-marked.rs").unwrap();
     }
 
     #[test]
@@ -960,15 +970,15 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let conn = test_db(&dir);
         let review = open_review_impl(&conn, "/repo", "feature", "main", DiffMode::Committed).unwrap();
-        mark_file_reviewed_impl(&conn, review.id, "src/a.rs", "aaa:bbb:644").unwrap();
+        mark_file_reviewed_impl(&conn, review.id, LOCAL_REVIEWER, "src/a.rs", "aaa:bbb:644").unwrap();
         archive_review(&conn, review.id).unwrap();
 
-        let err = mark_file_reviewed_impl(&conn, review.id, "src/b.rs", "ccc:ddd:644").unwrap_err();
+        let err = mark_file_reviewed_impl(&conn, review.id, LOCAL_REVIEWER, "src/b.rs", "ccc:ddd:644").unwrap_err();
         assert!(err.contains("read-only"), "{err}");
-        let err = unmark_file_reviewed_impl(&conn, review.id, "src/a.rs").unwrap_err();
+        let err = unmark_file_reviewed_impl(&conn, review.id, LOCAL_REVIEWER, "src/a.rs").unwrap_err();
         assert!(err.contains("read-only"), "{err}");
         // Reads still work on archived reviews.
-        assert_eq!(list_reviewed_files_impl(&conn, review.id).unwrap().len(), 1);
+        assert_eq!(list_reviewed_files_impl(&conn, review.id, LOCAL_REVIEWER).unwrap().len(), 1);
     }
 
     /// The race the guard exists for: the review is archived between the
@@ -1008,9 +1018,34 @@ mod tests {
         let conn = test_db(&dir);
         let a = open_review_impl(&conn, "/repo-a", "feature", "main", DiffMode::Committed).unwrap();
         let b = open_review_impl(&conn, "/repo-b", "fix", "main", DiffMode::Committed).unwrap();
-        mark_file_reviewed_impl(&conn, a.id, "src/a.rs", "aaa:bbb:644").unwrap();
+        mark_file_reviewed_impl(&conn, a.id, LOCAL_REVIEWER, "src/a.rs", "aaa:bbb:644").unwrap();
 
-        assert_eq!(list_reviewed_files_impl(&conn, a.id).unwrap().len(), 1);
-        assert!(list_reviewed_files_impl(&conn, b.id).unwrap().is_empty());
+        assert_eq!(list_reviewed_files_impl(&conn, a.id, LOCAL_REVIEWER).unwrap().len(), 1);
+        assert!(list_reviewed_files_impl(&conn, b.id, LOCAL_REVIEWER).unwrap().is_empty());
+    }
+
+    /// Two people on one review each see only their own marks, and one
+    /// unmarking a file leaves the other's mark alone.
+    #[test]
+    fn reviewed_files_are_scoped_to_their_reviewer() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = test_db(&dir);
+        let r = open_review_impl(&conn, "/repo", "feature", "main", DiffMode::Committed).unwrap();
+        mark_file_reviewed_impl(&conn, r.id, "user_ada", "src/a.rs", "aaa").unwrap();
+        mark_file_reviewed_impl(&conn, r.id, "user_grace", "src/a.rs", "bbb").unwrap();
+        mark_file_reviewed_impl(&conn, r.id, "user_grace", "src/b.rs", "ccc").unwrap();
+
+        let paths = |who: &str| -> Vec<(String, String)> {
+            list_reviewed_files_impl(&conn, r.id, who)
+                .unwrap()
+                .into_iter()
+                .map(|f| (f.file_path, f.fingerprint))
+                .collect()
+        };
+        assert_eq!(paths("user_ada"), vec![("src/a.rs".to_owned(), "aaa".to_owned())]);
+        assert!(paths(LOCAL_REVIEWER).is_empty());
+        unmark_file_reviewed_impl(&conn, r.id, "user_grace", "src/a.rs").unwrap();
+        assert_eq!(paths("user_ada").len(), 1);
+        assert_eq!(paths("user_grace"), vec![("src/b.rs".to_owned(), "ccc".to_owned())]);
     }
 }

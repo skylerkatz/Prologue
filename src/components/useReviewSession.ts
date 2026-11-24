@@ -126,6 +126,7 @@ export function useReviewSession(
   const [loading, setLoading] = useState(false);
   const generation = useRef(0);
   const current = useRef<PinnedReview | null>(null);
+  const refetchSeq = useRef(0);
 
   useEffect(() => {
     if (!branch || !baseBranch) {
@@ -203,27 +204,38 @@ export function useReviewSession(
   // External writers (the prologue CLI) commit to reviews.db behind the
   // app's back; the backend's database watcher emits `comments-changed`
   // only for those (its data_version guard filters the app's own writes).
+  // prologue-server also emits it after every web comment write, so each
+  // viewer sees the others' comments; the writer's own refetch is harmless.
   // Re-read comments — with a re-anchor pass — without recomputing the diff.
   useTauriEvent(COMMENTS_CHANGED_EVENT, () => {
     const pinned = current.current;
     if (pinned === null) {
       return;
     }
+    // Viewers' writes arrive in bursts; only the newest refetch may land,
+    // or a slow older one could put back a comment just deleted.
+    const seq = ++refetchSeq.current;
     void (async () => {
-      const data = await fetchReviewData(
+      // Comments only: reviewed marks are this viewer's own progress, and
+      // re-reading them here would flip another web viewer's Viewed boxes
+      // (and collapse files) mid-review, or undo a toggle still in flight.
+      const results = await reanchorComments(
         pinned.review.repoPath,
         pinned.view.base,
         pinned.view.head,
         pinned.view.mode,
         pinned.review.id,
       );
+      const comments = await listComments(pinned.review.id);
       // The view may have moved on (branch switch, refresh) meanwhile.
-      if (current.current?.review.id !== pinned.review.id) {
+      if (
+        current.current?.review.id !== pinned.review.id ||
+        seq !== refetchSeq.current
+      ) {
         return;
       }
-      setAnchorStatuses(data.anchors);
-      setComments(data.comments);
-      setReviewedFiles(data.reviewedFiles);
+      setAnchorStatuses(new Map(results.map((r) => [r.commentId, r.status])));
+      setComments(comments);
     })().catch(() => {
       // Leave the current comments in place; View > Refresh still
       // covers everything.

@@ -140,7 +140,9 @@ export function listenWeb(event: string, handler: Handler): () => void {
 
 /** Events the server sends; each means "refetch", never a delta. */
 const SERVER_EVENTS = [REPO_CHANGED_EVENT, COMMENTS_CHANGED_EVENT];
-const MAX_RETRY_MS = 30_000;
+/** Short enough that viewers are back within seconds of a portal redeploy;
+ * retries are one cheap GET each. */
+const MAX_RETRY_MS = 5_000;
 /** The server pings every 10s when idle; this much silence means the
  * stream is dead even if the connection looks open. */
 const SILENCE_LIMIT_MS = 30_000;
@@ -185,7 +187,9 @@ function ensureEvents() {
       const { watching } = JSON.parse((e as MessageEvent).data) as {
         watching: string | null;
       };
-      if (watchedRepo !== null && watching !== watchedRepo) {
+      // On the first connect the start_watching that opened this stream is
+      // still in flight; only a reconnect can find the watch lost.
+      if (connectedBefore && watchedRepo !== null && watching !== watchedRepo) {
         void webInvoke("start_watching", { repoPath: watchedRepo }).catch(
           () => {},
         );

@@ -131,6 +131,56 @@ const MIGRATIONS: &[&str] = &[
     // `author` with their display name) from the Amp portal's identity
     // headers; NULL for every other writer (the app, the CLI, older rows).
     "ALTER TABLE comments ADD COLUMN author_id TEXT;",
+    // v7: reviewed marks per reviewer. Several people review one shared
+    // review through prologue-server; each tracks their own progress.
+    // `reviewer` is their Amp user id; '' is the app, the CLI, and web
+    // viewers without an identity — which keeps every existing mark.
+    "CREATE TABLE reviewed_files_v7 (
+        review_id INTEGER NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+        reviewer TEXT NOT NULL DEFAULT '',
+        file_path TEXT NOT NULL,
+        fingerprint TEXT NOT NULL,
+        reviewed_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        PRIMARY KEY (review_id, reviewer, file_path)
+    );
+    INSERT INTO reviewed_files_v7 (review_id, file_path, fingerprint, reviewed_at)
+        SELECT review_id, file_path, fingerprint, reviewed_at FROM reviewed_files;
+    DROP TABLE reviewed_files;
+    ALTER TABLE reviewed_files_v7 RENAME TO reviewed_files;",
+    // v8: comment ids are never reused. Without AUTOINCREMENT, deleting the
+    // newest comment handed its C-id to the next one, so an agent's reply
+    // or amp-sent.json could name the wrong comment. Rebuilt in place,
+    // keeping every id, so existing C-ids stay valid. Builds that predate
+    // v8 refuse the file (schema newer than the binary) before touching it.
+    "PRAGMA defer_foreign_keys = ON;
+    CREATE TABLE comments_v8 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        review_id INTEGER NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+        level TEXT NOT NULL CHECK (level IN ('review','file','line')),
+        file_path TEXT,
+        side TEXT CHECK (side IN ('old','new')),
+        start_line INTEGER,
+        end_line INTEGER,
+        code_anchor TEXT,
+        commit_sha TEXT NOT NULL,
+        state TEXT NOT NULL DEFAULT 'open' CHECK (state IN ('open','resolved','dismissed')),
+        body TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        parent_id INTEGER REFERENCES comments_v8(id) ON DELETE CASCADE,
+        author TEXT NOT NULL DEFAULT 'reviewer',
+        author_id TEXT
+    );
+    INSERT INTO comments_v8 (id, review_id, level, file_path, side, start_line, end_line,
+            code_anchor, commit_sha, state, body, created_at, updated_at, parent_id,
+            author, author_id)
+        SELECT id, review_id, level, file_path, side, start_line, end_line,
+            code_anchor, commit_sha, state, body, created_at, updated_at, parent_id,
+            author, author_id
+        FROM comments ORDER BY id;
+    DROP TABLE comments;
+    ALTER TABLE comments_v8 RENAME TO comments;
+    CREATE INDEX comments_by_review ON comments (review_id);",
 ];
 
 /// The newest schema version this build knows how to read and migrate to.
@@ -634,6 +684,82 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM reviewed_files", [], |r| r.get(0))
             .unwrap();
         assert_eq!(count, 0);
+    }
+
+    /// v7 and v8 rebuild reviewed_files and comments in place: every comment
+    /// keeps its id (C-ids already handed to an agent stay valid) and its
+    /// thread link, existing marks become the local reviewer's, and from
+    /// then on a deleted newest comment's id is never handed out again.
+    #[test]
+    fn v7_v8_rebuilds_keep_ids_and_marks_and_stop_id_reuse() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("reviews.db");
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(&format!(
+                "CREATE TABLE schema_migrations (
+                    version INTEGER PRIMARY KEY,
+                    applied_at TEXT NOT NULL DEFAULT ({NOW})
+                );"
+            ))
+            .unwrap();
+            for (i, sql) in MIGRATIONS[..6].iter().enumerate() {
+                conn.execute_batch(sql).unwrap();
+                conn.execute("INSERT INTO schema_migrations (version) VALUES (?1)", [i as i64 + 1])
+                    .unwrap();
+            }
+            conn.execute_batch(
+                "INSERT INTO reviews (repo_path, branch, base_ref, mode)
+                     VALUES ('/repo', 'feature', 'main', 'committed');
+                 INSERT INTO comments (id, review_id, level, commit_sha, body, author_id)
+                     VALUES (1, 1, 'review', 'abc', 'root', 'user_ada');
+                 INSERT INTO comments (id, review_id, level, commit_sha, body, parent_id, author)
+                     VALUES (2, 1, 'review', 'abc', 'reply', 1, 'agent');
+                 INSERT INTO comments (id, review_id, level, commit_sha, body)
+                     VALUES (4, 1, 'review', 'abc', 'after a gap');
+                 INSERT INTO reviewed_files (review_id, file_path, fingerprint)
+                     VALUES (1, 'src/a.rs', 'aaa:bbb:644');",
+            )
+            .unwrap();
+        }
+
+        let conn = open(&path).unwrap();
+        let rows: Vec<(i64, Option<i64>, String, Option<String>)> = conn
+            .prepare("SELECT id, parent_id, author, author_id FROM comments ORDER BY id")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            rows,
+            vec![
+                (1, None, "reviewer".to_owned(), Some("user_ada".to_owned())),
+                (2, Some(1), "agent".to_owned(), None),
+                (4, None, "reviewer".to_owned(), None),
+            ]
+        );
+        let reviewer: String = conn
+            .query_row("SELECT reviewer FROM reviewed_files WHERE file_path = 'src/a.rs'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(reviewer, "");
+        let violations: i64 = conn
+            .query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(violations, 0);
+
+        // The newest comment's id is not reused after it is deleted...
+        conn.execute("DELETE FROM comments WHERE id = 4", []).unwrap();
+        conn.execute(
+            "INSERT INTO comments (review_id, level, commit_sha, body) VALUES (1, 'review', 'abc', 'new')",
+            [],
+        )
+        .unwrap();
+        assert_eq!(conn.last_insert_rowid(), 5);
+        // ...and replies still follow their root out.
+        conn.execute("DELETE FROM comments WHERE id = 1", []).unwrap();
+        let left: i64 = conn.query_row("SELECT COUNT(*) FROM comments", [], |r| r.get(0)).unwrap();
+        assert_eq!(left, 1);
     }
 
     #[test]

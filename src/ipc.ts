@@ -185,11 +185,19 @@ export function createComment(
   return invoke("create_comment", { repoPath, base, head, mode, comment });
 }
 
+/** Save a comment's new body. With `expectedUpdatedAt` (the version the
+ * editor opened), a comment someone changed meanwhile is refused instead
+ * of overwritten; the error carries their text. */
 export function updateComment(
   commentId: number,
   body: string,
+  expectedUpdatedAt?: string,
 ): Promise<Comment> {
-  return invoke("update_comment", { commentId, body });
+  return invoke("update_comment", {
+    commentId,
+    body,
+    expectedUpdatedAt: expectedUpdatedAt ?? null,
+  });
 }
 
 export function deleteComment(commentId: number): Promise<void> {

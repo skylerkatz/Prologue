@@ -115,14 +115,17 @@ export function useCommentMutations(session: ReviewSession) {
         pinned.view.mode,
         { reviewId: pinned.review.id, ...input },
       );
-      setComments((prev) => [...prev, comment]);
+      // The server's comments-changed refetch can land before this reply.
+      setComments((prev) =>
+        prev.some((c) => c.id === comment.id) ? prev : [...prev, comment],
+      );
     },
     [current, setComments],
   );
 
   const onUpdate = useCallback(
-    async (id: number, body: string) => {
-      const updated = await updateComment(id, body);
+    async (id: number, body: string, expectedUpdatedAt?: string) => {
+      const updated = await updateComment(id, body, expectedUpdatedAt);
       setComments((prev) => prev.map((c) => (c.id === id ? updated : c)));
     },
     [setComments],

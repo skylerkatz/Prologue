@@ -45,7 +45,7 @@ interface OrphanedCommentsProps {
   /** Replies grouped by root; orphaned threads keep theirs. */
   repliesByRoot: RepliesByRoot;
   onCreateReply: (rootId: number, body: string) => Promise<void>;
-  onUpdate: (id: number, body: string) => Promise<void>;
+  onUpdate: (id: number, body: string, expectedUpdatedAt?: string) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
   onSetState: (id: number, state: CommentState) => Promise<void>;
 }

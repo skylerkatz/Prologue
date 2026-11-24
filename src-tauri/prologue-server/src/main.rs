@@ -209,9 +209,63 @@ impl From<&str> for Failure {
     }
 }
 
+/// Whose reviewed marks a request reads and writes: the Amp user's own,
+/// or the local reviewer's (the app's) without an identity.
+fn reviewer(user: Option<&AmpUser>) -> &str {
+    user.map_or(review::LOCAL_REVIEWER, |u| u.id.as_str())
+}
+
+/// A comment written by an Amp user is theirs alone to edit or delete.
+/// Comments with no stored identity (the agent's, the app's, older rows)
+/// stay editable by anyone, as before. Returns the comment.
+fn check_author(
+    conn: &prologue_core::rusqlite::Connection,
+    comment_id: i64,
+    user: Option<&AmpUser>,
+    action: &str,
+) -> Result<review::Comment, String> {
+    let comment = review::get_comment(conn, comment_id)?;
+    match &comment.author_id {
+        Some(author) if user.map(|u| &u.id) != Some(author) => Err(format!(
+            "Only {} can {action} C{comment_id} — it is their comment. Reply instead.",
+            comment.author
+        )),
+        _ => Ok(comment),
+    }
+}
+
+/// Commands whose success changes what other viewers' comment lists show.
+/// The database watcher cannot report these: its data_version guard drops
+/// this server's own writes, so they are broadcast from here. Reviewed
+/// marks and re-anchoring are left out on purpose: marks are a reviewer's
+/// own progress, and every client re-anchors on each refetch, so emitting
+/// for it would loop.
+const SHARED_WRITES: &[&str] = &[
+    "create_comment",
+    "update_comment",
+    "delete_comment",
+    "update_comment_state",
+    "send_to_amp",
+];
+
+/// Run a command and, when it changed shared review state, tell every open
+/// tab (including the caller's, whose refetch is idempotent).
+fn dispatch(
+    state: &AppState,
+    command: &str,
+    value: Value,
+    user: Option<&AmpUser>,
+) -> Result<Value, Failure> {
+    let result = run_command(state, command, value, user);
+    if result.is_ok() && SHARED_WRITES.contains(&command) {
+        state.emit(events::COMMENTS_CHANGED, Value::Null);
+    }
+    result
+}
+
 /// The Tauri command table (src-tauri/src/lib.rs), over HTTP. Blocking —
 /// git and SQLite work — so the handler runs it on a blocking thread.
-fn dispatch(
+fn run_command(
     state: &AppState,
     command: &str,
     value: Value,
@@ -277,7 +331,7 @@ fn dispatch(
         }
         "list_reviewed_files" => {
             let conn = state.db.lock()?;
-            ok(review::list_reviewed_files_impl(&conn, a.get("reviewId")?)?)
+            ok(review::list_reviewed_files_impl(&conn, a.get("reviewId")?, reviewer(user))?)
         }
         "mark_file_reviewed" => {
             let file_path: String = a.get("filePath")?;
@@ -286,6 +340,7 @@ fn dispatch(
             ok(review::mark_file_reviewed_impl(
                 &conn,
                 a.get("reviewId")?,
+                reviewer(user),
                 &file_path,
                 &fingerprint,
             )?)
@@ -296,6 +351,7 @@ fn dispatch(
             ok(review::unmark_file_reviewed_impl(
                 &conn,
                 a.get("reviewId")?,
+                reviewer(user),
                 &file_path,
             )?)
         }
@@ -315,16 +371,22 @@ fn dispatch(
         }
         "update_comment" => {
             let body: String = a.get("body")?;
+            let expected: Option<String> = a.get("expectedUpdatedAt")?;
+            let comment_id: i64 = a.get("commentId")?;
             let conn = state.db.lock()?;
+            check_author(&conn, comment_id, user, "edit")?;
             ok(review::update_comment_impl(
                 &conn,
-                a.get("commentId")?,
+                comment_id,
                 &body,
+                expected.as_deref(),
             )?)
         }
         "delete_comment" => {
+            let comment_id: i64 = a.get("commentId")?;
             let conn = state.db.lock()?;
-            ok(review::delete_comment_impl(&conn, a.get("commentId")?)?)
+            check_author(&conn, comment_id, user, "delete")?;
+            ok(review::delete_comment_impl(&conn, comment_id)?)
         }
         "update_comment_state" => {
             let comment_state: CommentState = a.get("state")?;
@@ -726,6 +788,103 @@ mod tests {
         assert_eq!(reply["authorId"], "user_ada");
         let plain = create(None, json!({ "reviewId": review_id, "level": "review", "body": "cli" }));
         assert_eq!((&plain["author"], &plain["authorId"]), (&json!("reviewer"), &Value::Null));
+    }
+
+    /// Another viewer's tab learns of a comment written through this server
+    /// (the DB watcher filters these out), while the re-anchor pass every
+    /// client runs on refetch stays silent so refetches cannot loop.
+    #[test]
+    fn web_comment_writes_notify_other_viewers() {
+        let fixture = FixtureRepo::standard_review_fixture();
+        let dir = tempfile::tempdir().unwrap();
+        let state = state_for(&fixture, &dir);
+        let mut other_tab = state.events.subscribe();
+        let repo_path = fixture.path();
+        let spec = json!({ "repoPath": repo_path, "base": "main", "head": "feature", "mode": "committed" });
+        let opened = call(
+            &state,
+            "open_review",
+            json!({ "repoPath": repo_path, "branch": "feature", "baseRef": "main", "mode": "committed" }),
+        )
+        .unwrap();
+        let review_id = opened["review"]["id"].as_i64().unwrap();
+        assert!(other_tab.try_recv().is_err(), "opening a review is not a comment change");
+
+        let mut args = spec.clone();
+        args["comment"] = json!({ "reviewId": review_id, "level": "review", "body": "hi" });
+        let id = call(&state, "create_comment", args).unwrap()["id"].clone();
+        assert_eq!(other_tab.try_recv().unwrap().name, events::COMMENTS_CHANGED);
+        call(&state, "update_comment", json!({ "commentId": id, "body": "edited" })).unwrap();
+        call(&state, "update_comment_state", json!({ "commentId": id, "state": "resolved" })).unwrap();
+        call(&state, "delete_comment", json!({ "commentId": id })).unwrap();
+        for _ in 0..3 {
+            assert_eq!(other_tab.try_recv().unwrap().name, events::COMMENTS_CHANGED);
+        }
+
+        let mut args = spec;
+        args["reviewId"] = json!(review_id);
+        call(&state, "reanchor_comments", args).unwrap();
+        // A failed write changed nothing, so it tells nobody.
+        call(&state, "delete_comment", json!({ "commentId": 999 })).unwrap_err();
+        assert!(other_tab.try_recv().is_err());
+    }
+
+    /// Through the portal, only a comment's Amp author may edit or delete
+    /// it (the agent's stay open to all), and each viewer's Viewed marks
+    /// are their own.
+    #[test]
+    fn edits_are_the_authors_and_marks_are_per_viewer() {
+        let fixture = FixtureRepo::standard_review_fixture();
+        let dir = tempfile::tempdir().unwrap();
+        let state = state_for(&fixture, &dir);
+        let user = |id: &str| AmpUser { id: id.to_owned(), display_name: id.to_owned(), email: None };
+        let (ada, grace) = (user("ada"), user("grace"));
+        let repo_path = fixture.path();
+        let opened = call(
+            &state,
+            "open_review",
+            json!({ "repoPath": repo_path, "branch": "feature", "baseRef": "main", "mode": "committed" }),
+        )
+        .unwrap();
+        let review_id = opened["review"]["id"].as_i64().unwrap();
+        let create = |who: Option<&AmpUser>| {
+            call_as(
+                &state,
+                who,
+                "create_comment",
+                json!({ "repoPath": repo_path, "base": "main", "head": "feature", "mode": "committed",
+                        "comment": { "reviewId": review_id, "level": "review", "body": "x" } }),
+            )
+            .unwrap()["id"]
+                .clone()
+        };
+        let adas = create(Some(&ada));
+        let agents = create(None);
+
+        let err = call_as(&state, Some(&grace), "update_comment", json!({ "commentId": adas, "body": "y" }))
+            .unwrap_err();
+        assert!(err.contains("Only ada"), "{err}");
+        call_as(&state, Some(&grace), "delete_comment", json!({ "commentId": adas })).unwrap_err();
+        call_as(&state, None, "delete_comment", json!({ "commentId": adas })).unwrap_err();
+        call_as(&state, Some(&ada), "update_comment", json!({ "commentId": adas, "body": "y" })).unwrap();
+        call_as(&state, Some(&grace), "update_comment", json!({ "commentId": agents, "body": "z" })).unwrap();
+        call_as(&state, Some(&grace), "delete_comment", json!({ "commentId": agents })).unwrap();
+
+        call_as(
+            &state,
+            Some(&ada),
+            "mark_file_reviewed",
+            json!({ "reviewId": review_id, "filePath": "code.txt", "fingerprint": "f" }),
+        )
+        .unwrap();
+        let marks = |who: Option<&AmpUser>| {
+            call_as(&state, who, "list_reviewed_files", json!({ "reviewId": review_id }))
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .len()
+        };
+        assert_eq!((marks(Some(&ada)), marks(Some(&grace)), marks(None)), (1, 0, 0));
     }
 
     #[test]

@@ -1051,6 +1051,7 @@ body.sidebar-resizing * {
 
 .composer-error {
   margin: 4px 0 0;
+  white-space: pre-wrap;
   color: var(--danger);
   font-size: 12px;
 }

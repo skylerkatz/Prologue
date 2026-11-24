@@ -450,25 +450,55 @@ fn create_reply(
     get_comment(conn, conn.last_insert_rowid())
 }
 
+/// Prefix of the error a stale save gets, so callers can tell it apart.
+pub const STALE_EDIT_ERROR: &str = "Someone else changed";
+
+/// Replace a comment's body. `expected_updated_at` is the `updated_at` the
+/// editor opened against: when given and the comment has changed since,
+/// the save is refused (with the latest text in the message) instead of
+/// silently overwriting another person's edit. None saves unconditionally.
 pub fn update_comment_impl(
     conn: &Connection,
     comment_id: i64,
     body: &str,
+    expected_updated_at: Option<&str>,
 ) -> Result<Comment, String> {
     if body.trim().is_empty() {
         return Err("Comment text cannot be empty".to_owned());
     }
-    guarded_comment_mutation(conn, comment_id, || {
+    let stale = |current: &Comment| {
+        format!(
+            "{STALE_EDIT_ERROR} C{comment_id} while you were editing. Its latest text:\n\n{}\n\n\
+             Your text is still in the editor — save again to replace theirs.",
+            current.body
+        )
+    };
+    if let Some(expected) = expected_updated_at {
+        let current = get_comment(conn, comment_id)?;
+        if current.updated_at != expected {
+            return Err(stale(&current));
+        }
+    }
+    let result = guarded_comment_mutation(conn, comment_id, || {
         conn.execute(
             &format!(
                 "UPDATE comments SET body = ?1, updated_at = {NOW}
-                 WHERE id = ?2 AND EXISTS (
+                 WHERE id = ?2 AND (?3 IS NULL OR updated_at = ?3) AND EXISTS (
                      SELECT 1 FROM reviews
                      WHERE id = comments.review_id AND status = 'active')"
             ),
-            (body, comment_id),
+            (body, comment_id, expected_updated_at),
         )
-    })?;
+    });
+    if let Err(e) = result {
+        // Lost a race with another writer between the check and the write.
+        return match get_comment(conn, comment_id) {
+            Ok(current) if expected_updated_at.is_some_and(|x| x != current.updated_at) => {
+                Err(stale(&current))
+            }
+            _ => Err(e),
+        };
+    }
     get_comment(conn, comment_id)
 }
 
@@ -955,14 +985,25 @@ mod tests {
                 .unwrap();
         let comment = create(&conn, &fixture, new_comment(review.id, CommentLevel::Review, "v1"));
 
-        let edited = update_comment_impl(&conn, comment.id, "v2").unwrap();
+        // updated_at has millisecond precision; keep the versions apart.
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        let edited = update_comment_impl(&conn, comment.id, "v2", None).unwrap();
         assert_eq!(edited.body, "v2");
         assert_eq!(edited.id, comment.id);
+
+        // An editor opened on v1 cannot overwrite v2; it is told v2's text.
+        let err = update_comment_impl(&conn, comment.id, "mine", Some(&comment.updated_at))
+            .unwrap_err();
+        assert!(err.starts_with(STALE_EDIT_ERROR) && err.contains("v2"), "{err}");
+        assert_eq!(get_comment(&conn, comment.id).unwrap().body, "v2");
+        // Saving against the version on screen goes through.
+        let saved = update_comment_impl(&conn, comment.id, "v3", Some(&edited.updated_at)).unwrap();
+        assert_eq!(saved.body, "v3");
 
         delete_comment_impl(&conn, comment.id).unwrap();
         assert!(list_comments_impl(&conn, review.id).unwrap().is_empty());
         assert!(delete_comment_impl(&conn, comment.id).is_err());
-        assert!(update_comment_impl(&conn, comment.id, "gone").is_err());
+        assert!(update_comment_impl(&conn, comment.id, "gone", None).is_err());
     }
 
     #[test]
@@ -1225,7 +1266,7 @@ mod tests {
         let root = create(&conn, &fixture, new_comment(review.id, CommentLevel::Review, "root"));
         let r = create(&conn, &fixture, reply(review.id, root.id, "v1"));
 
-        let edited = update_comment_impl(&conn, r.id, "v2").unwrap();
+        let edited = update_comment_impl(&conn, r.id, "v2", None).unwrap();
         assert_eq!(edited.body, "v2");
         assert_eq!(edited.parent_id, Some(root.id));
     }
@@ -1400,7 +1441,7 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.contains("read-only"), "{err}");
-        let err = update_comment_impl(&conn, r.id, "rewrite").unwrap_err();
+        let err = update_comment_impl(&conn, r.id, "rewrite", None).unwrap_err();
         assert!(err.contains("read-only"), "{err}");
         let err = delete_comment_impl(&conn, r.id).unwrap_err();
         assert!(err.contains("read-only"), "{err}");

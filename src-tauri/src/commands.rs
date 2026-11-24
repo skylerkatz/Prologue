@@ -123,7 +123,7 @@ pub fn list_reviewed_files(
     review_id: i64,
 ) -> Result<Vec<ReviewedFile>, String> {
     let conn = lock(&db)?;
-    review::list_reviewed_files_impl(&conn, review_id)
+    review::list_reviewed_files_impl(&conn, review_id, review::LOCAL_REVIEWER)
 }
 
 /// Mark a file reviewed at `fingerprint` (the summary value the user saw);
@@ -136,7 +136,7 @@ pub fn mark_file_reviewed(
     fingerprint: String,
 ) -> Result<ReviewedFile, String> {
     let conn = lock(&db)?;
-    review::mark_file_reviewed_impl(&conn, review_id, &file_path, &fingerprint)
+    review::mark_file_reviewed_impl(&conn, review_id, review::LOCAL_REVIEWER, &file_path, &fingerprint)
 }
 
 #[tauri::command]
@@ -146,7 +146,7 @@ pub fn unmark_file_reviewed(
     file_path: String,
 ) -> Result<(), String> {
     let conn = lock(&db)?;
-    review::unmark_file_reviewed_impl(&conn, review_id, &file_path)
+    review::unmark_file_reviewed_impl(&conn, review_id, review::LOCAL_REVIEWER, &file_path)
 }
 
 #[tauri::command]
@@ -173,9 +173,10 @@ pub fn update_comment(
     db: tauri::State<'_, Db>,
     comment_id: i64,
     body: String,
+    expected_updated_at: Option<String>,
 ) -> Result<Comment, String> {
     let conn = lock(&db)?;
-    review::update_comment_impl(&conn, comment_id, &body)
+    review::update_comment_impl(&conn, comment_id, &body, expected_updated_at.as_deref())
 }
 
 #[tauri::command]

@@ -14,6 +14,11 @@ import { getWebViewer, subscribeWebViewer } from "../web";
 export type DraftStore = Map<string, string>;
 
 const editDraftKey = (commentId: number): string => `edit:${commentId}`;
+/** The comment's `updatedAt` when its editor opened: the save sends it so
+ * the server refuses to overwrite an edit someone made in the meantime. */
+const editBaseKey = (commentId: number): string => `edit-base:${commentId}`;
+/** Start of the server's stale-save error (prologue-core STALE_EDIT_ERROR). */
+const STALE_EDIT_ERROR = "Someone else changed";
 
 /**
  * Owns the editing state a list of `CommentThread`s shares: which comment
@@ -24,7 +29,7 @@ const editDraftKey = (commentId: number): string => `edit:${commentId}`;
  * setEditingId/setReplyingTo by hand.
  */
 export function useThreadEditing(
-  onUpdate: (id: number, body: string) => Promise<void>,
+  onUpdate: (id: number, body: string, expectedUpdatedAt?: string) => Promise<void>,
   onCreateReply?: (rootId: number, body: string) => Promise<void>,
 ) {
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -43,8 +48,8 @@ export function useThreadEditing(
             onCreateReply(rootId, body).then(() => setReplyingTo(null)),
     onEditStart: setEditingId,
     onEditCancel: () => setEditingId(null),
-    onSave: (id: number, body: string) =>
-      onUpdate(id, body).then(() => setEditingId(null)),
+    onSave: (id: number, body: string, expectedUpdatedAt?: string) =>
+      onUpdate(id, body, expectedUpdatedAt).then(() => setEditingId(null)),
   };
 }
 
@@ -177,7 +182,7 @@ interface CommentCardProps {
   onEditStart: (id: number) => void;
   onEditCancel: () => void;
   /** Resolve to close the editor; reject to keep it open with the error. */
-  onSave: (id: number, body: string) => Promise<void>;
+  onSave: (id: number, body: string, expectedUpdatedAt?: string) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
   /** Lifecycle transitions: resolve / dismiss / reopen. */
   onSetState?: (id: number, state: CommentState) => Promise<void>;
@@ -237,6 +242,10 @@ export function CommentCard({
   const location = describeLocation(comment);
   const ampSent = useContext(AmpSentContext);
   const author = useAuthorLabel(comment);
+  // Comments by an Amp user are theirs to edit or delete — the server
+  // enforces it; the app's, the agent's, and unattributed ones stay open
+  // to all.
+  const mayModify = comment.authorId === null || author.you;
   const ampPending =
     ampSent !== null && !isReply && comment.state === "open" && !ampSent.has(comment.id);
   return (
@@ -352,23 +361,28 @@ export function CommentCard({
                     </button>
                   </>
                 )}
-                <button
-                  type="button"
-                  className="comment-action"
-                  onClick={() => {
-                    drafts.set(editDraftKey(comment.id), comment.body);
-                    onEditStart(comment.id);
-                  }}
-                >
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  className="comment-action"
-                  onClick={() => setConfirmingDelete(true)}
-                >
-                  Delete
-                </button>
+                {mayModify && (
+                  <>
+                    <button
+                      type="button"
+                      className="comment-action"
+                      onClick={() => {
+                        drafts.set(editDraftKey(comment.id), comment.body);
+                        drafts.set(editBaseKey(comment.id), comment.updatedAt);
+                        onEditStart(comment.id);
+                      }}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      className="comment-action"
+                      onClick={() => setConfirmingDelete(true)}
+                    >
+                      Delete
+                    </button>
+                  </>
+                )}
               </>
             )}
           </>
@@ -407,7 +421,20 @@ export function CommentCard({
           draftKey={editDraftKey(comment.id)}
           placeholder="Comment text"
           submitLabel="Save"
-          onSubmit={(body) => onSave(comment.id, body)}
+          onSubmit={(body) =>
+            onSave(
+              comment.id,
+              body,
+              drafts.get(editBaseKey(comment.id)) ?? comment.updatedAt,
+            ).catch((e: unknown) => {
+              // The error shows their text; a second save means "replace
+              // it", so it goes against the version now on screen.
+              if (errorText(e).startsWith(STALE_EDIT_ERROR)) {
+                drafts.delete(editBaseKey(comment.id));
+              }
+              throw e;
+            })
+          }
           onCancel={onEditCancel}
         />
       ) : closed ? (
@@ -444,7 +471,7 @@ interface CommentThreadProps {
   onCreateReply?: (rootId: number, body: string) => Promise<void>;
   onEditStart: (id: number) => void;
   onEditCancel: () => void;
-  onSave: (id: number, body: string) => Promise<void>;
+  onSave: (id: number, body: string, expectedUpdatedAt?: string) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
   onSetState?: (id: number, state: CommentState) => Promise<void>;
 }

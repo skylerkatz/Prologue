@@ -2,6 +2,8 @@ import { createContext, useCallback, useEffect, useMemo, useState } from "react"
 import { isTauri } from "@tauri-apps/api/core";
 import { ampSentComments, sendToAmp } from "../ipc";
 import { webConfig } from "../web";
+import { useTauriEvent } from "../useTauriEvent";
+import { COMMENTS_CHANGED_EVENT } from "../generated/events";
 import type { Comment } from "../types";
 import type { ExportTarget } from "./ExportButton";
 
@@ -31,6 +33,10 @@ export function useAmpSend(
   const [enabled, setEnabled] = useState(false);
   const [sent, setSent] = useState<ReadonlySet<number>>(new Set());
   const reviewId = target?.reviewId ?? null;
+  // Another viewer's send changes what is pending here too; prologue-server
+  // announces it as comments-changed.
+  const [version, setVersion] = useState(0);
+  useTauriEvent(COMMENTS_CHANGED_EVENT, () => setVersion((v) => v + 1));
 
   useEffect(() => {
     if (!isTauri()) {
@@ -42,6 +48,9 @@ export function useAmpSend(
 
   useEffect(() => {
     setSent(new Set());
+  }, [enabled, reviewId]);
+
+  useEffect(() => {
     if (!enabled || reviewId === null) {
       return;
     }
@@ -52,7 +61,7 @@ export function useAmpSend(
     return () => {
       cancelled = true;
     };
-  }, [enabled, reviewId]);
+  }, [enabled, reviewId, version]);
 
   const pendingCount = useMemo(
     () =>

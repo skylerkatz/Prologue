@@ -143,7 +143,7 @@ interface DiffViewProps {
   reviewStates: ReadonlyMap<string, FileReviewState>;
   onToggleReviewed: (path: string) => void;
   onCreateComment: (input: NewCommentInput) => Promise<void>;
-  onUpdateComment: (id: number, body: string) => Promise<void>;
+  onUpdateComment: (id: number, body: string, expectedUpdatedAt?: string) => Promise<void>;
   onDeleteComment: (id: number) => Promise<void>;
   onSetCommentState: (id: number, state: CommentState) => Promise<void>;
 }
@@ -769,8 +769,10 @@ export function DiffView({
   }, []);
 
   const saveComment = useCallback(
-    (id: number, body: string) =>
-      onUpdateComment(id, body).then(() => setEditingId(null)),
+    (id: number, body: string, expectedUpdatedAt?: string) =>
+      onUpdateComment(id, body, expectedUpdatedAt).then(() =>
+        setEditingId(null),
+      ),
     [onUpdateComment],
   );
 
@@ -1351,7 +1353,7 @@ interface RowContentProps {
   onComposerCancel: () => void;
   onEditStart: (id: number) => void;
   onEditCancel: () => void;
-  onSaveComment: (id: number, body: string) => Promise<void>;
+  onSaveComment: (id: number, body: string, expectedUpdatedAt?: string) => Promise<void>;
   onDeleteComment: (id: number) => Promise<void>;
   onSetCommentState: (id: number, state: CommentState) => Promise<void>;
 }

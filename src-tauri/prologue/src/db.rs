@@ -178,7 +178,9 @@ mod tests {
                     applied_at TEXT NOT NULL DEFAULT ''
                  );
                  CREATE TABLE reviews (id INTEGER PRIMARY KEY);
-                 CREATE TABLE comments (id INTEGER PRIMARY KEY);
+                 CREATE TABLE comments (id INTEGER PRIMARY KEY, review_id, level, file_path,
+                     side, start_line, end_line, code_anchor, commit_sha, state, body,
+                     created_at, updated_at);
                  INSERT INTO schema_migrations (version) VALUES (1);",
             )
             .unwrap();
