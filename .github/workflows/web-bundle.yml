@@ -23,11 +23,11 @@ jobs:
     env:
       ASSET: prologue-web-x86_64-linux.tar.gz
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -57,9 +57,10 @@ jobs:
           tar -C bundle -czf "$ASSET" prologue-server prologue dist
           tar -tzf "$ASSET" | head -5
 
-      - uses: actions/upload-artifact@v4
+      # Unzipped: the artifact is the tarball itself, named after it.
+      - uses: actions/upload-artifact@v7
         with:
-          name: prologue-web-x86_64-linux.tar.gz
           path: prologue-web-x86_64-linux.tar.gz
+          archive: false
           if-no-files-found: error
           retention-days: 14
