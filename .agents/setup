@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# Prepares a fresh Amp orb (Debian) to build, test, and run Prologue:
+# the Tauri system libraries (so `cargo test` / `cargo clippy` across the
+# whole src-tauri workspace compile on Linux), the Rust toolchain, npm
+# dependencies, and pre-fetched crates. Idempotent and quick on a warm
+# snapshot: every step checks before it installs.
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
+step() {
+  printf '\n==> %s\n' "$1"
+  SECONDS=0
+}
+done_step() { printf '    (%ss)\n' "$SECONDS"; }
+
+step "System packages for Tauri (webkit2gtk, gtk)"
+packages=(
+  build-essential pkg-config libssl-dev
+  libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev
+  librsvg2-dev libsoup-3.0-dev
+)
+missing=()
+for pkg in "${packages[@]}"; do
+  dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q "install ok installed" ||
+    missing+=("$pkg")
+done
+if ((${#missing[@]})); then
+  sudo apt-get update -qq
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${missing[@]}"
+fi
+done_step
+
+step "Rust toolchain (stable + clippy + rustfmt)"
+if [[ ! -x "$HOME/.cargo/bin/rustup" ]]; then
+  curl -sSf https://sh.rustup.rs |
+    sh -s -- -y --profile minimal -c clippy -c rustfmt --no-modify-path
+fi
+# The installer cannot update this running script's environment.
+# shellcheck disable=SC1091
+source "$HOME/.cargo/env"
+rustup component add clippy rustfmt >/dev/null
+# Login shells (Amp, supervised services) need cargo on PATH too.
+for profile in "$HOME/.profile" "$HOME/.bash_profile"; do
+  if [[ -f "$profile" ]] && ! grep -Fq '.cargo/env' "$profile"; then
+    printf '\n. "$HOME/.cargo/env"\n' >>"$profile"
+  fi
+done
+done_step
+
+step "npm dependencies"
+# Seconds on a warm snapshot (npm's cache is restored with it).
+npm ci --no-audit --no-fund
+done_step
+
+step "Rust crates"
+(cd src-tauri && cargo fetch)
+done_step

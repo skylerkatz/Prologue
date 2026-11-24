@@ -24,3 +24,6 @@ dist-ssr
 *.sw?
 .playwright-mcp/
 .solo-artifacts/
+
+# Amp orb portal registrations (per-orb, generated)
+.amp/portals/*
