@@ -1186,6 +1186,28 @@ mod tests {
         assert_eq!((&reloaded["anchors"], &reloaded["comments"]), (&for_ada["anchors"], &for_ada["comments"]));
     }
 
+    /// Until the viewer picks a mode (cookie `auto`, or none), the inlined
+    /// review shows uncommitted work when the checkout has some; a picked
+    /// mode always wins.
+    #[test]
+    fn the_inlined_review_defaults_to_the_working_tree_when_it_is_dirty() {
+        let fixture = FixtureRepo::standard_review_fixture();
+        let dir = tempfile::tempdir().unwrap();
+        let state = state_for(&fixture, &dir);
+        let inlined_mode = |cookie: Option<&str>| {
+            let mut headers = HeaderMap::new();
+            if let Some(c) = cookie {
+                headers.insert("cookie", c.parse().unwrap());
+            }
+            boot::boot_state(&state, None, &headers)["review"]["mode"].clone()
+        };
+        assert_eq!(inlined_mode(None), "committed");
+        fixture.write("agent.txt", "uncommitted\n");
+        assert_eq!(inlined_mode(None), "all");
+        assert_eq!(inlined_mode(Some("prologue-view=auto.0")), "all");
+        assert_eq!(inlined_mode(Some("x=1; prologue-view=committed.0")), "committed");
+    }
+
     /// The page inlines user-written comment text in a <script>; a body
     /// that says `</script>` must not end the element.
     #[test]

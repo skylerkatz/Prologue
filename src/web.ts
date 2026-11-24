@@ -87,9 +87,14 @@ export function takeBootReview(
 }
 
 /** Tell the server which view this browser shows (localStorage is out of
- * its reach), so the review it inlines next time is the one asked for. */
-export function rememberView(mode: DiffMode, ignoreWhitespace: boolean): void {
-  document.cookie = `prologue-view=${mode}.${ignoreWhitespace ? 1 : 0}; path=/; max-age=31536000; SameSite=Lax`;
+ * its reach), so the review it inlines next time is the one asked for.
+ * A null mode is `auto`: the viewer never picked one, so the server
+ * chooses as App.tsx does (working tree when it has uncommitted changes). */
+export function rememberView(
+  mode: DiffMode | null,
+  ignoreWhitespace: boolean,
+): void {
+  document.cookie = `prologue-view=${mode ?? "auto"}.${ignoreWhitespace ? 1 : 0}; path=/; max-age=31536000; SameSite=Lax`;
 }
 
 let configPromise: Promise<WebConfig> | null = null;

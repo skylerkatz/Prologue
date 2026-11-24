@@ -2,7 +2,14 @@
 // Do not edit — run `cargo test -p prologue-core` in src-tauri to refresh.
 
 export type RepoInfo = { path: string, name: string, };
-export type BranchList = { branches: Array<string>, current: string, defaultBase: string, };
+export type BranchList = { branches: Array<string>, current: string, defaultBase: string, 
+/**
+ * The working tree has changes `git status` shows: staged, unstaged,
+ * intent-to-add, or untracked (not ignored) files. Agents usually
+ * leave their work like this, so web mode opens such a checkout in
+ * the working-tree mode.
+ */
+uncommitted: boolean, };
 export type DiffMode = "committed" | "staged" | "all";
 export type FileStatus = "added" | "modified" | "deleted" | "renamed";
 export type FileSummary = { path: string, 

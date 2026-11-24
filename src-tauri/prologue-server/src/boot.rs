@@ -132,8 +132,10 @@ pub fn load_review(
 
 /// The view preferences the browser keeps in localStorage, mirrored into
 /// the `prologue-view` cookie (`<mode>.<0|1 hide whitespace>`) so the
-/// inlined review matches what the page will ask for.
-fn view_from_cookie(headers: &HeaderMap) -> (DiffMode, bool) {
+/// inlined review matches what the page will ask for. The mode is None
+/// (`auto`) until the viewer picks one: then a checkout with uncommitted
+/// work opens in the working-tree mode, as App.tsx decides too.
+fn view_from_cookie(headers: &HeaderMap) -> (Option<DiffMode>, bool) {
     let value = headers
         .get_all(header::COOKIE)
         .iter()
@@ -141,10 +143,9 @@ fn view_from_cookie(headers: &HeaderMap) -> (DiffMode, bool) {
         .flat_map(|v| v.split(';'))
         .find_map(|c| c.trim().strip_prefix("prologue-view="));
     let Some((mode, ws)) = value.and_then(|v| v.split_once('.')) else {
-        return (DiffMode::Committed, false);
+        return (None, false);
     };
-    let mode = serde_json::from_value(json!(mode)).unwrap_or(DiffMode::Committed);
-    (mode, ws == "1")
+    (serde_json::from_value(json!(mode)).ok(), ws == "1")
 }
 
 /// The state index.html carries: what /api/config and /api/me answer, and
@@ -164,6 +165,10 @@ pub fn boot_state(state: &AppState, user: Option<&AmpUser>, headers: &HeaderMap)
             .filter(|b| branches.iter().any(|x| x == b))
             .or_else(|| s.branch_list["defaultBase"].as_str())?;
         let (mode, ignore_whitespace) = view_from_cookie(headers);
+        let mode = mode.unwrap_or(match s.branch_list["uncommitted"].as_bool() {
+            Some(true) => DiffMode::All,
+            _ => DiffMode::Committed,
+        });
         let data =
             load_review(state, repo_path, branch, base, mode, ignore_whitespace, user).ok()?;
         Some(json!({

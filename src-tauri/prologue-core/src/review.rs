@@ -272,6 +272,13 @@ enum StaleReason {
 /// branch, so it can be neither deleted nor merged, and its tip routinely
 /// sits on or behind the base — e.g. a detached checkout of an older commit
 /// with uncommitted work, which must still show that work.
+///
+/// Likewise, the checked-out branch with uncommitted work is never merged.
+/// An agent's branch often has no commits of its own, so once the base
+/// moves on its tip is a strict ancestor of it, yet the work under review
+/// is all in the working tree. This holds in every diff mode: switching to
+/// the committed view must not archive the review (and its comments) that
+/// the working-tree view is still using.
 fn stale_reason(repo: &Repository, branch: &str, base_ref: &str) -> Option<StaleReason> {
     if branch == "HEAD" {
         return None;
@@ -291,7 +298,11 @@ fn stale_reason(repo: &Repository, branch: &str, base_ref: &str) -> Option<Stale
         && repo
             .graph_descendant_of(base_tip.id(), branch_tip.id())
             .unwrap_or(false);
-    merged.then_some(StaleReason::Merged)
+    let in_progress = || {
+        repo.head().is_ok_and(|h| h.is_branch() && h.shorthand() == Some(branch))
+            && crate::repo::has_uncommitted_changes(repo)
+    };
+    (merged && !in_progress()).then_some(StaleReason::Merged)
 }
 
 pub(crate) fn archive_review(conn: &Connection, id: i64) -> Result<(), String> {
@@ -758,6 +769,62 @@ mod tests {
             stale_reason(&fixture.repo, "never-existed", "main"),
             Some(StaleReason::Deleted)
         );
+    }
+
+    /// The common Amp state: an agent's branch with no commits of its own
+    /// (so a strict ancestor of a base that moved on), its work all in the
+    /// working tree, new files intent-to-add or untracked. That is still a
+    /// review in progress in every mode, and the working-tree modes show
+    /// the work; a clean tree, or another branch, still reads as merged.
+    #[test]
+    fn uncommitted_work_on_the_checked_out_branch_is_never_merged() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = test_db(&dir);
+        let fixture = FixtureRepo::new();
+        fixture.commit_file("a.txt", "one\n", "init");
+        fixture.write("b.txt", "keep\n");
+        fixture.stage(&["b.txt"]);
+        fixture.commit("b");
+        fixture.create_branch("agent");
+        fixture.repo.branch("idle", &fixture.repo.head().unwrap().peel_to_commit().unwrap(), false).unwrap();
+        fixture.checkout("main");
+        fixture.commit_file("a.txt", "one\ntwo\n", "production moves on");
+        fixture.checkout("agent");
+        let open = |mode| {
+            open_review_checked_impl(&conn, &fixture.repo, &fixture.path(), "agent", "main", mode)
+                .unwrap()
+        };
+
+        // Control: nothing in the working tree, so it is merged.
+        assert_eq!(stale_reason(&fixture.repo, "agent", "main"), Some(StaleReason::Merged));
+
+        fixture.write("loose.txt", "untracked\n");
+        assert_eq!(stale_reason(&fixture.repo, "agent", "main"), None, "untracked alone");
+        fixture.write("b.txt", "keep\nedited\n");
+        fixture.write("new.txt", "intent\n");
+        let git = std::process::Command::new("git")
+            .args(["-C", &fixture.path(), "add", "-N", "new.txt"])
+            .status()
+            .unwrap();
+        assert!(git.success());
+
+        for mode in [DiffMode::Committed, DiffMode::Staged, DiffMode::All] {
+            let opened = open(mode);
+            assert!(!opened.branch_merged, "{mode:?}");
+            assert_eq!(opened.review.unwrap().status, ReviewStatus::Active, "{mode:?}");
+        }
+        assert!(archive_stale_reviews_impl(&conn, &fixture.repo, &fixture.path()).unwrap().is_empty());
+        // Another branch behind the base is merged whatever this tree holds.
+        assert_eq!(stale_reason(&fixture.repo, "idle", "main"), Some(StaleReason::Merged));
+
+        let files = |mode| {
+            let spec = DiffSpec { repo_path: fixture.path(), base: "main".into(), head: "agent".into(), mode };
+            let summary = diff::get_diff_summary(&spec, false).unwrap();
+            summary.files.into_iter().map(|f| f.path).collect::<Vec<_>>()
+        };
+        assert_eq!(files(DiffMode::All), vec!["b.txt", "loose.txt", "new.txt"]);
+        assert_eq!(files(DiffMode::Staged), vec!["new.txt"]);
+        assert!(files(DiffMode::Committed).is_empty());
     }
 
     #[test]

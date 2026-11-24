@@ -390,6 +390,17 @@ export function ReviewShell({
               No changes between <code>{view.summary.baseRef}</code> and{" "}
               <code>{view.summary.headRef}</code>.
             </p>
+            {mode !== "all" &&
+              branchList.uncommitted &&
+              branch === branchList.current && (
+                <button
+                  type="button"
+                  className="refresh-button"
+                  onClick={() => onModeChange("all")}
+                >
+                  Show uncommitted changes
+                </button>
+              )}
           </div>
         ) : (
           <div

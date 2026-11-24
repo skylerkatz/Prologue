@@ -16,6 +16,11 @@ pub struct BranchList {
     pub branches: Vec<String>,
     pub current: String,
     pub default_base: String,
+    /// The working tree has changes `git status` shows: staged, unstaged,
+    /// intent-to-add, or untracked (not ignored) files. Agents usually
+    /// leave their work like this, so web mode opens such a checkout in
+    /// the working-tree mode.
+    pub uncommitted: bool,
 }
 
 /// Open the repository at exactly `path` (no upward discovery), with
@@ -68,6 +73,7 @@ pub fn list_branches(repo_path: String) -> Result<BranchList, String> {
         .and_then(|h| h.shorthand().map(str::to_owned))
         .unwrap_or_else(|| "HEAD".to_owned());
     let default_base = detect_default_base(&local, &remote, &current);
+    let uncommitted = has_uncommitted_changes(&repo);
 
     let mut branches = local;
     branches.extend(remote);
@@ -75,7 +81,23 @@ pub fn list_branches(repo_path: String) -> Result<BranchList, String> {
         branches,
         current,
         default_base,
+        uncommitted,
     })
+}
+
+/// Whether the working tree has anything `git status` would list (see
+/// [`BranchList::uncommitted`]). Untracked directories are not walked:
+/// one untracked entry is enough to answer. A bare repo has none.
+pub fn has_uncommitted_changes(repo: &Repository) -> bool {
+    if repo.is_bare() {
+        return false;
+    }
+    let mut opts = git2::StatusOptions::new();
+    opts.include_untracked(true)
+        .recurse_untracked_dirs(false)
+        .include_ignored(false)
+        .exclude_submodules(true);
+    repo.statuses(Some(&mut opts)).is_ok_and(|s| !s.is_empty())
 }
 
 /// Decides which filesystem paths matter to a review of one repository:
@@ -179,6 +201,19 @@ mod tests {
             .into_owned();
         assert_eq!(info.name, expected_name);
         assert_eq!(info.path, fixture.path());
+    }
+
+    #[test]
+    fn branch_list_reports_uncommitted_work_including_untracked_files() {
+        let fixture = FixtureRepo::new();
+        fixture.commit_file("a.txt", "hello\n", "init");
+        fixture.write(".gitignore", "build/\n");
+        fixture.stage(&[".gitignore"]);
+        fixture.commit("ignore build");
+        fixture.write("build/out.txt", "ignored\n");
+        assert!(!list_branches(fixture.path()).unwrap().uncommitted, "ignored files do not count");
+        fixture.write("drafts/new.txt", "draft\n");
+        assert!(list_branches(fixture.path()).unwrap().uncommitted);
     }
 
     #[test]

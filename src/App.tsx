@@ -50,12 +50,12 @@ const HIDE_RESOLVED_KEY = "prologue.hideResolvedComments";
 /** localStorage key for the last version whose release notes were shown. */
 const LAST_SEEN_VERSION_KEY = "prologue.lastSeenVersion";
 
-/** The stored mode, or "committed" if nothing valid is stored. */
-function readStoredMode(): DiffMode {
+/** The mode the user picked, or null if they never picked one. */
+function readStoredMode(): DiffMode | null {
   const stored = localStorage.getItem(MODE_KEY);
   return stored === "committed" || stored === "staged" || stored === "all"
     ? stored
-    : "committed";
+    : null;
 }
 
 function App() {
@@ -64,7 +64,9 @@ function App() {
   const [branch, setBranch] = useState("");
   const [baseBranch, setBaseBranch] = useState("");
   // Both toggles are global preferences, sticky across launches and repos.
-  const [mode, setMode] = useState<DiffMode>(readStoredMode);
+  const [mode, setMode] = useState<DiffMode>(
+    () => readStoredMode() ?? "committed",
+  );
   const [hideWhitespace, setHideWhitespace] = useState(
     () => localStorage.getItem(HIDE_WHITESPACE_KEY) === "true",
   );
@@ -108,7 +110,7 @@ function App() {
   // view into the next page load (it cannot read localStorage).
   useEffect(() => {
     if (!isTauri()) {
-      rememberView(mode, hideWhitespace);
+      rememberView(readStoredMode() === null ? null : mode, hideWhitespace);
     }
   }, [mode, hideWhitespace]);
 
@@ -175,6 +177,7 @@ function App() {
         ? active.baseRef
         : branchList.defaultBase;
     setOpenState({ repo, branchList });
+    showUncommittedWork(branchList);
     setBranch(branchList.current);
     setBaseBranch(baseBranch);
     // Auto-refresh is an enhancement; if watching fails, the manual
@@ -197,6 +200,16 @@ function App() {
     setRecents(await removeRecentRepo(path));
   }
 
+  /** Web mode: agents leave their work uncommitted, so until the viewer
+   * picks a mode, a checkout with uncommitted changes shows them (and
+   * keeps showing them after a commit: that mode includes committed work).
+   * prologue-server's inlined review follows the same rule. */
+  function showUncommittedWork(branchList: BranchList) {
+    if (!isTauri() && readStoredMode() === null && branchList.uncommitted) {
+      setMode("all");
+    }
+  }
+
   function changeMode(next: DiffMode) {
     setMode(next);
     localStorage.setItem(MODE_KEY, next);
@@ -215,6 +228,7 @@ function App() {
     try {
       const branchList = await listBranches(openState.repo.path);
       setOpenState({ repo: openState.repo, branchList });
+      showUncommittedWork(branchList);
       // Web mode reviews whatever the server's checkout has out: a branch
       // switch there moves the review with it.
       if (!isTauri()) {
