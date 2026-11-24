@@ -67,6 +67,10 @@ enum Command {
         /// of threads (valid coordinates for line comments)
         #[arg(long, requires = "file")]
         diff: bool,
+        /// Only open threads (what still needs an answer); conflicts with
+        /// --diff, which prints hunks rather than threads
+        #[arg(long, conflicts_with = "diff")]
+        open: bool,
         /// Machine-readable output
         #[arg(long)]
         json: bool,
@@ -295,7 +299,7 @@ fn run(cli: Cli) -> Result<(), String> {
                 print_text(&reviews_table(&conn, &reviews)?);
             }
         }
-        Command::Show { review, file, diff, json } => {
+        Command::Show { review, file, diff, open, json } => {
             let review = resolve::resolve_review(&conn, review.as_deref(), &cwd)?;
             if diff {
                 // `requires` guarantees --file is present.
@@ -309,6 +313,9 @@ fn run(cli: Cli) -> Result<(), String> {
                 let mut data = show::show_data(&conn, review)?;
                 if let Some(path) = &file {
                     data.threads.retain(|t| t.root.file_path.as_deref() == Some(path));
+                }
+                if open {
+                    data.threads.retain(|t| t.root.state == review::CommentState::Open);
                 }
                 if json {
                     print_json(&data)?;

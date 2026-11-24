@@ -396,3 +396,51 @@ fn a_missing_database_is_a_clean_error() {
         err_str(&output)
     );
 }
+
+/// `show --open --json` is the agent's work list: only open threads, each
+/// flagged when its code changed since it was commented.
+#[test]
+fn show_open_lists_only_open_threads_with_the_changed_flag() {
+    let dir = tempfile::tempdir().unwrap();
+    let (db, fixture, review, c1) = seeded(&dir);
+    {
+        let conn = open_test_db(&dir);
+        let done = review::create_comment_impl(
+            &conn,
+            &DiffSpec::from(&review),
+            NewComment {
+                level: CommentLevel::File,
+                side: None,
+                start_line: None,
+                end_line: None,
+                ..line_comment(review.id, 0, 0, "already fixed")
+            },
+        )
+        .unwrap();
+        review::update_comment_state_impl(&conn, done.id, review::CommentState::Resolved)
+            .unwrap();
+    }
+    // Edit the line right after C1's range: its anchor still matches, but
+    // the surrounding code is no longer what was commented on.
+    let lines: Vec<String> = (1..=10)
+        .map(|n| match n {
+            6 => "beta 6a\nbeta 6b".to_owned(),
+            8 => "alpha 8, edited".to_owned(),
+            n => format!("alpha {n}"),
+        })
+        .collect();
+    fixture.write("code.txt", &(lines.join("\n") + "\n"));
+    fixture.stage(&["code.txt"]);
+    fixture.commit("edit near C1");
+
+    let output = prologue(&db, Path::new(&fixture.path()), &["show", "--open", "--json"]);
+    assert!(output.status.success(), "{}", err_str(&output));
+    let data: serde_json::Value = serde_json::from_str(&out_str(&output)).unwrap();
+    let threads = data["threads"].as_array().unwrap();
+    assert_eq!(threads.len(), 1, "{threads:?}");
+    assert_eq!(threads[0]["root"]["id"], c1);
+    assert_eq!(threads[0]["changed"], true);
+
+    let text = out_str(&prologue(&db, Path::new(&fixture.path()), &["show", "--open"]));
+    assert!(text.contains("code changed since commented"), "{text}");
+}

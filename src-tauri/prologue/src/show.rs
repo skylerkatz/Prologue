@@ -50,6 +50,9 @@ fn location(thread: &Thread) -> String {
     if thread.orphaned == Some(true) {
         notes.push("orphaned — last known location".to_owned());
     }
+    if thread.changed == Some(true) {
+        notes.push("code changed since commented".to_owned());
+    }
     let mut out = match root.file_path.as_deref() {
         None => "review-level".to_owned(),
         Some(path) => match (root.start_line, root.end_line) {

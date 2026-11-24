@@ -614,12 +614,16 @@ fn reanchor_listed(
 /// One resolved thread: the root with current (possibly relocated) line
 /// ranges, whether it is orphaned in the current diff (its anchor no longer
 /// matches, or its file left the diff entirely; `None` when anchors were
-/// not recomputed), and the root's replies in chronological (id) order.
+/// not recomputed), whether its code changed since it was commented (the
+/// anchor was found, but not verbatim with its surrounding context; `None`
+/// when not recomputed or not a line comment), and the root's replies in
+/// chronological (id) order.
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Thread {
     pub root: Comment,
     pub orphaned: Option<bool>,
+    pub changed: Option<bool>,
     pub replies: Vec<Comment>,
 }
 
@@ -655,6 +659,8 @@ pub fn resolve_threads_with(
         .filter(|r| r.status == AnchorStatus::Orphaned)
         .map(|r| r.comment_id)
         .collect();
+    let statuses: HashMap<i64, AnchorStatus> =
+        reanchored.iter().map(|r| (r.comment_id, r.status)).collect();
     let relocated: HashMap<i64, (Option<u32>, Option<u32>)> = reanchored
         .iter()
         .map(|r| (r.comment_id, (r.start_line, r.end_line)))
@@ -671,19 +677,23 @@ pub fn resolve_threads_with(
             comment.end_line = end;
         }
     }
-    Ok(group_threads(comments, |root| {
-        Some(
-            orphaned_anchors.contains(&root.id)
-                || root.file_path.as_deref().is_some_and(|p| !diff_paths.contains(p)),
-        )
-    }))
+    Ok(group_threads(
+        comments,
+        |root| {
+            Some(
+                orphaned_anchors.contains(&root.id)
+                    || root.file_path.as_deref().is_some_and(|p| !diff_paths.contains(p)),
+            )
+        },
+        |root| statuses.get(&root.id).map(|s| *s == AnchorStatus::Changed),
+    ))
 }
 
 /// Threads from stored values alone: stored line ranges, no orphan flags.
 /// The fallback when the current diff is unavailable (e.g. an archived
 /// review whose branch is gone).
 pub fn stored_threads(conn: &Connection, review_id: i64) -> Result<Vec<Thread>, String> {
-    Ok(group_threads(list_comments_impl(conn, review_id)?, |_| None))
+    Ok(group_threads(list_comments_impl(conn, review_id)?, |_| None, |_| None))
 }
 
 /// Split comments into roots and replies grouped under their root, keeping
@@ -691,6 +701,7 @@ pub fn stored_threads(conn: &Connection, review_id: i64) -> Result<Vec<Thread>, 
 fn group_threads(
     comments: Vec<Comment>,
     orphaned: impl Fn(&Comment) -> Option<bool>,
+    changed: impl Fn(&Comment) -> Option<bool>,
 ) -> Vec<Thread> {
     let mut replies_by_root: HashMap<i64, Vec<Comment>> = HashMap::new();
     let mut roots = Vec::new();
@@ -704,6 +715,7 @@ fn group_threads(
         .into_iter()
         .map(|root| Thread {
             orphaned: orphaned(&root),
+            changed: changed(&root),
             replies: replies_by_root.remove(&root.id).unwrap_or_default(),
             root,
         })
