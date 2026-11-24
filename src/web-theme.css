@@ -1,0 +1,761 @@
+/*
+ * Web mode theme: the browser UI served by prologue-server dresses like Amp
+ * (ampcode.com), whose Portal pane it usually runs in. main.tsx sets
+ * data-ui="web" outside Tauri; every rule here is scoped to it, so the Mac
+ * app keeps Prologue's cream/teal/orange brand.
+ *
+ * Tokens are Amp's own (its default theme's --background, --foreground,
+ * --border, --muted, diff colors, …), as light-dark() pairs that follow the
+ * system color scheme. App.css styles everything through its variables, so
+ * most of the look is the remap below; the rest restyles the few places
+ * that draw the brand directly (teal avatars, orange rails and dots) and
+ * the web-only layout pieces (WebToolbar, WebFileDrawer).
+ */
+
+:root[data-ui="web"] {
+  color-scheme: light dark;
+
+  /* Amp: system UI sans at 13px, Berkeley Mono (where installed) for code. */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", "Noto Sans", Arial, sans-serif;
+  --font-serif: var(--font-sans);
+  --font-mono: "Berkeley Mono", ui-monospace, "SF Mono", "JetBrains Mono",
+    Menlo, Consolas, "DejaVu Sans Mono", monospace;
+
+  /* Amp's palette. */
+  --amp-background: light-dark(#fafaf8, #0b0d0b);
+  --amp-foreground: light-dark(#0b0d0b, #f6fff5);
+  --amp-muted: light-dark(#ebebeb, #878b861a);
+  --amp-muted-foreground: light-dark(#595959, #9ca49c);
+  --amp-accent: light-dark(#0b0d0b12, #f6fff512);
+  --amp-card: light-dark(#0b0d0b05, #f6fff508);
+  --amp-primary-hover: light-dark(#262c26, #d3d9d3);
+  --amp-link: light-dark(#286bbd, #6ca0e0);
+  --amp-success: light-dark(#2f8052, #54b879);
+  --amp-destructive: light-dark(#c44f4a, #d67670);
+  --amp-warning: light-dark(#a07013, #d6a038);
+  --amp-warning-text: light-dark(#86600f, #d6a038);
+  --amp-warning-border: light-dark(#dcb665, #b27b00);
+
+  /* Surfaces: one neutral page; content sits on the same ground, separated
+     by hairlines rather than color. */
+  --bg-app: var(--amp-background);
+  --bg-card: light-dark(#fdfdfc, #0e100e);
+  --bg-subtle: light-dark(#f2f2f0, #141614);
+  --bg-well: var(--amp-card);
+  --bg-strip: light-dark(#f5f5f3, #121412);
+  --bg: var(--bg-app);
+
+  --text: var(--amp-foreground);
+  --text-strong: var(--amp-foreground);
+  --text-muted: var(--amp-muted-foreground);
+  --text-on-dark: var(--amp-background);
+  --text-on-accent: var(--amp-background);
+
+  --border: #878b8633;
+  --border-strong: light-dark(#0c0e0c26, #f6fff526);
+
+  /* Amp's primary is the foreground itself; no brand hue. */
+  --accent: var(--amp-foreground);
+  --accent-strong: var(--amp-foreground);
+  --danger: var(--amp-destructive);
+  --added: var(--amp-success);
+  --removed: var(--amp-destructive);
+  --renamed: var(--amp-warning);
+
+  /* Amp's diff colors. */
+  --diff-add-bg: light-dark(#e9f5ed, #183323);
+  --diff-del-bg: light-dark(#f8e9e7, #3b2221);
+  --diff-add-gutter: color-mix(in srgb, var(--diff-add-bg) 88%, var(--added));
+  --diff-del-gutter: color-mix(in srgb, var(--diff-del-bg) 88%, var(--removed));
+  --hunk-bg: light-dark(#f2f2f0, #131513);
+  --hunk-text: var(--amp-muted-foreground);
+  --line-selected-bg: color-mix(in srgb, var(--amp-link) 12%, transparent);
+
+  --surface-selected: var(--amp-accent);
+  --comment-accent-border: var(--border);
+  --badge-modified-bg: color-mix(in srgb, var(--amp-warning) 14%, transparent);
+  --badge-modified-text: var(--amp-warning-text);
+  --badge-added-bg: color-mix(in srgb, var(--amp-success) 14%, transparent);
+  --badge-added-text: var(--amp-success);
+  --badge-deleted-bg: color-mix(in srgb, var(--amp-destructive) 14%, transparent);
+  --badge-deleted-text: var(--amp-destructive);
+  --badge-renamed-bg: color-mix(in srgb, var(--amp-link) 14%, transparent);
+  --badge-renamed-text: var(--amp-link);
+  --shadow-menu: 0 10px 15px -3px light-dark(#0000001a, #00000066),
+    0 4px 6px -4px light-dark(#0000001a, #00000066);
+  --shadow-card: none;
+  --overlay-scrim: light-dark(#0b0d0b33, #00000099);
+}
+
+:root[data-ui="web"] ::selection {
+  background: color-mix(in srgb, var(--amp-link) 22%, transparent);
+}
+
+:root[data-ui="web"] body {
+  -webkit-font-smoothing: antialiased;
+}
+
+:root[data-ui="web"] :focus-visible {
+  outline: 2px solid var(--amp-foreground);
+  outline-offset: 1px;
+}
+
+:root[data-ui="web"] :not(pre) > code {
+  background: var(--amp-muted);
+  border: none;
+}
+
+/* Scrollbars stay quiet in both schemes. */
+:root[data-ui="web"] * {
+  scrollbar-width: thin;
+  scrollbar-color: light-dark(#0b0d0b26, #f6fff526) transparent;
+}
+
+/* --- Header -------------------------------------------------------- */
+
+:root[data-ui="web"] .web-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-app);
+}
+
+:root[data-ui="web"] .web-toolbar-view {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Amp's outline buttons: 28px tall, 6px radius, hairline border, accent
+   wash on hover. Shared by every toolbar and card button. */
+:root[data-ui="web"] .refresh-button,
+:root[data-ui="web"] .web-files-button,
+:root[data-ui="web"] .branch-select-button,
+:root[data-ui="web"] .add-comment-button,
+:root[data-ui="web"] .review-comments .add-comment-button,
+:root[data-ui="web"] .load-diff-button,
+:root[data-ui="web"] .composer-cancel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+:root[data-ui="web"] .add-comment-button,
+:root[data-ui="web"] .load-diff-button,
+:root[data-ui="web"] .composer-cancel {
+  height: 24px;
+  padding: 0 8px;
+}
+
+:root[data-ui="web"] .refresh-button:hover:not(:disabled),
+:root[data-ui="web"] .web-files-button:hover,
+:root[data-ui="web"] .branch-select-button:hover,
+:root[data-ui="web"] .add-comment-button:hover,
+:root[data-ui="web"] .review-comments .add-comment-button:hover,
+:root[data-ui="web"] .load-diff-button:hover,
+:root[data-ui="web"] .composer-cancel:hover {
+  border-color: var(--border-strong);
+  background: var(--amp-accent);
+  color: var(--text);
+}
+
+:root[data-ui="web"] .refresh-button:disabled {
+  opacity: 0.5;
+}
+
+/* Send to Amp is the page's one primary action: Amp's inverted button. */
+:root[data-ui="web"] .refresh-button.send-to-amp,
+:root[data-ui="web"] .composer-submit {
+  border-color: transparent;
+  background: var(--amp-foreground);
+  color: var(--amp-background);
+}
+
+:root[data-ui="web"] .refresh-button.send-to-amp:hover:not(:disabled),
+:root[data-ui="web"] .composer-submit:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--amp-primary-hover);
+  color: var(--amp-background);
+}
+
+:root[data-ui="web"] .refresh-button.send-to-amp:disabled {
+  border-color: var(--border-strong);
+  background: transparent;
+  color: var(--text-muted);
+  opacity: 1;
+}
+
+:root[data-ui="web"] .composer-submit {
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 6px;
+}
+
+:root[data-ui="web"] .web-files-count {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--amp-muted);
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+}
+
+:root[data-ui="web"] .control > span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+:root[data-ui="web"] .branch-select-button {
+  font-family: var(--font-mono);
+}
+
+:root[data-ui="web"] .branch-select-menu {
+  border-color: var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg-app);
+}
+
+:root[data-ui="web"] .branch-select-filter {
+  background: var(--bg-app);
+  color: var(--text);
+}
+
+:root[data-ui="web"] .branch-select-option {
+  color: var(--text);
+}
+
+:root[data-ui="web"] .branch-select-option.current {
+  box-shadow: none;
+}
+
+/* Segmented controls (mode, whitespace, Guide/A–Z): a muted track whose
+   selected segment lifts to the page color, as in Amp's tab switchers. */
+:root[data-ui="web"] .mode-toggle,
+:root[data-ui="web"] .view-toggle {
+  gap: 2px;
+  height: 28px;
+  padding: 2px;
+  border: none;
+  border-radius: 6px;
+  background: var(--amp-muted);
+}
+
+:root[data-ui="web"] .view-toggle {
+  height: 24px;
+}
+
+:root[data-ui="web"] .mode-option,
+:root[data-ui="web"] .view-option {
+  height: 100%;
+  padding: 0 9px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+:root[data-ui="web"] .view-option {
+  width: 24px;
+  padding: 0;
+}
+
+:root[data-ui="web"] .mode-option + .mode-option,
+:root[data-ui="web"] .view-option + .view-option {
+  border-left: none;
+}
+
+:root[data-ui="web"] .mode-option:hover:not(.selected),
+:root[data-ui="web"] .view-option:hover:not(.selected) {
+  color: var(--text);
+}
+
+:root[data-ui="web"] .mode-option.selected,
+:root[data-ui="web"] .view-option.selected {
+  background: var(--bg-app);
+  color: var(--text);
+  font-weight: 500;
+  box-shadow: 0 1px 2px light-dark(#0000001f, #00000080);
+}
+
+:root[data-ui="web"] .mode-option.selected::before {
+  display: none;
+}
+
+/* Hide whitespace is an on/off switch in the same wrapper: an outline
+   button that fills while on. */
+:root[data-ui="web"] .mode-toggle:has(> [role="switch"]) {
+  padding: 0;
+  background: none;
+}
+
+:root[data-ui="web"] .mode-option[role="switch"] {
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  color: var(--text);
+}
+
+:root[data-ui="web"] .mode-option[role="switch"]:hover {
+  background: var(--amp-accent);
+}
+
+:root[data-ui="web"] .mode-option[role="switch"].selected {
+  border-color: color-mix(in srgb, var(--amp-foreground) 30%, transparent);
+  background: color-mix(in srgb, var(--amp-foreground) 9%, transparent);
+  box-shadow: none;
+}
+
+:root[data-ui="web"] .mode-option[role="switch"].selected::after {
+  content: "✓";
+  font-size: 11px;
+}
+
+/* --- Sidebar and file list ---------------------------------------- */
+
+:root[data-ui="web"] .file-sidebar {
+  background: var(--bg-app);
+}
+
+:root[data-ui="web"] .sidebar-divider:hover::after,
+:root[data-ui="web"] .sidebar-divider.dragging::after {
+  background: var(--border-strong);
+}
+
+:root[data-ui="web"] .file-list {
+  padding: 12px 8px;
+}
+
+/* Amp's micro-headers: small mono caps. */
+:root[data-ui="web"] .file-list-header {
+  padding: 0 8px 8px;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+}
+
+:root[data-ui="web"] .file-row {
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  color: var(--text);
+}
+
+:root[data-ui="web"] .file-row:hover,
+:root[data-ui="web"] .file-row.selected {
+  background: var(--amp-accent);
+  box-shadow: none;
+}
+
+:root[data-ui="web"] .file-path {
+  font-size: 12px;
+}
+
+:root[data-ui="web"] .status-badge {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+:root[data-ui="web"] .file-counts {
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+:root[data-ui="web"] .comment-count {
+  min-width: 18px;
+  height: 18px;
+  background: var(--amp-muted);
+  color: var(--text);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+:root[data-ui="web"] .guide-view-toggle {
+  margin: 0 8px 12px;
+}
+
+:root[data-ui="web"] .guide-section-header,
+:root[data-ui="web"] .guide-section-summary {
+  padding: 0 8px;
+}
+
+:root[data-ui="web"] .guide-section-title {
+  font-size: 13px;
+}
+
+:root[data-ui="web"] .guide-section-summary {
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+:root[data-ui="web"] .guide-section-summary code {
+  background: var(--amp-muted);
+}
+
+/* --- Review comments panel and comment cards ---------------------- */
+
+:root[data-ui="web"] .diff-pane,
+:root[data-ui="web"] .diff-scroll,
+:root[data-ui="web"] .review-comments,
+:root[data-ui="web"] .diff-row.diff-row-pinned {
+  background: var(--bg-app);
+}
+
+:root[data-ui="web"] .review-comments {
+  padding: 12px 16px;
+}
+
+:root[data-ui="web"] .review-comments-header > span {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+:root[data-ui="web"] .comment-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card);
+}
+
+:root[data-ui="web"] .comment-card-reply {
+  background: var(--bg-card);
+  border-left: 1px solid var(--border);
+}
+
+:root[data-ui="web"] .comment-header {
+  flex-wrap: wrap;
+  /* The spacer pushes actions right on the first line; any that wrap at
+     narrow widths stay right-aligned on the next. */
+  justify-content: flex-end;
+  row-gap: 2px;
+  padding: 8px 10px 0;
+}
+
+/* The comment id as a mono tag instead of the teal avatar. */
+:root[data-ui="web"] .comment-id,
+:root[data-ui="web"] .comment-card-reply .comment-id {
+  width: auto;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--amp-muted);
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 500;
+}
+
+/* Authors read as names ("You", "Amp"), as in an Amp thread. */
+:root[data-ui="web"] .comment-you,
+:root[data-ui="web"] .comment-author {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+:root[data-ui="web"] .comment-reply-tag {
+  display: none;
+}
+
+:root[data-ui="web"] .comment-action {
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 4px;
+}
+
+:root[data-ui="web"] .comment-action:hover:not(:disabled) {
+  background: var(--amp-accent);
+  color: var(--text);
+}
+
+:root[data-ui="web"] .comment-action-danger,
+:root[data-ui="web"] .comment-action-danger:hover:not(:disabled) {
+  color: var(--danger);
+}
+
+:root[data-ui="web"] .comment-body,
+:root[data-ui="web"] .comment-body-toggle {
+  padding: 6px 10px 10px;
+  font-size: 13px;
+}
+
+/* Chips: Amp's small 4px-radius badges. */
+:root[data-ui="web"] .comment-state,
+:root[data-ui="web"] .comment-flag,
+:root[data-ui="web"] .changed-badge {
+  padding: 0 6px;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 17px;
+}
+
+:root[data-ui="web"] .comment-flag,
+:root[data-ui="web"] .changed-badge {
+  border: 1px solid var(--amp-warning-border);
+  background: color-mix(in srgb, var(--amp-warning) 10%, transparent);
+  color: var(--amp-warning-text);
+}
+
+:root[data-ui="web"] .comment-flag-pending {
+  border: 1px dashed var(--border-strong);
+  background: transparent;
+  color: var(--text-muted);
+}
+
+:root[data-ui="web"] .comment-flag-orphaned {
+  border-color: var(--border-strong);
+  background: transparent;
+  color: var(--text-muted);
+}
+
+:root[data-ui="web"] .comment-state {
+  border-color: var(--border-strong);
+}
+
+:root[data-ui="web"] .comment-state-resolved {
+  border-color: color-mix(in srgb, var(--added) 50%, transparent);
+  color: var(--added);
+}
+
+:root[data-ui="web"] .composer-text {
+  border-color: var(--border-strong);
+  background: light-dark(#fcfcfc, #0b0d0b);
+}
+
+:root[data-ui="web"] .composer-text:focus {
+  border-color: var(--amp-foreground);
+}
+
+:root[data-ui="web"] .inline-comment {
+  padding: 4px 16px 4px 40px;
+  background: var(--bg-strip);
+}
+
+:root[data-ui="web"] .inline-comment .comment-composer {
+  background: var(--bg-card);
+}
+
+:root[data-ui="web"] .orphaned-comments {
+  border-color: var(--amp-warning-border);
+}
+
+:root[data-ui="web"] .orphaned-title {
+  color: var(--amp-warning-text);
+}
+
+/* --- Diff ---------------------------------------------------------- */
+
+:root[data-ui="web"] .diff-scroll {
+  padding: 0 16px 40px;
+}
+
+:root[data-ui="web"] .diff-row {
+  background: var(--bg-card);
+}
+
+:root[data-ui="web"] .diff-row:has(> .diff-file-header) {
+  background: transparent;
+}
+
+:root[data-ui="web"] .diff-file-header {
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--bg-card);
+}
+
+:root[data-ui="web"] .diff-file-header .file-path {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+:root[data-ui="web"] .diff-file-header-focused {
+  box-shadow: inset 2px 0 0 var(--amp-foreground);
+}
+
+:root[data-ui="web"] .reviewed-toggle {
+  font-weight: 500;
+}
+
+:root[data-ui="web"] .reviewed-toggle input,
+:root[data-ui="web"] .guide-section-check {
+  accent-color: var(--amp-foreground);
+}
+
+:root[data-ui="web"] .diff-line {
+  grid-template-columns: 44px 44px 16px 1fr;
+  line-height: 20px;
+  min-height: 20px;
+}
+
+:root[data-ui="web"] .lineno {
+  color: color-mix(in srgb, var(--text-muted) 75%, transparent);
+}
+
+:root[data-ui="web"] .diff-line-addition .lineno,
+:root[data-ui="web"] .diff-line-deletion .lineno {
+  color: var(--text-muted);
+}
+
+:root[data-ui="web"] .diff-line-selected .lineno,
+:root[data-ui="web"] .lineno-commentable:hover {
+  background: var(--amp-link);
+  color: light-dark(#ffffff, #0b0d0b);
+}
+
+:root[data-ui="web"] .intraline-changed {
+  border-radius: 3px;
+}
+
+:root[data-ui="web"] .expand-row button:hover {
+  background: var(--amp-accent);
+  color: var(--text);
+}
+
+/* Markdown rich view: Amp's reading voice, sans throughout. */
+:root[data-ui="web"] .markdown-preview {
+  font-size: 13.5px;
+}
+
+/* --- Narrow drawer (WebFileDrawer) -------------------------------- */
+
+:root[data-ui="web"] .web-drawer {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  pointer-events: none;
+}
+
+:root[data-ui="web"] .web-drawer.open {
+  pointer-events: auto;
+}
+
+:root[data-ui="web"] .web-drawer-scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--overlay-scrim);
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+:root[data-ui="web"] .web-drawer.open .web-drawer-scrim {
+  opacity: 1;
+}
+
+:root[data-ui="web"] .web-drawer-panel {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  width: min(320px, 88vw);
+  border-right: 1px solid var(--border);
+  background: var(--bg-app);
+  box-shadow: var(--shadow-menu);
+  transform: translateX(-100%);
+  transition: transform 180ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+:root[data-ui="web"] .web-drawer.open .web-drawer-panel {
+  transform: none;
+}
+
+:root[data-ui="web"] .web-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 45px;
+  padding: 0 8px 0 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+:root[data-ui="web"] .web-drawer-close {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+:root[data-ui="web"] .web-drawer-close:hover {
+  background: var(--amp-accent);
+  color: var(--text);
+}
+
+:root[data-ui="web"] .web-drawer-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* --- Portal-pane widths ------------------------------------------- */
+
+@media (max-width: 899px) {
+  /* View controls take their own row under Base / Send to Amp. */
+  :root[data-ui="web"] .web-toolbar-view {
+    order: 1;
+    width: 100%;
+  }
+
+  :root[data-ui="web"] .review-comments {
+    padding: 10px 12px;
+  }
+
+  :root[data-ui="web"] .diff-scroll {
+    padding: 0 10px 32px;
+  }
+
+  :root[data-ui="web"] .diff-line {
+    grid-template-columns: 36px 36px 14px 1fr;
+    font-size: 11.5px;
+  }
+
+  :root[data-ui="web"] .lineno {
+    padding-right: 6px;
+  }
+
+  /* Threads stay inline with the diff, inset just enough to read as
+     attached to their line. */
+  :root[data-ui="web"] .inline-comment {
+    padding: 4px 8px 4px 16px;
+  }
+
+  :root[data-ui="web"] .comment-card-reply,
+  :root[data-ui="web"] .inline-comment .comment-card-reply,
+  :root[data-ui="web"] .reply-composer .comment-composer,
+  :root[data-ui="web"] .inline-comment.reply-composer .comment-composer {
+    margin-left: 14px;
+  }
+
+  :root[data-ui="web"] .composer-hint {
+    display: none;
+  }
+}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { useTauriEvent } from "../useTauriEvent";
 import {
@@ -20,6 +20,12 @@ import { OrphanedComments } from "./OrphanedComments";
 import { ReviewCommentsPanel } from "./ReviewCommentsPanel";
 import { ShortcutHelp } from "./ShortcutHelp";
 import { WhitespaceToggle } from "./WhitespaceToggle";
+import {
+  NARROW_LAYOUT_QUERY,
+  useMediaQuery,
+  WebFileDrawer,
+} from "./web/WebFileDrawer";
+import { WebToolbar } from "./web/WebToolbar";
 import { guideOrderedFiles } from "../diff/guideOrder";
 import { useCommentMutations } from "./useCommentMutations";
 import { useGuide } from "./useGuide";
@@ -243,15 +249,76 @@ export function ReviewShell({
     [view, review, branchMerged, repo.path],
   );
   const amp = useAmpSend(exportTarget, comments);
+  // Web mode is tied to one checkout and always reviews its HEAD (plus
+  // working changes), so there is no repo or branch to pick. It has its own
+  // header, and at Portal-pane widths keeps the file list in a drawer.
   const webMode = !isTauri();
+  const narrow = useMediaQuery(NARROW_LAYOUT_QUERY) && webMode;
+  const [filesOpen, setFilesOpen] = useState(false);
+  const closeFiles = useCallback(() => setFilesOpen(false), []);
+
+  const baseControl = (
+    <div className="control">
+      <span>Base</span>
+      <BranchSelect
+        value={baseBranch}
+        branches={branchList.branches}
+        onChange={onBaseBranchChange}
+      />
+    </div>
+  );
+  const viewControls = (
+    <>
+      <ModeToggle mode={mode} onChange={onModeChange} />
+      <WhitespaceToggle
+        hidden={hideWhitespace}
+        onChange={onHideWhitespaceChange}
+      />
+      <GuideButton
+        {...guideState}
+        hasTarget={exportTarget !== null}
+        emptyDiff={view !== null && view.summary.files.length === 0}
+      />
+    </>
+  );
+  const exportButton = (
+    <ExportButton target={exportTarget} openCount={openCount} amp={amp} />
+  );
+  const fileList =
+    view === null ? null : (
+      <FileList
+        summary={view.summary}
+        repoPath={repo.path}
+        openCounts={openCounts}
+        reviewStates={reviewStates}
+        sections={guideState.sections}
+        grouped={guideState.grouped}
+        onToggleGrouped={guideState.onToggleGrouped}
+        onSetFilesReviewed={onSetFilesReviewed}
+        onSelect={(path) => {
+          setFilesOpen(false);
+          setScrollTarget((prev) => ({
+            path,
+            nonce: (prev?.nonce ?? 0) + 1,
+            generation: view.generation,
+          }));
+        }}
+      />
+    );
 
   return (
     <AmpSentContext.Provider value={amp?.sent ?? null}>
     <div className="review-shell">
-      <header className="toolbar">
-        {/* Web mode is tied to one checkout and always reviews its HEAD
-            (plus working changes), so there is no repo or branch to pick. */}
-        {!webMode && (
+      {webMode ? (
+        <WebToolbar
+          base={baseControl}
+          viewControls={viewControls}
+          send={exportButton}
+          onOpenFiles={narrow ? () => setFilesOpen(true) : null}
+          fileCount={view?.summary.files.length ?? null}
+        />
+      ) : (
+        <header className="toolbar">
           <button
             type="button"
             className="repo-button"
@@ -260,43 +327,23 @@ export function ReviewShell({
           >
             {repo.name}
           </button>
-        )}
-        <div className="control">
-          <span>Base</span>
-          <BranchSelect
-            value={baseBranch}
-            branches={branchList.branches}
-            onChange={onBaseBranchChange}
-          />
-        </div>
-        {!webMode && (
-          <>
-            <span className="arrow" aria-hidden="true">
-              ←
-            </span>
-            <div className="control">
-              <span>Branch</span>
-              <BranchSelect
-                value={branch}
-                branches={branchList.branches}
-                onChange={onBranchChange}
-              />
-            </div>
-          </>
-        )}
-        <div className="toolbar-spacer" />
-        <ModeToggle mode={mode} onChange={onModeChange} />
-        <WhitespaceToggle
-          hidden={hideWhitespace}
-          onChange={onHideWhitespaceChange}
-        />
-        <GuideButton
-          {...guideState}
-          hasTarget={exportTarget !== null}
-          emptyDiff={view !== null && view.summary.files.length === 0}
-        />
-        <ExportButton target={exportTarget} openCount={openCount} amp={amp} />
-      </header>
+          {baseControl}
+          <span className="arrow" aria-hidden="true">
+            ←
+          </span>
+          <div className="control">
+            <span>Branch</span>
+            <BranchSelect
+              value={branch}
+              branches={branchList.branches}
+              onChange={onBranchChange}
+            />
+          </div>
+          <div className="toolbar-spacer" />
+          {viewControls}
+          {exportButton}
+        </header>
+      )}
       <main className="diff-main">
         {error !== null ? (
           <div className="diff-empty">
@@ -343,36 +390,26 @@ export function ReviewShell({
               { "--sidebar-width": `${sidebar.width}px` } as CSSProperties
             }
           >
-            <aside className="file-sidebar">
-              <FileList
-                summary={view.summary}
-                repoPath={repo.path}
-                openCounts={openCounts}
-                reviewStates={reviewStates}
-                sections={guideState.sections}
-                grouped={guideState.grouped}
-                onToggleGrouped={guideState.onToggleGrouped}
-                onSetFilesReviewed={onSetFilesReviewed}
-                onSelect={(path) =>
-                  setScrollTarget((prev) => ({
-                    path,
-                    nonce: (prev?.nonce ?? 0) + 1,
-                    generation: view.generation,
-                  }))
-                }
-              />
-            </aside>
-            <div
-              className={
-                sidebar.dragging
-                  ? "sidebar-divider dragging"
-                  : "sidebar-divider"
-              }
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="Resize sidebar"
-              {...sidebar.dividerProps}
-            />
+            {narrow ? (
+              <WebFileDrawer open={filesOpen} onClose={closeFiles}>
+                {fileList}
+              </WebFileDrawer>
+            ) : (
+              <>
+                <aside className="file-sidebar">{fileList}</aside>
+                <div
+                  className={
+                    sidebar.dragging
+                      ? "sidebar-divider dragging"
+                      : "sidebar-divider"
+                  }
+                  role="separator"
+                  aria-orientation="vertical"
+                  aria-label="Resize sidebar"
+                  {...sidebar.dividerProps}
+                />
+              </>
+            )}
             <div className="diff-pane">
               <ReviewCommentsPanel
                 comments={reviewComments}

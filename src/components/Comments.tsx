@@ -2,6 +2,7 @@ import { useContext, useRef, useState } from "react";
 import { AmpSentContext } from "./useAmpSend";
 import type { Comment, CommentState } from "../types";
 import { errorText } from "../ipc";
+import { isTauri } from "../platform";
 
 /**
  * Draft store shared by composers and comment editors. Virtualized rows
@@ -136,6 +137,14 @@ const STATE_BADGES: Record<Exclude<CommentState, "open">, string> = {
   dismissed: "Dismissed",
 };
 
+/** How an author reads in a card. Web mode runs inside Amp, whose agent
+ * writes through the CLI as "agent" (the default) or "amp". */
+function authorName(author: string): string {
+  return !isTauri() && ["agent", "amp"].includes(author.toLowerCase())
+    ? "Amp"
+    : author;
+}
+
 interface CommentCardProps {
   comment: Comment;
   editing: boolean;
@@ -226,9 +235,9 @@ export function CommentCard({
         ) : (
           <span
             className="comment-author"
-            title={`Written by ${comment.author} (externally, via the prologue CLI)`}
+            title={`Written by ${authorName(comment.author)} (externally, via the prologue CLI)`}
           >
-            {comment.author}
+            {authorName(comment.author)}
           </span>
         )}
         {isReply && <span className="comment-reply-tag">(reply)</span>}

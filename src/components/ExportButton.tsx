@@ -61,7 +61,7 @@ export function ExportButton({ target, openCount, amp }: ExportButtonProps) {
       <>
         <button
           type="button"
-          className="refresh-button"
+          className="refresh-button send-to-amp"
           disabled={target === null || amp.pendingCount === 0 || sending}
           title={
             target === null
