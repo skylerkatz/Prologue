@@ -330,5 +330,5 @@ pub fn cancel_guide(runtime: tauri::State<'_, GuideRuntime>) -> bool {
 pub async fn guide_cli_status() -> GuideCliStatus {
     tauri::async_runtime::spawn_blocking(guide_engine::guide_cli_status)
         .await
-        .unwrap_or(GuideCliStatus { available: false, path: None })
+        .unwrap_or(GuideCliStatus { available: false, path: None, engine: None })
 }

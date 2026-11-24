@@ -1,13 +1,19 @@
 //! Guide generation engine: everything process-shaped around the Review
 //! Guide. prologue-core's guide module owns prompt assembly, validation,
-//! and persistence; this module finds the `claude` CLI, runs it as a
-//! subprocess with a timeout and a cancel handle, and maps every failure
-//! to a distinct user-readable error.
+//! and persistence; this module picks a CLI to run the model — Claude Code
+//! (`claude -p`) or Amp (`amp -x`) — runs it as a subprocess with a timeout
+//! and a cancel handle, and maps every failure to a distinct user-readable
+//! error.
 //!
-//! Flags verified against claude CLI 2.1.217: `--bare` is deliberately NOT
-//! used — it never reads OAuth/Keychain credentials, and riding the user's
-//! subscription login is the point. Isolation comes from a neutral working
-//! directory instead (no CLAUDE.md auto-discovery).
+//! Engine choice: the Mac app rides the user's Claude Code subscription
+//! when `claude` is installed; Amp takes over when `claude` is missing, and
+//! is preferred inside an Amp orb (`AMP_ORB` set), where the Amp CLI is
+//! always present and already signed in.
+//!
+//! Claude flags verified against claude CLI 2.1.217: `--bare` is
+//! deliberately NOT used — it never reads OAuth/Keychain credentials, and
+//! riding the user's subscription login is the point. Isolation comes from
+//! a neutral working directory instead (no CLAUDE.md auto-discovery).
 
 use prologue_core::db::Db;
 use prologue_core::diff::{DiffMode, DiffSpec, RepoDiff};
@@ -17,7 +23,7 @@ use prologue_core::review::{self, ReviewStatus};
 use prologue_core::rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -27,73 +33,182 @@ use std::time::{Duration, Instant};
 /// Hardcoded per settled design decision 3 — no settings surface in v1.
 const GUIDE_MODEL: &str = "sonnet";
 const GUIDE_EFFORT: &str = "low";
+/// The same model and effort through Amp (verified against Amp CLI
+/// 0.0.1795543373).
+const AMP_GUIDE_MODEL: &str = "anthropic/claude-sonnet-5-5";
+/// Amp has no `--json-schema`; a reply that fails the schema check gets
+/// one more try, within the same overall timeout.
+const AMP_ATTEMPTS: usize = 2;
 const GUIDE_TIMEOUT: Duration = Duration::from_secs(120);
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
 
-pub const MISSING_CLI_ERROR: &str =
-    "The `claude` CLI was not found — install Claude Code to generate guides.";
-const AUTH_ERROR: &str =
-    "Claude Code is not logged in — run `claude` in a terminal to log in.";
+pub const MISSING_CLI_ERROR: &str = "No guide engine was found — install Claude Code (the \
+     `claude` CLI) or the Amp CLI (`amp`) to generate guides.";
 const CANCELLED_ERROR: &str = "Guide generation was cancelled.";
 const BUSY_ERROR: &str = "A guide is already being generated.";
 
-// ---------------------------------------------------------------------------
-// CLI resolution
-// ---------------------------------------------------------------------------
-
-/// Resolved CLI path. Hits are cached (re-verified with a cheap `is_file`
-/// on each read); misses re-probe every call, so installing the CLI
-/// mid-session is picked up without an app restart.
-static CLAUDE_PATH: Mutex<Option<PathBuf>> = Mutex::new(None);
-
-fn clear_cached_claude() {
-    *CLAUDE_PATH.lock().unwrap_or_else(PoisonError::into_inner) = None;
+/// Which CLI writes the guide.
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum EngineKind {
+    ClaudeCode,
+    Amp,
 }
 
-pub fn resolve_claude() -> Option<PathBuf> {
+impl EngineKind {
+    fn binary(self) -> &'static str {
+        match self {
+            EngineKind::ClaudeCode => "claude",
+            EngineKind::Amp => "amp",
+        }
+    }
+
+    /// How errors name the CLI.
+    fn label(self) -> &'static str {
+        match self {
+            EngineKind::ClaudeCode => "the `claude` CLI",
+            EngineKind::Amp => "the Amp CLI",
+        }
+    }
+
+    fn missing_error(self) -> &'static str {
+        match self {
+            EngineKind::ClaudeCode => {
+                "The `claude` CLI was not found — install Claude Code to generate guides."
+            }
+            EngineKind::Amp => {
+                "The Amp CLI (`amp`) was not found — install Amp to generate guides."
+            }
+        }
+    }
+
+    fn auth_error(self) -> &'static str {
+        match self {
+            EngineKind::ClaudeCode => {
+                "Claude Code is not logged in — run `claude` in a terminal to log in."
+            }
+            EngineKind::Amp => {
+                "The Amp CLI is not logged in — run `amp login` in a terminal (or set \
+                 AMP_API_KEY) to log in."
+            }
+        }
+    }
+
+    /// Resolved CLI path. Hits are cached (re-verified with a cheap
+    /// `is_file` on each read); misses re-probe every call, so installing
+    /// the CLI mid-session is picked up without an app restart.
+    fn cache(self) -> &'static Mutex<Option<PathBuf>> {
+        static CLAUDE_PATH: Mutex<Option<PathBuf>> = Mutex::new(None);
+        static AMP_PATH: Mutex<Option<PathBuf>> = Mutex::new(None);
+        match self {
+            EngineKind::ClaudeCode => &CLAUDE_PATH,
+            EngineKind::Amp => &AMP_PATH,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// CLI resolution and engine choice
+// ---------------------------------------------------------------------------
+
+fn clear_cached(kind: EngineKind) {
+    *kind.cache().lock().unwrap_or_else(PoisonError::into_inner) = None;
+}
+
+pub fn resolve_cli(kind: EngineKind) -> Option<PathBuf> {
     {
-        let mut cached = CLAUDE_PATH.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut cached = kind.cache().lock().unwrap_or_else(PoisonError::into_inner);
         match cached.as_ref() {
             Some(path) if path.is_file() => return Some(path.clone()),
             Some(_) => *cached = None,
             None => {}
         }
     }
-    let found = find_claude_in(&candidate_dirs()).or_else(login_shell_claude);
+    let found =
+        find_in(&candidate_dirs(), kind.binary()).or_else(|| login_shell_lookup(kind.binary()));
     if let Some(path) = &found {
-        *CLAUDE_PATH.lock().unwrap_or_else(PoisonError::into_inner) = Some(path.clone());
+        *kind.cache().lock().unwrap_or_else(PoisonError::into_inner) = Some(path.clone());
     }
     found
 }
 
-/// Where `claude` lives in practice. A Finder-launched app inherits
+fn in_amp_orb() -> bool {
+    std::env::var_os("AMP_ORB").is_some_and(|v| !v.is_empty())
+}
+
+/// Claude Code first on a user's machine (their subscription, the original
+/// engine); Amp first inside an Amp orb.
+fn engine_preference(in_orb: bool) -> [EngineKind; 2] {
+    if in_orb {
+        [EngineKind::Amp, EngineKind::ClaudeCode]
+    } else {
+        [EngineKind::ClaudeCode, EngineKind::Amp]
+    }
+}
+
+/// The first preferred engine whose CLI resolves. Lazy: a later engine is
+/// only probed when the earlier ones are missing.
+fn pick_engine(
+    in_orb: bool,
+    mut resolve: impl FnMut(EngineKind) -> Option<PathBuf>,
+) -> Option<(EngineKind, PathBuf)> {
+    engine_preference(in_orb)
+        .into_iter()
+        .find_map(|kind| resolve(kind).map(|path| (kind, path)))
+}
+
+pub fn resolve_engine() -> Option<(EngineKind, PathBuf)> {
+    pick_engine(in_amp_orb(), resolve_cli)
+}
+
+/// Where the CLIs live in practice. A Finder-launched app inherits
 /// launchd's minimal PATH, so the PATH variable is a hint, not the answer —
-/// the well-known install dirs (Homebrew, /usr/local, the native
-/// installer's ~/.claude/local, ~/.local/bin) are probed too.
+/// the well-known install dirs (Homebrew, /usr/local, Claude's native
+/// installer's ~/.claude/local, Amp's ~/.amp/bin, ~/.local/bin) are probed
+/// too.
 fn candidate_dirs() -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> =
         std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()).collect();
-    dirs.extend([PathBuf::from("/opt/homebrew/bin"), PathBuf::from("/usr/local/bin")]);
+    dirs.extend([
+        PathBuf::from("/opt/homebrew/bin"),
+        PathBuf::from("/usr/local/bin"),
+    ]);
     if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
         dirs.extend([
             home.join(".local/bin"),
             home.join(".claude/local"),
+            home.join(".amp/bin"),
             home.join("bin"),
         ]);
     }
     dirs
 }
 
-fn find_claude_in(dirs: &[PathBuf]) -> Option<PathBuf> {
-    dirs.iter().map(|dir| dir.join("claude")).find(|p| p.is_file())
+fn find_in(dirs: &[PathBuf], binary: &str) -> Option<PathBuf> {
+    dirs.iter()
+        .map(|dir| dir.join(binary))
+        .find(|p| p.is_file())
 }
 
-/// Last resort: ask a zsh login shell, which sources the user's dotfiles
-/// and so sees whatever PATH a terminal would (nvm, Herd, custom dirs).
-fn login_shell_claude() -> Option<PathBuf> {
-    let output = Command::new("/bin/zsh")
-        .args(["-lc", "command -v claude"])
+/// The first shell that exists: zsh (the macOS default, where the user's
+/// PATH setup lives), else the user's `$SHELL`, else bash or sh — a Debian
+/// orb has no /bin/zsh.
+fn pick_login_shell(candidates: impl IntoIterator<Item = PathBuf>) -> Option<PathBuf> {
+    candidates.into_iter().find(|shell| shell.is_file())
+}
+
+/// Last resort: ask a login shell, which sources the user's dotfiles and
+/// so sees whatever PATH a terminal would (nvm, Herd, custom dirs).
+fn login_shell_lookup(binary: &str) -> Option<PathBuf> {
+    let shell = pick_login_shell(
+        std::iter::once(PathBuf::from("/bin/zsh"))
+            .chain(std::env::var_os("SHELL").map(PathBuf::from))
+            .chain([PathBuf::from("/bin/bash"), PathBuf::from("/bin/sh")]),
+    )?;
+    let output = Command::new(shell)
+        .args(["-lc", &format!("command -v {binary}")])
         .stdin(Stdio::null())
+        .stderr(Stdio::null())
         .output()
         .ok()?;
     if !output.status.success() {
@@ -132,14 +247,14 @@ fn drain<R: Read + Send + 'static>(stream: Option<R>) -> std::thread::JoinHandle
     })
 }
 
-fn spawn_error(e: &std::io::Error) -> String {
+fn spawn_error(kind: EngineKind, e: &std::io::Error) -> String {
     if e.kind() == std::io::ErrorKind::NotFound {
         // The cached path went stale (CLI uninstalled/moved); re-probe next
         // time instead of failing the same way forever.
-        clear_cached_claude();
-        MISSING_CLI_ERROR.to_owned()
+        clear_cached(kind);
+        kind.missing_error().to_owned()
     } else {
-        format!("Could not start the `claude` CLI: {e}")
+        format!("Could not start {}: {e}", kind.label())
     }
 }
 
@@ -168,16 +283,24 @@ fn excerpt(text: &str, max_chars: usize) -> String {
     }
 }
 
-fn exit_error(status: ExitStatus, stderr: &str) -> String {
+fn exit_error(kind: EngineKind, status: ExitStatus, stderr: &str) -> String {
     if looks_like_auth_failure(stderr) {
-        return AUTH_ERROR.to_owned();
+        return kind.auth_error().to_owned();
     }
     let detail = excerpt(stderr.trim(), 300);
     if detail.is_empty() {
-        format!("The `claude` CLI failed ({status}).")
+        format!("{} failed ({status}).", capitalize(kind.label()))
     } else {
-        format!("The `claude` CLI failed ({status}): {detail}")
+        format!("{} failed ({status}): {detail}", capitalize(kind.label()))
     }
+}
+
+fn capitalize(text: &str) -> String {
+    let mut chars = text.chars();
+    chars
+        .next()
+        .map(|first| first.to_uppercase().chain(chars).collect())
+        .unwrap_or_default()
 }
 
 /// The `--output-format json` result envelope, reduced to the fields the
@@ -208,18 +331,20 @@ fn parse_envelope(stdout: &str) -> Result<GuideResponse, String> {
         .unwrap_or("");
     if envelope.is_error {
         if looks_like_auth_failure(result_text) {
-            return Err(AUTH_ERROR.to_owned());
+            return Err(EngineKind::ClaudeCode.auth_error().to_owned());
         }
         let detail = if result_text.is_empty() {
-            envelope.subtype.unwrap_or_else(|| "unknown error".to_owned())
+            envelope
+                .subtype
+                .unwrap_or_else(|| "unknown error".to_owned())
         } else {
             excerpt(result_text, 300)
         };
         return Err(format!("Claude could not generate the guide: {detail}"));
     }
-    let structured = envelope
-        .structured_output
-        .ok_or_else(|| "The `claude` CLI returned no structured output for the guide.".to_owned())?;
+    let structured = envelope.structured_output.ok_or_else(|| {
+        "The `claude` CLI returned no structured output for the guide.".to_owned()
+    })?;
     let model = envelope
         .model_usage
         .keys()
@@ -233,39 +358,48 @@ fn parse_envelope(stdout: &str) -> Result<GuideResponse, String> {
     })
 }
 
-/// Spawn `claude -p` for `request`, parking the child in `job` so
-/// `cancel_guide` can kill it, and reap it with `timeout` as the deadline.
-fn run_claude(
-    claude: &Path,
-    request: &GuideRequest,
+struct ChildOutput {
+    status: ExitStatus,
+    stdout: String,
+    stderr: String,
+}
+
+/// Spawn `command` (feeding it `stdin`, if any), parking the child in `job`
+/// so `cancel_guide` can kill it, and reap it with `deadline` as the cutoff.
+/// `timeout` only words the timeout error.
+fn run_child(
+    mut command: Command,
+    stdin: Option<String>,
+    kind: EngineKind,
     job: &GuideJob,
+    deadline: Instant,
     timeout: Duration,
-) -> Result<GuideResponse, String> {
-    let schema = cli_schema(request.schema)?;
+) -> Result<ChildOutput, String> {
     if job.cancelled.load(Ordering::Relaxed) {
         return Err(CANCELLED_ERROR.to_owned());
     }
-    let mut child = Command::new(claude)
-        .arg("-p")
-        .arg(&request.prompt)
-        .args(["--model", GUIDE_MODEL, "--effort", GUIDE_EFFORT])
-        .args(["--allowedTools", ""])
-        .args(["--output-format", "json", "--json-schema"])
-        .arg(&schema)
-        // CLAUDE.md auto-discovery keys off the working directory; a neutral
-        // cwd keeps the surrounding project's context (and its token cost)
-        // out of every guide call.
-        .current_dir(std::env::temp_dir())
-        .stdin(Stdio::null())
+    let mut child = command
+        .stdin(if stdin.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| spawn_error(&e))?;
+        .map_err(|e| spawn_error(kind, &e))?;
+    // Write the prompt on its own thread: a prompt larger than the pipe
+    // buffer would block until the child reads it. Dropping the pipe at
+    // the end sends EOF.
+    if let (Some(text), Some(mut pipe)) = (stdin, child.stdin.take()) {
+        std::thread::spawn(move || {
+            let _ = pipe.write_all(text.as_bytes());
+        });
+    }
     let stdout = drain(child.stdout.take());
     let stderr = drain(child.stderr.take());
     *job.child_slot() = Some(child);
 
-    let deadline = Instant::now() + timeout;
     let mut timed_out = false;
     let status = loop {
         if Instant::now() >= deadline {
@@ -283,7 +417,7 @@ fn run_claude(
         match waited {
             Ok(Some(status)) => break Some(status),
             Ok(None) => {}
-            Err(e) => return Err(format!("Could not wait for the `claude` CLI: {e}")),
+            Err(e) => return Err(format!("Could not wait for {}: {e}", kind.label())),
         }
         std::thread::sleep(POLL_INTERVAL);
     };
@@ -305,24 +439,255 @@ fn run_claude(
     let Some(status) = status else {
         return Err(CANCELLED_ERROR.to_owned());
     };
-    let stdout = stdout.join().unwrap_or_default();
-    let stderr = stderr.join().unwrap_or_default();
-    if !status.success() {
-        return Err(exit_error(status, &stderr));
-    }
-    parse_envelope(&stdout)
+    Ok(ChildOutput {
+        status,
+        stdout: stdout.join().unwrap_or_default(),
+        stderr: stderr.join().unwrap_or_default(),
+    })
 }
 
-/// [`GuideEngine`] over the `claude -p` subprocess.
+/// Run `claude -p` for `request`.
+fn run_claude(
+    claude: &Path,
+    request: &GuideRequest,
+    job: &GuideJob,
+    timeout: Duration,
+) -> Result<GuideResponse, String> {
+    let schema = cli_schema(request.schema)?;
+    let mut command = Command::new(claude);
+    command
+        .arg("-p")
+        .arg(&request.prompt)
+        .args(["--model", GUIDE_MODEL, "--effort", GUIDE_EFFORT])
+        .args(["--allowedTools", ""])
+        .args(["--output-format", "json", "--json-schema"])
+        .arg(&schema)
+        // CLAUDE.md auto-discovery keys off the working directory; a neutral
+        // cwd keeps the surrounding project's context (and its token cost)
+        // out of every guide call.
+        .current_dir(std::env::temp_dir());
+    let deadline = Instant::now() + timeout;
+    let out = run_child(
+        command,
+        None,
+        EngineKind::ClaudeCode,
+        job,
+        deadline,
+        timeout,
+    )?;
+    if !out.status.success() {
+        return Err(exit_error(EngineKind::ClaudeCode, out.status, &out.stderr));
+    }
+    parse_envelope(&out.stdout)
+}
+
+// ---------------------------------------------------------------------------
+// Amp engine
+// ---------------------------------------------------------------------------
+
+/// Amp settings for guide runs: every tool off, so the run is one model
+/// reply with no file reads, shell, or web access. `--settings-file`
+/// replaces the user's settings for the run; credentials live elsewhere.
+const AMP_SETTINGS: &str = r#"{"amp.tools.disable":["*"]}"#;
+
+fn amp_settings_file() -> Result<PathBuf, String> {
+    let path = std::env::temp_dir().join("prologue-amp-guide-settings.json");
+    std::fs::write(&path, AMP_SETTINGS)
+        .map_err(|e| format!("Could not write the Amp settings file for the guide: {e}"))?;
+    Ok(path)
+}
+
+/// The guide prompt plus the output contract `--json-schema` enforces for
+/// Claude Code, which Amp lacks; a retry also says why the first reply
+/// was rejected.
+fn amp_prompt(request: &GuideRequest, rejected: Option<&str>) -> Result<String, String> {
+    let schema = cli_schema(request.schema)?;
+    let mut prompt = format!(
+        "{}\n\n## Output format\n\nReply with only a JSON object that matches this JSON \
+         Schema — no prose before or after it and no code fences:\n\n{schema}\n",
+        request.prompt
+    );
+    if let Some(reason) = rejected {
+        prompt.push_str(&format!(
+            "\nAn earlier reply to this request was rejected because {reason}. Reply with \
+             the JSON object only.\n"
+        ));
+    }
+    Ok(prompt)
+}
+
+/// One `--stream-json` line, reduced to what the guide needs: the `system`
+/// init line names the model (`agent_mode`), the final `result` line
+/// carries the reply text or the error.
+#[derive(Deserialize)]
+struct AmpStreamLine {
+    #[serde(rename = "type")]
+    kind: String,
+    agent_mode: Option<String>,
+    #[serde(default)]
+    is_error: bool,
+    subtype: Option<String>,
+    result: Option<serde_json::Value>,
+}
+
+/// A finished `amp -x` run: the model and its final reply text.
+#[derive(Debug, PartialEq)]
+struct AmpReply {
+    model: String,
+    text: String,
+}
+
+fn parse_amp_stream(stdout: &str) -> Result<AmpReply, String> {
+    let mut model = None;
+    let mut result = None;
+    for line in stdout.lines() {
+        let Ok(line) = serde_json::from_str::<AmpStreamLine>(line.trim()) else {
+            continue;
+        };
+        match line.kind.as_str() {
+            "system" => model = line.agent_mode.or(model),
+            "result" => result = Some(line),
+            _ => {}
+        }
+    }
+    let Some(result) = result else {
+        let detail = excerpt(stdout.trim(), 300);
+        return Err(if detail.is_empty() {
+            "The Amp CLI exited without a reply.".to_owned()
+        } else {
+            format!("Unexpected output from the Amp CLI: {detail}")
+        });
+    };
+    let text = result
+        .result
+        .as_ref()
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_owned();
+    if result.is_error {
+        if looks_like_auth_failure(&text) {
+            return Err(EngineKind::Amp.auth_error().to_owned());
+        }
+        let detail = if text.is_empty() {
+            result.subtype.unwrap_or_else(|| "unknown error".to_owned())
+        } else {
+            excerpt(&text, 300)
+        };
+        return Err(format!("Amp could not generate the guide: {detail}"));
+    }
+    Ok(AmpReply {
+        model: model.unwrap_or_else(|| AMP_GUIDE_MODEL.to_owned()),
+        text,
+    })
+}
+
+/// [`guide::OUTPUT_SCHEMA`] as types: required fields, string/array
+/// types, and `additionalProperties: false` (deny_unknown_fields). Claude
+/// Code checks the schema itself; Amp replies are checked here.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+#[allow(dead_code)] // Only deserialized, as a check.
+struct SchemaOutput {
+    sections: Vec<SchemaSection>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+#[allow(dead_code)]
+struct SchemaSection {
+    title: String,
+    summary: String,
+    files: Vec<String>,
+}
+
+/// The JSON object in a reply that was asked to be only that object.
+/// Tolerates code fences or a stray sentence around it by taking the span
+/// from the first `{` to the last `}`, then checks it against the schema.
+/// The error completes "rejected because …".
+fn parse_guide_json(text: &str) -> Result<serde_json::Value, String> {
+    let (Some(start), Some(end)) = (text.find('{'), text.rfind('}')) else {
+        return Err("it contained no JSON object".to_owned());
+    };
+    if end < start {
+        return Err("it contained no JSON object".to_owned());
+    }
+    let value: serde_json::Value = serde_json::from_str(&text[start..=end])
+        .map_err(|e| format!("it was not valid JSON ({e})"))?;
+    serde_json::from_value::<SchemaOutput>(value.clone())
+        .map_err(|e| format!("it did not match the guide schema ({e})"))?;
+    Ok(value)
+}
+
+/// Run `amp -x` for `request`, retrying once when the reply does not pass
+/// the schema. Both attempts share one deadline, so the guide still gives
+/// up after `timeout`.
+fn run_amp(
+    amp: &Path,
+    request: &GuideRequest,
+    job: &GuideJob,
+    timeout: Duration,
+) -> Result<GuideResponse, String> {
+    let settings = amp_settings_file()?;
+    let deadline = Instant::now() + timeout;
+    let mut rejected: Option<String> = None;
+    for _ in 0..AMP_ATTEMPTS {
+        let mut command = Command::new(amp);
+        command
+            .args(["-x", "--stream-json"])
+            .args(["--model", AMP_GUIDE_MODEL, "--effort", GUIDE_EFFORT])
+            .arg("--settings-file")
+            .arg(&settings)
+            .args(["--title", "Prologue review guide"])
+            // As with Claude Code: keep the surrounding project's AGENTS.md
+            // out of the run.
+            .current_dir(std::env::temp_dir());
+        // The prompt goes in on stdin: it can approach 100 KB, past the
+        // single-argument limit on Linux.
+        let prompt = amp_prompt(request, rejected.as_deref())?;
+        let out = run_child(
+            command,
+            Some(prompt),
+            EngineKind::Amp,
+            job,
+            deadline,
+            timeout,
+        )?;
+        if !out.status.success() {
+            return Err(exit_error(EngineKind::Amp, out.status, &out.stderr));
+        }
+        let reply = parse_amp_stream(&out.stdout)?;
+        match parse_guide_json(&reply.text) {
+            Ok(structured) => {
+                return Ok(GuideResponse {
+                    structured,
+                    model: reply.model,
+                    // Amp's stream does not report cost.
+                    cost_usd: None,
+                });
+            }
+            Err(reason) => rejected = Some(reason),
+        }
+    }
+    Err(format!(
+        "Amp did not return a usable guide (tried twice): {}.",
+        rejected.unwrap_or_default()
+    ))
+}
+
+/// [`GuideEngine`] over the chosen CLI.
 struct CliGuideEngine<'a> {
-    claude: PathBuf,
+    kind: EngineKind,
+    path: PathBuf,
     job: &'a GuideJob,
     timeout: Duration,
 }
 
 impl GuideEngine for CliGuideEngine<'_> {
     fn generate(&self, request: &GuideRequest) -> Result<GuideResponse, String> {
-        run_claude(&self.claude, request, self.job, self.timeout)
+        match self.kind {
+            EngineKind::ClaudeCode => run_claude(&self.path, request, self.job, self.timeout),
+            EngineKind::Amp => run_amp(&self.path, request, self.job, self.timeout),
+        }
     }
 }
 
@@ -404,10 +769,15 @@ fn generate_blocking(
         let conn = db.lock()?;
         ensure_review_active(&conn, review_id)?;
     }
-    let claude = resolve_claude().ok_or_else(|| MISSING_CLI_ERROR.to_owned())?;
+    let (kind, path) = resolve_engine().ok_or_else(|| MISSING_CLI_ERROR.to_owned())?;
 
     let repo = open_git_repo(&repo_path)?;
-    let spec = DiffSpec { repo_path, base, head, mode };
+    let spec = DiffSpec {
+        repo_path,
+        base,
+        head,
+        mode,
+    };
     let repo_diff = RepoDiff::compute(&repo, &spec, false)?;
     let summary = repo_diff.summary()?;
     if summary.files.is_empty() {
@@ -415,7 +785,12 @@ fn generate_blocking(
     }
     let inputs = guide::guide_file_inputs(&repo_diff, &summary)?;
     let prompt = guide::build_prompt(&inputs);
-    let engine = CliGuideEngine { claude, job, timeout: GUIDE_TIMEOUT };
+    let engine = CliGuideEngine {
+        kind,
+        path,
+        job,
+        timeout: GUIDE_TIMEOUT,
+    };
     let response = engine.generate(&GuideRequest {
         prompt: prompt.text,
         schema: guide::OUTPUT_SCHEMA,
@@ -492,17 +867,20 @@ pub struct GuideCliStatus {
     pub available: bool,
     /// Resolved absolute path, for display and debugging.
     pub path: Option<String>,
+    /// Which CLI generates guides: `claude-code` or `amp`.
+    pub engine: Option<EngineKind>,
 }
 
-/// Whether the `claude` CLI is reachable — the UI disables the Guide
-/// button (with an install hint) when it is not. Cheap once installed (a
-/// cached-path check); a miss re-probes, including the login-shell lookup,
-/// so hosts call it from a blocking thread.
+/// Whether a guide engine (the `claude` or `amp` CLI) is reachable — the
+/// UI disables the Guide button (with an install hint) when neither is.
+/// Cheap once installed (a cached-path check); a miss re-probes, including
+/// the login-shell lookup, so hosts call it from a blocking thread.
 pub fn guide_cli_status() -> GuideCliStatus {
-    let path = resolve_claude();
+    let engine = resolve_engine();
     GuideCliStatus {
-        available: path.is_some(),
-        path: path.map(|p| p.display().to_string()),
+        available: engine.is_some(),
+        path: engine.as_ref().map(|(_, p)| p.display().to_string()),
+        engine: engine.map(|(kind, _)| kind),
     }
 }
 
@@ -513,7 +891,10 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
 
     fn request() -> GuideRequest {
-        GuideRequest { prompt: "hello".to_owned(), schema: guide::OUTPUT_SCHEMA }
+        GuideRequest {
+            prompt: "hello".to_owned(),
+            schema: guide::OUTPUT_SCHEMA,
+        }
     }
 
     /// A fake `claude` executable running `body` as a shell script.
@@ -556,7 +937,10 @@ mod tests {
         // Verified real shape: auth failure is exit 0 + is_error, not a
         // non-zero exit.
         let raw = r#"{"type":"result","subtype":"success","is_error":true,"result":"Not logged in · Please run /login","total_cost_usd":0}"#;
-        assert_eq!(parse_envelope(raw).unwrap_err(), AUTH_ERROR);
+        assert_eq!(
+            parse_envelope(raw).unwrap_err(),
+            EngineKind::ClaudeCode.auth_error()
+        );
     }
 
     #[test]
@@ -583,10 +967,25 @@ mod tests {
     fn exit_errors_classify_auth_vs_generic() {
         let auth = "Invalid API key · Please run /login";
         let status = std::process::Command::new("false").status().unwrap();
-        assert_eq!(exit_error(status, auth), AUTH_ERROR);
-        let generic = exit_error(status, "segfault or whatever");
+        assert_eq!(
+            exit_error(EngineKind::ClaudeCode, status, auth),
+            EngineKind::ClaudeCode.auth_error()
+        );
+        assert_eq!(
+            exit_error(
+                EngineKind::Amp,
+                status,
+                "No API key found. Run `amp login` first."
+            ),
+            EngineKind::Amp.auth_error()
+        );
+        let generic = exit_error(EngineKind::ClaudeCode, status, "segfault or whatever");
         assert!(generic.contains("segfault or whatever"), "{generic}");
-        assert!(exit_error(status, "").contains("failed"));
+        assert!(generic.starts_with("The `claude` CLI failed"), "{generic}");
+        assert_eq!(
+            exit_error(EngineKind::Amp, status, "").split(" (").next(),
+            Some("The Amp CLI failed")
+        );
     }
 
     #[test]
@@ -596,8 +995,9 @@ mod tests {
         std::fs::create_dir_all(&hit).unwrap();
         std::fs::write(hit.join("claude"), "").unwrap();
         let dirs = vec![dir.path().join("missing"), hit.clone()];
-        assert_eq!(find_claude_in(&dirs), Some(hit.join("claude")));
-        assert_eq!(find_claude_in(&dirs[..1]), None);
+        assert_eq!(find_in(&dirs, "claude"), Some(hit.join("claude")));
+        assert_eq!(find_in(&dirs[..1], "claude"), None);
+        assert_eq!(find_in(&dirs, "amp"), None);
     }
 
     #[test]
@@ -608,6 +1008,7 @@ mod tests {
         let home = PathBuf::from(std::env::var("HOME").unwrap());
         assert!(dirs.contains(&home.join(".claude/local")));
         assert!(dirs.contains(&home.join(".local/bin")));
+        assert!(dirs.contains(&home.join(".amp/bin")));
     }
 
     #[test]
@@ -629,8 +1030,16 @@ mod tests {
         assert_eq!(
             &args[..10],
             [
-                "-p", "hello", "--model", "sonnet", "--effort", "low", "--allowedTools", "",
-                "--output-format", "json"
+                "-p",
+                "hello",
+                "--model",
+                "sonnet",
+                "--effort",
+                "low",
+                "--allowedTools",
+                "",
+                "--output-format",
+                "json"
             ]
         );
         assert_eq!(args[10], "--json-schema");
@@ -655,7 +1064,7 @@ mod tests {
         let stub = stub_claude(dir.path(), "echo 'Please run /login' >&2\nexit 1");
         let job = GuideJob::default();
         let err = run_claude(&stub, &request(), &job, GUIDE_TIMEOUT).unwrap_err();
-        assert_eq!(err, AUTH_ERROR);
+        assert_eq!(err, EngineKind::ClaudeCode.auth_error());
     }
 
     #[test]
@@ -689,6 +1098,304 @@ mod tests {
         canceller.join().unwrap();
     }
 
+    // -----------------------------------------------------------------------
+    // Engine choice
+    // -----------------------------------------------------------------------
+
+    /// `pick_engine` over a fixed set of installed CLIs, recording which
+    /// ones it probed.
+    fn pick(in_orb: bool, installed: &[EngineKind]) -> (Option<EngineKind>, Vec<EngineKind>) {
+        let mut probed = Vec::new();
+        let picked = pick_engine(in_orb, |kind| {
+            probed.push(kind);
+            installed
+                .contains(&kind)
+                .then(|| PathBuf::from(kind.binary()))
+        });
+        (picked.map(|(kind, _)| kind), probed)
+    }
+
+    #[test]
+    fn mac_prefers_claude_code_and_never_probes_amp_when_it_is_there() {
+        use EngineKind::{Amp, ClaudeCode};
+        assert_eq!(
+            pick(false, &[ClaudeCode, Amp]),
+            (Some(ClaudeCode), vec![ClaudeCode])
+        );
+        assert_eq!(pick(false, &[Amp]).0, Some(Amp));
+        assert_eq!(pick(false, &[]), (None, vec![ClaudeCode, Amp]));
+    }
+
+    #[test]
+    fn amp_orb_prefers_amp_and_falls_back_to_claude_code() {
+        use EngineKind::{Amp, ClaudeCode};
+        assert_eq!(pick(true, &[ClaudeCode, Amp]), (Some(Amp), vec![Amp]));
+        assert_eq!(pick(true, &[ClaudeCode]).0, Some(ClaudeCode));
+        assert_eq!(pick(true, &[]).0, None);
+    }
+
+    #[test]
+    fn engine_kind_serializes_for_the_status_payload() {
+        let status = GuideCliStatus {
+            available: true,
+            path: Some("/x/amp".to_owned()),
+            engine: Some(EngineKind::Amp),
+        };
+        assert_eq!(
+            serde_json::to_value(status).unwrap(),
+            json!({"available": true, "path": "/x/amp", "engine": "amp"})
+        );
+        assert_eq!(
+            serde_json::to_value(EngineKind::ClaudeCode).unwrap(),
+            "claude-code"
+        );
+    }
+
+    #[test]
+    fn login_shell_skips_shells_that_do_not_exist() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing_zsh = dir.path().join("zsh");
+        let sh = dir.path().join("sh");
+        std::fs::write(&sh, "").unwrap();
+        assert_eq!(
+            pick_login_shell([missing_zsh.clone(), sh.clone()]),
+            Some(sh)
+        );
+        assert_eq!(pick_login_shell([missing_zsh]), None);
+    }
+
+    // -----------------------------------------------------------------------
+    // Amp output handling
+    // -----------------------------------------------------------------------
+
+    const GUIDE_JSON: &str = r#"{"sections":[{"title":"Core","summary":"s","files":["a.rs"]}]}"#;
+
+    /// A `--stream-json` transcript whose final reply is `reply`.
+    fn amp_stream(reply: &str) -> String {
+        let result =
+            json!({"type": "result", "subtype": "success", "is_error": false, "result": reply});
+        format!(
+            "{}\n{}\n{}\n",
+            r#"{"type":"system","subtype":"init","tools":[],"agent_mode":"anthropic/claude-sonnet-5-5"}"#,
+            r#"{"type":"assistant","message":{"content":[]}}"#,
+            result
+        )
+    }
+
+    #[test]
+    fn amp_stream_yields_the_reply_and_model() {
+        let reply = parse_amp_stream(&amp_stream("hello")).unwrap();
+        assert_eq!(
+            reply,
+            AmpReply {
+                model: "anthropic/claude-sonnet-5-5".to_owned(),
+                text: "hello".to_owned()
+            }
+        );
+    }
+
+    #[test]
+    fn amp_stream_errors_are_classified() {
+        let auth =
+            r#"{"type":"result","is_error":true,"result":"Not logged in. Run `amp login` first."}"#;
+        assert_eq!(
+            parse_amp_stream(auth).unwrap_err(),
+            EngineKind::Amp.auth_error()
+        );
+        let other = r#"{"type":"result","is_error":true,"result":"out of credits"}"#;
+        let err = parse_amp_stream(other).unwrap_err();
+        assert_eq!(err, "Amp could not generate the guide: out of credits");
+        assert!(parse_amp_stream("")
+            .unwrap_err()
+            .contains("without a reply"));
+        let err = parse_amp_stream("Error: Unknown command").unwrap_err();
+        assert!(
+            err.contains("Unexpected output from the Amp CLI: Error: Unknown command"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn guide_json_tolerates_fences_and_rejects_off_schema_replies() {
+        let fenced = format!("Here you go:\n```json\n{GUIDE_JSON}\n```");
+        assert_eq!(
+            parse_guide_json(&fenced).unwrap()["sections"][0]["files"],
+            json!(["a.rs"])
+        );
+
+        let extra = r#"{"sections":[{"title":"T","summary":"s","files":[],"why":"x"}]}"#;
+        assert!(parse_guide_json(extra)
+            .unwrap_err()
+            .contains("did not match the guide schema"));
+        let missing = r#"{"sections":[{"title":"T","files":["a.rs"]}]}"#;
+        assert!(parse_guide_json(missing).unwrap_err().contains("summary"));
+        let wrong_type = r#"{"sections":[{"title":"T","summary":"s","files":"a.rs"}]}"#;
+        assert!(parse_guide_json(wrong_type).is_err());
+        let top_level_extra = r#"{"sections":[],"notes":"x"}"#;
+        assert!(parse_guide_json(top_level_extra).is_err());
+        assert!(parse_guide_json("{not json}")
+            .unwrap_err()
+            .contains("not valid JSON"));
+        assert_eq!(
+            parse_guide_json("I could not do it.").unwrap_err(),
+            "it contained no JSON object"
+        );
+    }
+
+    /// The typed check in `parse_guide_json` mirrors OUTPUT_SCHEMA; fail
+    /// here if the schema's shape moves without it.
+    #[test]
+    fn schema_check_matches_the_output_schema() {
+        let schema: serde_json::Value = serde_json::from_str(guide::OUTPUT_SCHEMA).unwrap();
+        assert_eq!(schema["required"], json!(["sections"]));
+        assert_eq!(schema["additionalProperties"], json!(false));
+        let item = &schema["properties"]["sections"]["items"];
+        assert_eq!(item["required"], json!(["title", "summary", "files"]));
+        assert_eq!(item["additionalProperties"], json!(false));
+        let props: Vec<&String> = item["properties"].as_object().unwrap().keys().collect();
+        assert_eq!(props.len(), 3);
+    }
+
+    /// A fake `amp`: records its args and stdin per call (`args.N`,
+    /// `stdin.N`), then runs `body` with `$n` set to the call number.
+    fn stub_amp(dir: &Path, body: &str) -> PathBuf {
+        let path = dir.join("amp");
+        let d = dir.display();
+        std::fs::write(
+            &path,
+            format!(
+                "#!/bin/sh\nn=$(ls {d} | grep -c '^args\\.')\nprintf '%s\\n' \"$@\" > {d}/args.$n\n\
+                 cat > {d}/stdin.$n\n{body}\n"
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        path
+    }
+
+    fn write_stream(dir: &Path, name: &str, reply: &str) {
+        std::fs::write(dir.join(name), amp_stream(reply)).unwrap();
+    }
+
+    #[test]
+    fn run_amp_sends_the_prompt_on_stdin_with_tools_off() {
+        let dir = tempfile::tempdir().unwrap();
+        write_stream(dir.path(), "ok.jsonl", GUIDE_JSON);
+        let stub = stub_amp(
+            dir.path(),
+            &format!("cat {}/ok.jsonl", dir.path().display()),
+        );
+        let job = GuideJob::default();
+        let response = run_amp(&stub, &request(), &job, GUIDE_TIMEOUT).unwrap();
+        assert_eq!(
+            response.structured,
+            serde_json::from_str::<serde_json::Value>(GUIDE_JSON).unwrap()
+        );
+        assert_eq!(response.model, "anthropic/claude-sonnet-5-5");
+        assert_eq!(response.cost_usd, None);
+
+        let args = std::fs::read_to_string(dir.path().join("args.0")).unwrap();
+        let args: Vec<&str> = args.lines().collect();
+        assert_eq!(
+            &args[..7],
+            [
+                "-x",
+                "--stream-json",
+                "--model",
+                AMP_GUIDE_MODEL,
+                "--effort",
+                "low",
+                "--settings-file"
+            ]
+        );
+        assert_eq!(std::fs::read_to_string(args[7]).unwrap(), AMP_SETTINGS);
+        let stdin = std::fs::read_to_string(dir.path().join("stdin.0")).unwrap();
+        assert!(stdin.starts_with("hello\n\n## Output format"), "{stdin}");
+        assert!(stdin.contains("\"additionalProperties\":false") && !stdin.contains("$schema"));
+        assert!(
+            !dir.path().join("args.1").exists(),
+            "a valid reply is not retried"
+        );
+    }
+
+    #[test]
+    fn run_amp_retries_once_after_an_off_schema_reply() {
+        let dir = tempfile::tempdir().unwrap();
+        write_stream(
+            dir.path(),
+            "0.jsonl",
+            "Sure! The sections are Core and Tests.",
+        );
+        write_stream(dir.path(), "1.jsonl", GUIDE_JSON);
+        let stub = stub_amp(
+            dir.path(),
+            &format!("cat {}/$n.jsonl", dir.path().display()),
+        );
+        let job = GuideJob::default();
+        let response = run_amp(&stub, &request(), &job, GUIDE_TIMEOUT).unwrap();
+        assert_eq!(response.structured["sections"][0]["title"], "Core");
+        let retry = std::fs::read_to_string(dir.path().join("stdin.1")).unwrap();
+        assert!(
+            retry.contains("rejected because it contained no JSON object"),
+            "{retry}"
+        );
+    }
+
+    #[test]
+    fn run_amp_gives_up_after_two_off_schema_replies() {
+        let dir = tempfile::tempdir().unwrap();
+        write_stream(dir.path(), "bad.jsonl", r#"{"sections":"none"}"#);
+        let stub = stub_amp(
+            dir.path(),
+            &format!("cat {}/bad.jsonl", dir.path().display()),
+        );
+        let job = GuideJob::default();
+        let err = run_amp(&stub, &request(), &job, GUIDE_TIMEOUT).unwrap_err();
+        assert!(
+            err.starts_with("Amp did not return a usable guide (tried twice): it did not match"),
+            "{err}"
+        );
+        assert!(!dir.path().join("args.2").exists());
+    }
+
+    #[test]
+    fn run_amp_maps_auth_stderr_and_does_not_retry() {
+        let dir = tempfile::tempdir().unwrap();
+        let stub = stub_amp(
+            dir.path(),
+            "echo 'No API key found. Run `amp login` first.' >&2\nexit 1",
+        );
+        let job = GuideJob::default();
+        let err = run_amp(&stub, &request(), &job, GUIDE_TIMEOUT).unwrap_err();
+        assert_eq!(err, EngineKind::Amp.auth_error());
+        assert!(!dir.path().join("args.1").exists());
+    }
+
+    #[test]
+    fn run_amp_times_out_and_kills_the_child() {
+        let dir = tempfile::tempdir().unwrap();
+        let stub = stub_amp(dir.path(), "sleep 30");
+        let job = GuideJob::default();
+        let started = Instant::now();
+        let err = run_amp(&stub, &request(), &job, Duration::from_millis(300)).unwrap_err();
+        assert!(err.contains("timed out"), "{err}");
+        assert!(started.elapsed() < Duration::from_secs(5));
+        assert!(job.child_slot().is_none());
+    }
+
+    #[test]
+    fn run_amp_reports_a_missing_binary_as_missing() {
+        let job = GuideJob::default();
+        let err = run_amp(
+            Path::new("/nonexistent/amp"),
+            &request(),
+            &job,
+            GUIDE_TIMEOUT,
+        )
+        .unwrap_err();
+        assert_eq!(err, EngineKind::Amp.missing_error());
+    }
+
     #[test]
     fn runtime_allows_one_job_at_a_time() {
         let runtime = GuideRuntime::default();
@@ -710,11 +1417,16 @@ mod tests {
         .unwrap();
         let review_id = conn.last_insert_rowid();
         assert!(ensure_review_active(&conn, review_id).is_ok());
-        conn.execute("UPDATE reviews SET status = 'archived' WHERE id = ?1", [review_id])
-            .unwrap();
+        conn.execute(
+            "UPDATE reviews SET status = 'archived' WHERE id = ?1",
+            [review_id],
+        )
+        .unwrap();
         let err = ensure_review_active(&conn, review_id).unwrap_err();
         assert!(err.contains("archived"), "{err}");
         // A missing review is its own error, not an archived one.
-        assert!(ensure_review_active(&conn, 999).unwrap_err().contains("not found"));
+        assert!(ensure_review_active(&conn, 999)
+            .unwrap_err()
+            .contains("not found"));
     }
 }
