@@ -1,0 +1,110 @@
+# Checks every push to main and every PR, and builds the Linux web bundle
+# (web-bundle.yml). On main, the bundle is also published as a prerelease
+# tagged main-<short sha>, and the previous main-* prerelease is deleted, so
+# exactly one main build is on the releases page at a time.
+#
+# Each main build gets its own tag because the Amp Prologue plugin takes the
+# newest release that has prologue-web-x86_64-linux.tar.gz and caches it by
+# tag name: a tag that moved would never be downloaded again. The release is
+# never "latest", so the Mac updater's latest.json is unaffected, and a later
+# v* release is newer, so the plugin switches to it until main moves again.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # Main runs queue instead, so publishing and pruning never overlap.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  checks:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # tsc + vite; also produces the dist/ that tauri-build needs below.
+      - name: Frontend build
+        run: npm run build
+
+      - name: Vitest
+        run: npm test
+
+      # The app crate links Tauri, which needs webkit2gtk and gtk on Linux.
+      - name: Tauri system libraries
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libsoup-3.0-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Clippy
+        working-directory: src-tauri
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Cargo test
+        working-directory: src-tauri
+        run: cargo test --locked
+
+  bundle:
+    uses: ./.github/workflows/web-bundle.yml
+
+  publish-main:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [checks, bundle]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      ASSET: prologue-web-x86_64-linux.tar.gz
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: prologue-web-x86_64-linux.tar.gz
+
+      # Publish the new build before pruning the old one, so the plugin
+      # always finds a main build. Tags created with GITHUB_TOKEN start no
+      # workflows, and main-* doesn't match release-web.yml's v* anyway.
+      - name: Publish main-<short sha> prerelease
+        run: |
+          tag="main-${GITHUB_SHA::7}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "$ASSET" --clobber
+          else
+            gh release create "$tag" "$ASSET" --target "$GITHUB_SHA" \
+              --prerelease --latest=false \
+              --title "Prologue main ($tag)" \
+              --notes "Linux web-mode bundle built from main at $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$GITHUB_SHA by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID. Replaced by the next main build."
+          fi
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+
+      - name: Delete older main-* prereleases
+        run: |
+          gh release list --limit 200 --json tagName \
+            --jq ".[].tagName | select(startswith(\"main-\") and . != \"$TAG\")" |
+            while read -r old; do
+              gh release delete "$old" --yes --cleanup-tag
+            done
