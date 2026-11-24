@@ -2331,3 +2331,37 @@ body.sidebar-resizing * {
 .shortcut-label {
   font-size: 12.5px;
 }
+
+/* Send to Amp's manual fallback: a corner card, clear of the toolbar and
+   the comment actions at the top of the review. */
+.amp-handoff {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 50;
+  width: min(460px, calc(100vw - 32px));
+  padding: 12px;
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  background: var(--bg-card);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.15);
+  font-size: 13px;
+}
+.amp-handoff-title {
+  margin: 0 0 8px;
+}
+.amp-handoff-text {
+  width: 100%;
+  box-sizing: border-box;
+  font: 12px var(--font-mono, monospace);
+  resize: vertical;
+}
+.amp-handoff-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.amp-handoff-note {
+  font-size: 12px;
+}

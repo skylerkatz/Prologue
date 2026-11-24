@@ -249,6 +249,15 @@ export function ReviewShell({
     [view, review, branchMerged, repo.path],
   );
   const amp = useAmpSend(exportTarget, comments);
+  const ampSentIds = amp?.sent;
+  const ampSendingIds = amp?.sending;
+  const ampStates = useMemo(
+    () =>
+      ampSentIds === undefined || ampSendingIds === undefined
+        ? null
+        : { sent: ampSentIds, sending: ampSendingIds },
+    [ampSentIds, ampSendingIds],
+  );
   // Web mode is tied to one checkout and always reviews its HEAD (plus
   // working changes), so there is no repo or branch to pick. It has its own
   // header, and at Portal-pane widths keeps the file list in a drawer.
@@ -307,7 +316,7 @@ export function ReviewShell({
     );
 
   return (
-    <AmpSentContext.Provider value={amp?.sent ?? null}>
+    <AmpSentContext.Provider value={ampStates}>
     <div className="review-shell">
       {webMode ? (
         <WebToolbar

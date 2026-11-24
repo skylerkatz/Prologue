@@ -246,8 +246,10 @@ export function CommentCard({
   // enforces it; the app's, the agent's, and unattributed ones stay open
   // to all.
   const mayModify = comment.authorId === null || author.you;
+  const ampTracked = ampSent !== null && !isReply && comment.state === "open";
+  const ampSending = ampTracked && ampSent.sending.has(comment.id);
   const ampPending =
-    ampSent !== null && !isReply && comment.state === "open" && !ampSent.has(comment.id);
+    ampTracked && !ampSending && !ampSent.sent.has(comment.id);
   return (
     <article
       className={`comment-card${closed ? " comment-card-closed" : ""}${isReply ? " comment-card-reply" : ""}`}
@@ -297,6 +299,14 @@ export function CommentCard({
             title="Not sent to Amp yet — Send to Amp includes it"
           >
             pending
+          </span>
+        )}
+        {ampSending && (
+          <span
+            className="comment-flag comment-flag-pending"
+            title="Sent to Amp — waiting for the thread to confirm it arrived"
+          >
+            sending…
           </span>
         )}
         {orphaned && (

@@ -17,6 +17,7 @@ mod resolve;
 mod show;
 
 use clap::{Parser, Subcommand, ValueEnum};
+use prologue_core::amp_sends;
 use prologue_core::diff::DiffSpec;
 use prologue_core::error::CoreError;
 use prologue_core::export::{self, ExportFormat};
@@ -165,6 +166,13 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Confirm that a Send to Amp arrived (run by the Amp thread's handler
+    /// with the payload's sendId): its comments count as sent in every open
+    /// Prologue web view. Idempotent; an unknown sendId is only noted
+    ConfirmSend {
+        /// The `sendId` from the Send to Amp webhook payload
+        send_id: String,
+    },
 }
 
 /// Thread-lifecycle verbs that deliberately do not exist as subcommands.
@@ -245,6 +253,30 @@ fn attempted_lifecycle_verb(err: &clap::Error) -> Option<String> {
     }
 }
 
+fn confirm_send_text(send_id: &str, confirmed: amp_sends::Confirmed) -> String {
+    let ids = |send: &amp_sends::AmpSend| {
+        send.comment_ids.iter().map(|id| format!("C{id}")).collect::<Vec<_>>().join(", ")
+    };
+    match confirmed {
+        amp_sends::Confirmed::Now { send, was } => format!(
+            "Confirmed send {send_id}: {} marked sent (review {}){}\n",
+            ids(&send),
+            send.review_id,
+            if was == amp_sends::SendState::Failed {
+                " — it had timed out, so the reviewer may resend them; check for duplicates"
+            } else {
+                ""
+            }
+        ),
+        amp_sends::Confirmed::Already(send) => {
+            format!("Send {send_id} was already confirmed: {} (review {})\n", ids(&send), send.review_id)
+        }
+        amp_sends::Confirmed::Unknown => {
+            format!("note: no Send to Amp has id {send_id} in this database — nothing to confirm\n")
+        }
+    }
+}
+
 fn lifecycle_error(verb: &str) -> String {
     format!(
         "error: `{verb}` is not a prologue command — resolving, dismissing, reopening, \
@@ -263,7 +295,10 @@ fn run(cli: Cli) -> Result<(), String> {
     // on a query_only one. (`import-replies --dry-run` still opens for write:
     // it validates exactly what a real run would.)
     let conn = match &cli.command {
-        Command::Comment { .. } | Command::Reply { .. } | Command::ImportReplies { .. } => {
+        Command::Comment { .. }
+        | Command::Reply { .. }
+        | Command::ImportReplies { .. }
+        | Command::ConfirmSend { .. } => {
             db::open_reviews_db_for_write(&db_path)?
         }
         _ => db::open_reviews_db(&db_path)?,
@@ -423,6 +458,9 @@ fn run(cli: Cli) -> Result<(), String> {
             } else {
                 print_text(&import_report_text(&report));
             }
+        }
+        Command::ConfirmSend { send_id } => {
+            print_text(&confirm_send_text(&send_id, amp_sends::confirm_send(&conn, &send_id)?));
         }
     }
     Ok(())
@@ -703,6 +741,34 @@ mod tests {
             "prologue", "import-replies", "--base64", "eyJ9", "--file", "x.json",
         ])
         .is_err());
+    }
+
+    /// confirm-send marks a send's comments sent, says so again on a re-run,
+    /// and only notes an unknown id (exit 0), so a handler can always run it.
+    #[test]
+    fn confirm_send_is_idempotent_and_tolerates_unknown_ids() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("reviews.db");
+        let conn = prologue_core::db::open(&path).unwrap();
+        conn.execute_batch(
+            "INSERT INTO reviews (repo_path, branch, base_ref, mode) VALUES ('/r', 'f', 'main', 'committed');
+             INSERT INTO comments (review_id, level, commit_sha, body) VALUES (1, 'review', 'sha', 'x');",
+        )
+        .unwrap();
+        amp_sends::begin_send(&conn, 1, "s-1").unwrap();
+        drop(conn);
+        let db = path.to_str().unwrap();
+        for _ in 0..2 {
+            run(Cli::try_parse_from(["prologue", "--db", db, "confirm-send", "s-1"]).unwrap()).unwrap();
+        }
+        run(Cli::try_parse_from(["prologue", "--db", db, "confirm-send", "nope"]).unwrap()).unwrap();
+        let conn = prologue_core::db::open(&path).unwrap();
+        let send = amp_sends::get_send(&conn, "s-1").unwrap().unwrap();
+        assert_eq!(send.state, amp_sends::SendState::Sent);
+
+        let text = |c| confirm_send_text("s-1", c);
+        assert!(text(amp_sends::Confirmed::Unknown).starts_with("note:"));
+        assert!(text(amp_sends::Confirmed::Already(send)).contains("already confirmed"));
     }
 
     #[test]

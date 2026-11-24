@@ -250,6 +250,7 @@ const SHARED_WRITES: &[&str] = &[
     "delete_comment",
     "update_comment_state",
     "send_to_amp",
+    "confirm_amp_send",
 ];
 
 /// Run a command and, when it changed shared review state, tell every open
@@ -500,17 +501,45 @@ fn run_command(
         }
         // Native-menu plumbing: there is no menu in a browser.
         "set_repo_menu_enabled" | "set_hide_resolved_checked" => ok(()),
-        "amp_sent_comments" => ok(match &state.amp {
-            Some(amp) => amp.sent_ids(a.get("reviewId")?),
-            None => Vec::new(),
-        }),
+        "amp_sends" => {
+            let review_id: i64 = a.get("reviewId")?;
+            let conn = state.db.lock()?;
+            let repo = review::get_review(&conn, review_id)?.repo_path;
+            let sends = prologue_core::amp_sends::list_sends(&conn, review_id)?;
+            // A failed send carries the message to paste into the thread by
+            // hand, so every viewer can finish it.
+            let mut listed = serde_json::to_value(&sends).map_err(|e| e.to_string())?;
+            for (send, value) in sends.iter().zip(listed.as_array_mut().into_iter().flatten()) {
+                if send.state == prologue_core::amp_sends::SendState::Failed {
+                    value["handoff"] = json!(amp::handoff_message(&repo, &send.comment_ids));
+                }
+            }
+            ok(listed)
+        }
+        // "I pasted it": the manual fallback reached the thread, so the
+        // send counts as confirmed, exactly as `prologue confirm-send`.
+        "confirm_amp_send" => {
+            let send_id: String = a.get("sendId")?;
+            let conn = state.db.lock()?;
+            match prologue_core::amp_sends::confirm_send(&conn, &send_id)? {
+                prologue_core::amp_sends::Confirmed::Unknown => {
+                    Err(Failure::from(format!("No Send to Amp has id {send_id}")))
+                }
+                _ => ok(()),
+            }
+        }
         "send_to_amp" => {
             let amp = state.amp.as_ref().ok_or(
                 "Send to Amp is not configured (set PROLOGUE_AMP_WEBHOOK_URL on the server)",
             )?;
             let repo: String = a.get("repoPath")?;
             let base: String = a.get("base")?;
-            ok(amp.send(&state.db, &repo, &base, a.get("reviewId")?)?)
+            let notify = || state.emit(events::COMMENTS_CHANGED, Value::Null);
+            // Every viewer sees the send go to `sending`, and back to unsent
+            // if the webhook refuses it (dispatch announces a success).
+            amp.send(&state.db, &repo, &base, a.get("reviewId")?, notify)
+                .inspect_err(|_| notify())
+                .map(ok)?
         }
         "install_cli" => Err(Failure::Command(
             "Installing the command line tool is only available in the Mac app. \
@@ -687,8 +716,10 @@ fn build_state(cli: &Cli) -> Result<Arc<AppState>, String> {
         if cli.amp_thread_id.is_empty() {
             eprintln!("prologue-server: warning: Send to Amp is on but AMP_THREAD_ID is unset");
         }
-        amp::AmpSink::new(url.clone(), cli.amp_thread_id.clone(), data_dir.join("amp-sent.json"))
+        amp::AmpSink::new(url.clone(), cli.amp_thread_id.clone())
     });
+    // Comments sent before confirmations existed stay sent.
+    amp::import_legacy_sent(&db, &data_dir.join("amp-sent.json"))?;
     let state = Arc::new(AppState {
         config: WebConfig {
             repo_path,
@@ -706,6 +737,10 @@ fn build_state(cli: &Cli) -> Result<Arc<AppState>, String> {
 
     // External writers (the prologue CLI) commit to reviews.db behind the
     // server's back; surface them as `comments-changed`, as the app does.
+    let expired = Arc::clone(&state);
+    amp::start_expiry(Arc::clone(&db), move || {
+        expired.emit(events::COMMENTS_CHANGED, Value::Null)
+    });
     let emitter = Arc::clone(&state);
     watcher::start_db_watching(
         &data_dir,

@@ -4,90 +4,147 @@
 //! or calls it. The payload names comments by id and never carries their
 //! text — the agent reads them with the `prologue` CLI.
 //!
-//! Which comments were sent is remembered per review in `amp-sent.json`
-//! next to reviews.db (server bookkeeping, deliberately outside the shared
-//! schema the app and CLI migrate), so unsent ones can show as pending.
+//! Sends are confirmed, not fire-and-forget: Amp can accept the webhook
+//! POST and still never run the thread's handler (an archived thread).
+//! Each send gets a `sendId` and stays `sending` until the handler runs
+//! `prologue confirm-send <sendId>`; a refused POST fails it at once, and
+//! an unconfirmed one fails after [`CONFIRM_TIMEOUT_SECS`], so its comments
+//! can be sent again. State lives in the database (`amp_sends`, schema v9);
+//! amp-sent.json from older servers is adopted as confirmed sends.
 
+use prologue_core::amp_sends;
 use prologue_core::db::Db;
-use prologue_core::review::{self, CommentState};
 use serde::Serialize;
 use serde_json::json;
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
-use std::sync::Mutex;
+use std::path::Path;
 use std::time::Duration;
+
+/// How long a send may wait for `prologue confirm-send` before it counts
+/// as lost.
+pub const CONFIRM_TIMEOUT_SECS: u64 = 60;
 
 pub struct AmpSink {
     url: String,
     thread_id: String,
-    sent_path: PathBuf,
-    /// review id → ids of root comments already sent.
-    sent: Mutex<BTreeMap<i64, BTreeSet<i64>>>,
 }
 
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct SendResult {
+    pub send_id: String,
     pub comment_ids: Vec<String>,
     pub count: usize,
 }
 
 impl AmpSink {
-    pub fn new(url: String, thread_id: String, sent_path: PathBuf) -> Self {
-        // A missing or unreadable file means nothing was sent yet.
-        let sent = std::fs::read_to_string(&sent_path)
-            .ok()
-            .and_then(|text| serde_json::from_str(&text).ok())
-            .unwrap_or_default();
-        Self { url, thread_id, sent_path, sent: Mutex::new(sent) }
+    pub fn new(url: String, thread_id: String) -> Self {
+        Self { url, thread_id }
     }
 
-    pub fn sent_ids(&self, review_id: i64) -> Vec<i64> {
-        let sent = self.sent.lock().unwrap_or_else(|e| e.into_inner());
-        sent.get(&review_id).map(|ids| ids.iter().copied().collect()).unwrap_or_default()
-    }
-
-    /// POST the review's open, not-yet-sent thread roots to the webhook and
-    /// record them as sent once it accepts (2xx).
-    pub fn send(&self, db: &Db, repo: &str, base: &str, review_id: i64) -> Result<SendResult, String> {
-        let open: Vec<i64> = {
-            let conn = db.lock()?;
-            review::list_comments_impl(&conn, review_id)?
-                .into_iter()
-                .filter(|c| c.parent_id.is_none() && c.state == CommentState::Open)
-                .map(|c| c.id)
-                .collect()
-        };
-        let already: BTreeSet<i64> = self.sent_ids(review_id).into_iter().collect();
-        let unsent: Vec<i64> = open.into_iter().filter(|id| !already.contains(id)).collect();
-        if unsent.is_empty() {
-            return Err("No new open comments to send to Amp".to_owned());
-        }
-        let comment_ids: Vec<String> = unsent.iter().map(|id| format!("C{id}")).collect();
+    /// Record the review's open, unsent thread roots as a `sending` send
+    /// (`recorded` runs once that is visible, so other viewers can see it),
+    /// POST the webhook, and fail the send right away unless it answers 2xx.
+    pub fn send(
+        &self,
+        db: &Db,
+        repo: &str,
+        base: &str,
+        review_id: i64,
+        recorded: impl Fn(),
+    ) -> Result<SendResult, String> {
+        let send_id = uuid::Uuid::new_v4().to_string();
+        let ids = amp_sends::begin_send(&*db.lock()?, review_id, &send_id)?;
+        recorded();
+        let comment_ids: Vec<String> = ids.iter().map(|id| format!("C{id}")).collect();
         let payload = json!({
+            "sendId": send_id,
             "threadID": self.thread_id,
             "commentIds": comment_ids,
-            "count": unsent.len(),
+            "count": ids.len(),
             "repo": repo,
             "base": base,
         });
+        if let Err(e) = self.post(&send_id, &payload) {
+            amp_sends::fail_send(&*db.lock()?, &send_id)?;
+            return Err(e);
+        }
+        Ok(SendResult { send_id, count: comment_ids.len(), comment_ids })
+    }
+
+    /// POST and log the outcome; Err unless 2xx. Neither the log nor the
+    /// error may echo the URL: it is a credential.
+    fn post(&self, send_id: &str, payload: &serde_json::Value) -> Result<(), String> {
         let agent: ureq::Agent = ureq::Agent::config_builder()
             .timeout_global(Some(Duration::from_secs(15)))
+            .http_status_as_error(false)
             .build()
             .into();
-        // The error text must not echo the URL: it is a credential.
-        agent
-            .post(&self.url)
-            .send_json(&payload)
-            .map_err(|e| format!("Amp did not accept the comments: {}", redact(&e, &self.url)))?;
-
-        let mut sent = self.sent.lock().unwrap_or_else(|e| e.into_inner());
-        sent.entry(review_id).or_default().extend(&unsent);
-        let text = serde_json::to_string(&*sent).map_err(|e| e.to_string())?;
-        std::fs::write(&self.sent_path, text)
-            .map_err(|e| format!("Sent, but could not record it in {}: {e}", self.sent_path.display()))?;
-        Ok(SendResult { count: comment_ids.len(), comment_ids })
+        match agent.post(&self.url).send_json(payload) {
+            Ok(mut res) => {
+                let status = res.status().as_u16();
+                let body = res.body_mut().read_to_string().unwrap_or_default();
+                let short: String = body.trim().chars().take(200).collect();
+                eprintln!("prologue-server: Send to Amp {send_id}: webhook answered {status} {short:?}");
+                if (200..300).contains(&status) {
+                    Ok(())
+                } else {
+                    Err(format!("Amp did not accept the comments (HTTP {status}). Try again."))
+                }
+            }
+            Err(e) => {
+                let e = redact(&e, &self.url);
+                eprintln!("prologue-server: Send to Amp {send_id}: webhook failed: {e}");
+                Err(format!("Amp did not accept the comments: {e}"))
+            }
+        }
     }
+}
+
+/// Adopt the pre-v9 amp-sent.json (review id → sent root ids) as confirmed
+/// sends; a missing or unreadable file means nothing was sent yet.
+pub fn import_legacy_sent(db: &Db, path: &Path) -> Result<(), String> {
+    let Some(sent) = std::fs::read_to_string(path)
+        .ok()
+        .and_then(|text| serde_json::from_str::<BTreeMap<i64, BTreeSet<i64>>>(&text).ok())
+    else {
+        return Ok(());
+    };
+    amp_sends::import_legacy(&*db.lock()?, &sent)
+}
+
+/// Fail sends unconfirmed for [`CONFIRM_TIMEOUT_SECS`], every few seconds,
+/// calling `changed` when any did. Timestamps drive it, so sends left in
+/// flight by a stopped server are settled once one runs again.
+pub fn start_expiry(db: std::sync::Arc<Db>, changed: impl Fn() + Send + 'static) {
+    std::thread::spawn(move || loop {
+        if let Ok(conn) = db.lock() {
+            if amp_sends::expire_sends(&conn, CONFIRM_TIMEOUT_SECS).unwrap_or(0) > 0 {
+                drop(conn);
+                eprintln!("prologue-server: Send to Amp: a send went unconfirmed for {CONFIRM_TIMEOUT_SECS}s; its comments are unsent again");
+                changed();
+            }
+        }
+        std::thread::sleep(Duration::from_secs(5));
+    });
+}
+
+/// The message the Amp plugin adds to the thread for a send — the manual
+/// fallback when automatic sending failed, pasted by the reviewer, so the
+/// agent handles both the same way. Mirrors the plugin's text exactly; keep
+/// them in step.
+pub fn handoff_message(repo: &str, comment_ids: &[i64]) -> String {
+    let range = match (comment_ids.first(), comment_ids.last()) {
+        (Some(first), Some(last)) if first != last => format!("C{first}–C{last}"),
+        (Some(only), _) => format!("C{only}"),
+        _ => String::new(),
+    };
+    format!(
+        "You have {} open review comments in Prologue ({range}) for {repo}. Use the \
+         prologue-review skill to work through them, reply to each with the prologue CLI, \
+         then give me a short summary.",
+        comment_ids.len()
+    )
 }
 
 fn redact(e: &ureq::Error, url: &str) -> String {
@@ -97,8 +154,10 @@ fn redact(e: &ureq::Error, url: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use amp_sends::SendState;
     use std::io::{BufRead, BufReader, Read, Write};
     use std::net::TcpListener;
+    use std::sync::Mutex;
 
     /// A one-shot HTTP sink answering `status`; returns the request body.
     fn sink(status: u16) -> (String, std::thread::JoinHandle<String>) {
@@ -121,7 +180,7 @@ mod tests {
             let mut body = vec![0; len];
             reader.read_exact(&mut body).unwrap();
             let mut stream = reader.into_inner();
-            write!(stream, "HTTP/1.1 {status} X\r\ncontent-length: 0\r\n\r\n").unwrap();
+            write!(stream, "HTTP/1.1 {status} X\r\ncontent-length: 2\r\n\r\nok").unwrap();
             String::from_utf8(body).unwrap()
         });
         (url, handle)
@@ -153,34 +212,74 @@ mod tests {
         (dir, Db(Mutex::new(conn)), review)
     }
 
-    #[test]
-    fn sends_only_open_unsent_roots_without_text_and_remembers_them() {
-        let (dir, db, review) = review_with_comments();
-        let path = dir.path().join("amp-sent.json");
-        let (url, server) = sink(200);
-        let amp = AmpSink::new(url, "T-123".to_owned(), path.clone());
+    fn state(db: &Db, id: &str) -> SendState {
+        amp_sends::get_send(&db.lock().unwrap(), id).unwrap().unwrap().state
+    }
 
-        let result = amp.send(&db, "/r", "main", review).unwrap();
+    /// An accepted POST leaves the send `sending` (not sent) until the
+    /// thread confirms it; the payload names the send and no comment text.
+    #[test]
+    fn an_accepted_send_waits_for_confirmation() {
+        let (_dir, db, review) = review_with_comments();
+        let (url, server) = sink(200);
+        let amp = AmpSink::new(url, "T-123".to_owned());
+        let recorded = std::cell::Cell::new(false);
+
+        let result = amp.send(&db, "/r", "main", review, || recorded.set(true)).unwrap();
         let body: serde_json::Value = serde_json::from_str(&server.join().unwrap()).unwrap();
         assert_eq!(
             body,
-            json!({"threadID": "T-123", "commentIds": ["C1", "C4"], "count": 2, "repo": "/r", "base": "main"})
+            json!({"sendId": result.send_id, "threadID": "T-123", "commentIds": ["C1", "C4"],
+                   "count": 2, "repo": "/r", "base": "main"})
         );
-        assert_eq!(result.count, 2);
-        // Survives a restart, and a second send has nothing new.
-        let reloaded = AmpSink::new("http://unused".to_owned(), "T-123".to_owned(), path);
-        assert_eq!(reloaded.sent_ids(review), vec![1, 4]);
-        assert!(reloaded.send(&db, "/r", "main", review).unwrap_err().contains("No new"));
+        assert!(recorded.get());
+        assert_eq!(state(&db, &result.send_id), SendState::Sending);
+        // In flight: nothing new to send, and no second copy goes out.
+        let err = amp.send(&db, "/r", "main", review, || {}).unwrap_err();
+        assert!(err.contains("No new"), "{err}");
+
+        amp_sends::confirm_send(&db.lock().unwrap(), &result.send_id).unwrap();
+        assert_eq!(state(&db, &result.send_id), SendState::Sent);
     }
 
     #[test]
-    fn a_rejected_send_records_nothing_and_hides_the_url() {
-        let (dir, db, review) = review_with_comments();
+    fn a_rejected_send_reverts_at_once_and_hides_the_url() {
+        let (_dir, db, review) = review_with_comments();
         let (url, server) = sink(500);
-        let amp = AmpSink::new(url, "T-1".to_owned(), dir.path().join("amp-sent.json"));
-        let err = amp.send(&db, "/r", "main", review).unwrap_err();
+        let amp = AmpSink::new(url, "T-1".to_owned());
+        let err = amp.send(&db, "/r", "main", review, || {}).unwrap_err();
         server.join().unwrap();
-        assert!(!err.contains("secret-token"), "{err}");
-        assert!(amp.sent_ids(review).is_empty());
+        assert!(err.contains("500") && !err.contains("secret-token"), "{err}");
+        let sends = amp_sends::list_sends(&db.lock().unwrap(), review).unwrap();
+        assert_eq!(sends[0].state, SendState::Failed);
+        // The same comments can go again.
+        let (url, server) = sink(200);
+        let amp = AmpSink::new(url, "T-1".to_owned());
+        assert_eq!(amp.send(&db, "/r", "main", review, || {}).unwrap().count, 2);
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn handoff_message_matches_the_plugin() {
+        assert_eq!(
+            handoff_message("/work/app", &[1, 2, 3]),
+            "You have 3 open review comments in Prologue (C1–C3) for /work/app. Use the \
+             prologue-review skill to work through them, reply to each with the prologue CLI, \
+             then give me a short summary."
+        );
+        assert!(handoff_message("/r", &[7]).starts_with("You have 1 open review comments in Prologue (C7) for /r."));
+    }
+
+    #[test]
+    fn legacy_amp_sent_json_stays_sent() {
+        let (dir, db, review) = review_with_comments();
+        let path = dir.path().join("amp-sent.json");
+        std::fs::write(&path, format!(r#"{{"{review}":[1]}}"#)).unwrap();
+        import_legacy_sent(&db, &path).unwrap();
+        import_legacy_sent(&db, &dir.path().join("missing.json")).unwrap();
+        let (url, server) = sink(200);
+        let result = AmpSink::new(url, "T".to_owned()).send(&db, "/r", "main", review, || {}).unwrap();
+        server.join().unwrap();
+        assert_eq!(result.comment_ids, vec!["C4"]);
     }
 }

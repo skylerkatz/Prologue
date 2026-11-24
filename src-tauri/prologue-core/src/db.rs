@@ -181,6 +181,23 @@ const MIGRATIONS: &[&str] = &[
     DROP TABLE comments;
     ALTER TABLE comments_v8 RENAME TO comments;
     CREATE INDEX comments_by_review ON comments (review_id);",
+    // v9: Send to Amp deliveries, confirmed rather than fire-and-forget.
+    // prologue-server records a send as 'sending' before POSTing its
+    // webhook; the Amp thread's handler runs `prologue confirm-send` to
+    // make it 'sent', and a send that is refused or never confirmed becomes
+    // 'failed', returning its comments to the unsent pool. In the database
+    // (not amp-sent.json) so the CLI's confirmation reaches every viewer
+    // through the database watcher. `comment_ids` is a JSON array of
+    // root comment ids (never reused since v8).
+    "CREATE TABLE amp_sends (
+        send_id TEXT PRIMARY KEY,
+        review_id INTEGER NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+        comment_ids TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('sending','sent','failed')),
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE INDEX amp_sends_by_review ON amp_sends (review_id);",
 ];
 
 /// The newest schema version this build knows how to read and migrate to.

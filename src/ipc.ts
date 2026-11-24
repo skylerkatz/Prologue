@@ -327,9 +327,29 @@ export function findGuide(
   return invoke("find_guide", { reviewId, base, head, mode });
 }
 
-/** Web mode only: root comment ids already sent to Amp for this review. */
-export function ampSentComments(reviewId: number): Promise<number[]> {
-  return invoke("amp_sent_comments", { reviewId });
+/** A Send to Amp delivery: `sending` until the Amp thread runs
+ * `prologue confirm-send`, then `sent`; `failed` when refused or never
+ * confirmed (its comments are unsent again). */
+export interface AmpSendRecord {
+  sendId: string;
+  reviewId: number;
+  commentIds: number[];
+  state: "sending" | "sent" | "failed";
+  createdAt: string;
+  updatedAt: string;
+  /** Failed sends: the message the plugin would have added to the thread,
+   * for the reviewer to paste by hand. */
+  handoff?: string;
+}
+
+/** "I pasted it": the manual fallback reached the thread; marks the send
+ * confirmed, as `prologue confirm-send` does. */
+export function confirmAmpSend(sendId: string): Promise<void> {
+  return invoke("confirm_amp_send", { sendId });
+}
+
+export function ampSends(reviewId: number): Promise<AmpSendRecord[]> {
+  return invoke("amp_sends", { reviewId });
 }
 
 /**
@@ -340,7 +360,7 @@ export function sendToAmp(
   repoPath: string,
   base: string,
   reviewId: number,
-): Promise<{ commentIds: string[]; count: number }> {
+): Promise<{ sendId: string; commentIds: string[]; count: number }> {
   return invoke("send_to_amp", { repoPath, base, reviewId });
 }
 

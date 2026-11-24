@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { errorText, exportReview } from "../ipc";
-import { deliverExport } from "../platform";
+import { deliverExport, writeClipboard } from "../platform";
 import type { DiffMode, ExportFormat } from "../types";
 import { Toast, useToast } from "./useToast";
-import type { AmpSend } from "./useAmpSend";
+import type { AmpSend, FailedSend } from "./useAmpSend";
 
 /** The displayed diff the export must describe; null when there is nothing
  * exportable (no active review). */
@@ -67,13 +67,20 @@ export function ExportButton({ target, openCount, amp }: ExportButtonProps) {
             target === null
               ? "Sending needs an active review"
               : amp.pendingCount === 0
-                ? "Every open comment was already sent to Amp"
+                ? amp.sendingCount > 0
+                  ? "Sent — waiting for the Amp thread to confirm it received them"
+                  : "Every open comment was already sent to Amp"
                 : "Tell the Amp thread these open comments await it (ids only; the agent reads them with the prologue CLI)"
           }
           onClick={() => void send()}
         >
-          {sending ? "Sending…" : `Send to Amp (${amp.pendingCount})`}
+          {sending
+            ? "Sending…"
+            : amp.pendingCount === 0 && amp.sendingCount > 0
+              ? `Waiting for Amp (${amp.sendingCount})…`
+              : `Send to Amp (${amp.pendingCount})`}
         </button>
+        {amp.failed !== null && <AmpHandoff failed={amp.failed} amp={amp} />}
         {toast !== null && <Toast {...toast} />}
       </>
     );
@@ -124,5 +131,66 @@ export function ExportButton({ target, openCount, amp }: ExportButtonProps) {
       </button>
       {toast !== null && <Toast {...toast} />}
     </>
+  );
+}
+
+/**
+ * The manual fallback for a send that did not reach the Amp thread: the
+ * message the plugin would have added, to paste by hand. The clipboard can
+ * be blocked inside the portal's iframe, so the text is also selectable.
+ * "I pasted it" confirms the send like `prologue confirm-send`.
+ */
+function AmpHandoff({ failed, amp }: { failed: FailedSend; amp: AmpSend }) {
+  const [copied, setCopied] = useState<"yes" | "blocked" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const copy = () =>
+    writeClipboard(failed.handoff)
+      .then(() => setCopied("yes"))
+      .catch(() => setCopied("blocked"));
+  const pasted = () => {
+    setBusy(true);
+    setError(null);
+    amp
+      .confirmManually(failed.sendId)
+      .catch((e: unknown) => setError(errorText(e)))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <div className="amp-handoff" role="alertdialog" aria-label="Send to Amp fallback">
+      <p className="amp-handoff-title">
+        Automatic sending didn't reach the thread. Copy this message and paste
+        it into the Amp thread:
+      </p>
+      <textarea
+        className="amp-handoff-text"
+        readOnly
+        rows={4}
+        value={failed.handoff}
+        onFocus={(e) => e.currentTarget.select()}
+      />
+      <div className="amp-handoff-actions">
+        <button type="button" className="composer-submit" onClick={() => void copy()}>
+          Copy
+        </button>
+        <button type="button" className="composer-cancel" disabled={busy} onClick={pasted}>
+          I pasted it
+        </button>
+        <button
+          type="button"
+          className="composer-cancel"
+          onClick={() => amp.dismiss(failed.sendId)}
+        >
+          Close
+        </button>
+        {copied === "yes" && <span className="amp-handoff-note">Copied ✓</span>}
+        {copied === "blocked" && (
+          <span className="amp-handoff-note">
+            Copying is blocked here — select the text and copy it
+          </span>
+        )}
+      </div>
+      {error !== null && <p className="composer-error">{error}</p>}
+    </div>
   );
 }

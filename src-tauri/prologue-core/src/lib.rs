@@ -2,6 +2,7 @@
 //! `prologue` CLI. No Tauri types anywhere in this crate's dependency
 //! tree.
 
+pub mod amp_sends;
 pub mod anchor;
 pub mod comment;
 pub mod db;
