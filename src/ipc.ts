@@ -231,21 +231,27 @@ export function stopWatching(): Promise<void> {
   return invoke("stop_watching");
 }
 
-/** Whether the `claude` CLI is reachable; app-crate type, mirrored here. */
+/** The CLI that writes guides: Claude Code, or Amp when Claude Code is
+ * missing or Prologue runs in an Amp orb. */
+export type GuideEngine = "claude-code" | "amp";
+
+/** Whether a guide engine is reachable; runtime-crate type, mirrored here. */
 export interface GuideCliStatus {
   available: boolean;
   /** Resolved absolute path, for display and debugging. */
   path: string | null;
+  /** Which CLI generates guides; null when none was found. */
+  engine: GuideEngine | null;
 }
 
-/** Probe for the `claude` CLI so the Guide button can disable itself. */
+/** Probe for a guide engine so the Guide button can disable itself. */
 export function guideCliStatus(): Promise<GuideCliStatus> {
   return invoke("guide_cli_status");
 }
 
 /**
- * Generate a review guide by running the user's `claude` CLI over the
- * diff; validates, persists (replacing any previous guide for the same
+ * Generate a review guide by running the user's `claude` or `amp` CLI over
+ * the diff; validates, persists (replacing any previous guide for the same
  * coordinates), and resolves with the stored guide. Long-running (~120s
  * ceiling); rejects with a user-readable message.
  */

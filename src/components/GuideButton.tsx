@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import type { GuideEngine } from "../ipc";
 import type { GuideState } from "./useGuide";
 import { Toast } from "./useToast";
 
@@ -9,7 +10,7 @@ type GuideButtonProps = Pick<
   | "generating"
   | "error"
   | "clearError"
-  | "cliAvailable"
+  | "engine"
   | "onGenerate"
 > & {
   /** An active review is displayed (same gate as Export). */
@@ -18,14 +19,18 @@ type GuideButtonProps = Pick<
   emptyDiff: boolean;
 };
 
-const CONSENT = "sends the diff to Anthropic through your Claude Code account";
+/** Where clicking sends the diff, per engine. */
+const CONSENT: Record<GuideEngine, string> = {
+  "claude-code": "sends the diff to Anthropic through your Claude Code account",
+  amp: "sends the diff to Amp through your Amp account",
+};
 
 /**
  * Toolbar button for the review guide: click generates (or regenerates) it by
- * running the user's `claude` CLI over the diff; disabled while that runs,
- * and Esc cancels (ReviewShell's global keydown). Generation is explicit
- * consent: clicking is what sends the diff to Anthropic, so the tooltip says
- * so.
+ * running the user's `claude` or `amp` CLI over the diff; disabled while that
+ * runs, and Esc cancels (ReviewShell's global keydown). Generation is
+ * explicit consent: clicking is what sends the diff to Anthropic or Amp, so
+ * the tooltip names which one.
  */
 export function GuideButton({
   hasTarget,
@@ -35,7 +40,7 @@ export function GuideButton({
   generating,
   error,
   clearError,
-  cliAvailable,
+  engine,
   onGenerate,
 }: GuideButtonProps) {
   // Backend failure messages are user-readable; show them verbatim and let
@@ -55,16 +60,17 @@ export function GuideButton({
       ? "Guides need an active review"
       : emptyDiff
         ? "No changes to guide"
-        : !cliAvailable
-          ? "Install Claude Code to generate guides"
+        : engine === null
+          ? "Install Claude Code or Amp to generate guides"
           : null;
+  const consent = engine === null ? "" : CONSENT[engine];
   const title =
     blocked ??
     (guide === null
-      ? `Generate a review guide — ${CONSENT}`
+      ? `Generate a review guide — ${consent}`
       : isStale
-        ? `The diff has changed since the guide was generated — click to regenerate (${CONSENT})`
-        : `Regenerate the review guide — ${CONSENT}`);
+        ? `The diff has changed since the guide was generated — click to regenerate (${consent})`
+        : `Regenerate the review guide — ${consent}`);
 
   return (
     <>
