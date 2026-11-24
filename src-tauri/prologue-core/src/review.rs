@@ -862,7 +862,7 @@ mod tests {
         // Archived comments stay readable...
         assert_eq!(list_comments_impl(&conn, review.id).unwrap().len(), 2);
         // ...but every mutation is refused.
-        let err = update_comment_impl(&conn, comment.id, "rewrite", None).unwrap_err();
+        let err = update_comment_impl(&conn, comment.id, "rewrite", None, None).unwrap_err();
         assert!(err.contains("read-only"), "{err}");
         let err = delete_comment_impl(&conn, comment.id).unwrap_err();
         assert!(err.contains("read-only"), "{err}");

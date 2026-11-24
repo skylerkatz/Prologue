@@ -114,6 +114,9 @@ export interface WebViewer {
   id: string;
   displayName: string;
   email: string | null;
+  /** The thread's owner: may edit and delete anyone's comments (the
+   * server enforces it). */
+  isOwner: boolean;
 }
 
 let viewer: WebViewer | null = null;

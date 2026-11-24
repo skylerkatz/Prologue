@@ -198,6 +198,10 @@ const MIGRATIONS: &[&str] = &[
         updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
     CREATE INDEX amp_sends_by_review ON amp_sends (review_id);",
+    // v10: who last edited a comment when that was not its author (the
+    // thread owner through prologue-server may edit anyone's comment;
+    // `author` stays the writer). NULL when the author's own text stands.
+    "ALTER TABLE comments ADD COLUMN edited_by TEXT;",
 ];
 
 /// The newest schema version this build knows how to read and migrate to.

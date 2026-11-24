@@ -89,7 +89,12 @@ author: string,
  * The Amp user id behind `author` (web UI through an Amp portal);
  * None for the app, the CLI, and older comments.
  */
-authorId: string | null, createdAt: string, updatedAt: string, };
+authorId: string | null, 
+/**
+ * Display name of whoever last edited the body when it was not the
+ * author (a thread owner through prologue-server); None otherwise.
+ */
+editedBy: string | null, createdAt: string, updatedAt: string, };
 export type NewComment = { reviewId: number, level: CommentLevel, filePath?: string, side?: CommentSide, startLine?: number, endLine?: number, 
 /**
  * Set to any comment in a thread to reply; the reply attaches to the

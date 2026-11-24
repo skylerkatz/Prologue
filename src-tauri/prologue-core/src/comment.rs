@@ -102,6 +102,9 @@ pub struct Comment {
     /// The Amp user id behind `author` (web UI through an Amp portal);
     /// None for the app, the CLI, and older comments.
     pub author_id: Option<String>,
+    /// Display name of whoever last edited the body when it was not the
+    /// author (a thread owner through prologue-server); None otherwise.
+    pub edited_by: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -156,7 +159,7 @@ pub fn comment_count(conn: &Connection, review_id: i64) -> Result<i64, String> {
 /// [`comment_row`]) so this list's order can never silently drift out of
 /// sync with the mapping; the constant just keeps the queries explicit.
 const COMMENT_COLUMNS: &str = "id, review_id, level, file_path, side, start_line, end_line, \
-     code_anchor, commit_sha, state, body, parent_id, author, author_id, created_at, updated_at";
+     code_anchor, commit_sha, state, body, parent_id, author, author_id, edited_by, created_at, updated_at";
 
 /// Raw column values for one comment row, read by name inside the rusqlite
 /// row callback; parsed into a [`Comment`] by [`comment_from_row`] outside
@@ -176,6 +179,7 @@ struct CommentRow {
     parent_id: Option<i64>,
     author: String,
     author_id: Option<String>,
+    edited_by: Option<String>,
     created_at: String,
     updated_at: String,
 }
@@ -196,6 +200,7 @@ fn comment_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<CommentRow> {
         parent_id: r.get("parent_id")?,
         author: r.get("author")?,
         author_id: r.get("author_id")?,
+        edited_by: r.get("edited_by")?,
         created_at: r.get("created_at")?,
         updated_at: r.get("updated_at")?,
     })
@@ -224,6 +229,7 @@ fn comment_from_row(row: CommentRow) -> Result<Comment, String> {
         parent_id: row.parent_id,
         author: row.author,
         author_id: row.author_id,
+        edited_by: row.edited_by,
         created_at: row.created_at,
         updated_at: row.updated_at,
     })
@@ -457,11 +463,14 @@ pub const STALE_EDIT_ERROR: &str = "Someone else changed";
 /// editor opened against: when given and the comment has changed since,
 /// the save is refused (with the latest text in the message) instead of
 /// silently overwriting another person's edit. None saves unconditionally.
+/// `edited_by` names an editor who is not the author (None: the author's
+/// own edit, which clears any earlier "edited by").
 pub fn update_comment_impl(
     conn: &Connection,
     comment_id: i64,
     body: &str,
     expected_updated_at: Option<&str>,
+    edited_by: Option<&str>,
 ) -> Result<Comment, String> {
     if body.trim().is_empty() {
         return Err("Comment text cannot be empty".to_owned());
@@ -482,12 +491,12 @@ pub fn update_comment_impl(
     let result = guarded_comment_mutation(conn, comment_id, || {
         conn.execute(
             &format!(
-                "UPDATE comments SET body = ?1, updated_at = {NOW}
+                "UPDATE comments SET body = ?1, edited_by = ?4, updated_at = {NOW}
                  WHERE id = ?2 AND (?3 IS NULL OR updated_at = ?3) AND EXISTS (
                      SELECT 1 FROM reviews
                      WHERE id = comments.review_id AND status = 'active')"
             ),
-            (body, comment_id, expected_updated_at),
+            (body, comment_id, expected_updated_at, edited_by),
         )
     });
     if let Err(e) = result {
@@ -1004,23 +1013,23 @@ mod tests {
 
         // updated_at has millisecond precision; keep the versions apart.
         std::thread::sleep(std::time::Duration::from_millis(5));
-        let edited = update_comment_impl(&conn, comment.id, "v2", None).unwrap();
+        let edited = update_comment_impl(&conn, comment.id, "v2", None, None).unwrap();
         assert_eq!(edited.body, "v2");
         assert_eq!(edited.id, comment.id);
 
         // An editor opened on v1 cannot overwrite v2; it is told v2's text.
-        let err = update_comment_impl(&conn, comment.id, "mine", Some(&comment.updated_at))
+        let err = update_comment_impl(&conn, comment.id, "mine", Some(&comment.updated_at), None)
             .unwrap_err();
         assert!(err.starts_with(STALE_EDIT_ERROR) && err.contains("v2"), "{err}");
         assert_eq!(get_comment(&conn, comment.id).unwrap().body, "v2");
         // Saving against the version on screen goes through.
-        let saved = update_comment_impl(&conn, comment.id, "v3", Some(&edited.updated_at)).unwrap();
+        let saved = update_comment_impl(&conn, comment.id, "v3", Some(&edited.updated_at), None).unwrap();
         assert_eq!(saved.body, "v3");
 
         delete_comment_impl(&conn, comment.id).unwrap();
         assert!(list_comments_impl(&conn, review.id).unwrap().is_empty());
         assert!(delete_comment_impl(&conn, comment.id).is_err());
-        assert!(update_comment_impl(&conn, comment.id, "gone", None).is_err());
+        assert!(update_comment_impl(&conn, comment.id, "gone", None, None).is_err());
     }
 
     #[test]
@@ -1283,7 +1292,7 @@ mod tests {
         let root = create(&conn, &fixture, new_comment(review.id, CommentLevel::Review, "root"));
         let r = create(&conn, &fixture, reply(review.id, root.id, "v1"));
 
-        let edited = update_comment_impl(&conn, r.id, "v2", None).unwrap();
+        let edited = update_comment_impl(&conn, r.id, "v2", None, None).unwrap();
         assert_eq!(edited.body, "v2");
         assert_eq!(edited.parent_id, Some(root.id));
     }
@@ -1458,7 +1467,7 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.contains("read-only"), "{err}");
-        let err = update_comment_impl(&conn, r.id, "rewrite", None).unwrap_err();
+        let err = update_comment_impl(&conn, r.id, "rewrite", None, None).unwrap_err();
         assert!(err.contains("read-only"), "{err}");
         let err = delete_comment_impl(&conn, r.id).unwrap_err();
         assert!(err.contains("read-only"), "{err}");

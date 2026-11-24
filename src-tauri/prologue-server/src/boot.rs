@@ -236,7 +236,7 @@ pub async fn index(State(state): State<Arc<AppState>>, uri: Uri, headers: Header
     let Ok(html) = std::fs::read_to_string(state.dist.join("index.html")) else {
         return (StatusCode::NOT_FOUND, "No index.html — run `npm run build`").into_response();
     };
-    let user = super::AmpUser::from_headers(&headers);
+    let user = super::AmpUser::from_headers(&headers, &state.owner);
     let boot = {
         let state = Arc::clone(&state);
         tokio::task::spawn_blocking(move || boot_state(&state, user.as_ref(), &headers))

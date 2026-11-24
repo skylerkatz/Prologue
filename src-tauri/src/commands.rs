@@ -176,7 +176,7 @@ pub fn update_comment(
     expected_updated_at: Option<String>,
 ) -> Result<Comment, String> {
     let conn = lock(&db)?;
-    review::update_comment_impl(&conn, comment_id, &body, expected_updated_at.as_deref())
+    review::update_comment_impl(&conn, comment_id, &body, expected_updated_at.as_deref(), None)
 }
 
 #[tauri::command]

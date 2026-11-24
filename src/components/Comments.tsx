@@ -242,10 +242,12 @@ export function CommentCard({
   const location = describeLocation(comment);
   const ampSent = useContext(AmpSentContext);
   const author = useAuthorLabel(comment);
-  // Comments by an Amp user are theirs to edit or delete — the server
-  // enforces it; the app's, the agent's, and unattributed ones stay open
-  // to all.
-  const mayModify = comment.authorId === null || author.you;
+  const viewer = useSyncExternalStore(subscribeWebViewer, getWebViewer);
+  // Comments by an Amp user are theirs (and the thread owner's) to edit or
+  // delete — the server enforces it; the app's, the agent's, and
+  // unattributed ones stay open to all.
+  const mayModify =
+    comment.authorId === null || author.you || viewer?.isOwner === true;
   const ampTracked = ampSent !== null && !isReply && comment.state === "open";
   const ampSending = ampTracked && ampSent.sending.has(comment.id);
   const ampPending =
@@ -278,7 +280,10 @@ export function CommentCard({
         )}
         <span className="comment-time">
           {formatTime(comment.createdAt)}
-          {comment.updatedAt !== comment.createdAt && " (edited)"}
+          {comment.updatedAt !== comment.createdAt &&
+            (comment.editedBy !== null
+              ? ` (edited by ${comment.editedBy})`
+              : " (edited)")}
         </span>
         {closed && (
           <span className={`comment-state comment-state-${comment.state}`}>

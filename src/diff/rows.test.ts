@@ -103,6 +103,7 @@ function comment(over: Partial<Comment> = {}): Comment {
     parentId: null,
     author: "reviewer",
     authorId: null,
+    editedBy: null,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
     ...over,
