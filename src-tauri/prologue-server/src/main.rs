@@ -9,6 +9,7 @@
 //!   Tauri events (`repo-changed`, `comments-changed`). The first event of
 //!   every connection is `hello`, so a reconnecting client can catch up.
 //! - `GET /api/config` — the repo and base ref this server was started for.
+//! - `GET /api/me` — the Amp user the portal says is asking (or null).
 //!
 //! The command bodies are the same `prologue-core` / `prologue-runtime`
 //! calls `src-tauri/src/commands.rs` makes; only the transport differs.
@@ -16,7 +17,7 @@
 mod amp;
 
 use axum::extract::{Path as UrlPath, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -124,6 +125,44 @@ impl AppState {
     }
 }
 
+/// The Amp user behind a request, from the identity headers the Amp portal
+/// proxy adds for the thread's owner and its multiplayer contributors.
+/// Requests without them (the CLI's machine, in-orb tools) have none and
+/// keep the plain "reviewer" authorship.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct AmpUser {
+    id: String,
+    display_name: String,
+    email: Option<String>,
+}
+
+impl AmpUser {
+    fn from_headers(headers: &HeaderMap) -> Option<AmpUser> {
+        let header = |name: &str| {
+            let raw = headers.get(name)?.to_str().ok()?.trim();
+            // Non-ASCII values arrive percent-encoded as UTF-8
+            // (decodeURIComponent semantics); visible ASCII arrives as is,
+            // so a value that does not decode is taken literally.
+            let value = percent_encoding::percent_decode_str(raw)
+                .decode_utf8()
+                .map_or_else(|_| raw.to_owned(), |v| v.into_owned());
+            (!value.is_empty()).then_some(value)
+        };
+        let id = header("x-amp-user-id")?;
+        // Comment authors are printable and at most 64 characters (the
+        // core's rule); a display name is shown, so fit it rather than
+        // refuse the comment.
+        let display_name: String = header("x-amp-user-display-name")
+            .unwrap_or_else(|| id.clone())
+            .chars()
+            .filter(|c| !c.is_control())
+            .take(64)
+            .collect();
+        Some(AmpUser { id, display_name, email: header("x-amp-user-email") })
+    }
+}
+
 /// A command's JSON args object, looked up by the camelCase key the
 /// frontend sends (Tauri converts those to snake_case params; we read them
 /// as sent). A missing key reads as null, so `Option` args may be omitted.
@@ -172,7 +211,12 @@ impl From<&str> for Failure {
 
 /// The Tauri command table (src-tauri/src/lib.rs), over HTTP. Blocking —
 /// git and SQLite work — so the handler runs it on a blocking thread.
-fn dispatch(state: &AppState, command: &str, value: Value) -> Result<Value, Failure> {
+fn dispatch(
+    state: &AppState,
+    command: &str,
+    value: Value,
+    user: Option<&AmpUser>,
+) -> Result<Value, Failure> {
     let a = Args { command, value };
     match command {
         "open_repo" => ok(repo::open_repo(a.get("path")?)?),
@@ -260,7 +304,11 @@ fn dispatch(state: &AppState, command: &str, value: Value) -> Result<Value, Fail
             ok(review::list_comments_impl(&conn, a.get("reviewId")?)?)
         }
         "create_comment" => {
-            let comment: NewComment = a.get("comment")?;
+            let mut comment: NewComment = a.get("comment")?;
+            if let Some(user) = user {
+                comment.author = Some(user.display_name.clone());
+                comment.author_id = Some(user.id.clone());
+            }
             let spec = a.spec()?;
             let conn = state.db.lock()?;
             ok(review::create_comment_impl(&conn, &spec, comment)?)
@@ -390,9 +438,12 @@ fn dispatch(state: &AppState, command: &str, value: Value) -> Result<Value, Fail
 async fn invoke(
     State(state): State<Arc<AppState>>,
     UrlPath(command): UrlPath<String>,
+    headers: HeaderMap,
     Json(args): Json<Value>,
 ) -> Response {
-    let result = tokio::task::spawn_blocking(move || dispatch(&state, &command, args)).await;
+    let user = AmpUser::from_headers(&headers);
+    let result =
+        tokio::task::spawn_blocking(move || dispatch(&state, &command, args, user.as_ref())).await;
     match result {
         Ok(Ok(value)) => Json(value).into_response(),
         Ok(Err(Failure::Command(e))) => (StatusCode::BAD_REQUEST, Json(e)).into_response(),
@@ -407,6 +458,12 @@ async fn invoke(
 
 async fn config(State(state): State<Arc<AppState>>) -> Json<WebConfig> {
     Json(state.config.clone())
+}
+
+/// Echoes the portal's identity headers so the UI can tell the viewer's own
+/// comments from other people's; null outside a portal.
+async fn me(headers: HeaderMap) -> Json<Option<AmpUser>> {
+    Json(AmpUser::from_headers(&headers))
 }
 
 async fn event_stream(
@@ -442,6 +499,7 @@ fn router(state: Arc<AppState>, dist: &std::path::Path) -> Router {
         .route("/api/invoke/{command}", post(invoke))
         .route("/api/events", get(event_stream))
         .route("/api/config", get(config))
+        .route("/api/me", get(me))
         .fallback_service(frontend)
         .with_state(state)
 }
@@ -564,7 +622,16 @@ mod tests {
     }
 
     fn call(state: &AppState, command: &str, args: Value) -> Result<Value, String> {
-        dispatch(state, command, args).map_err(|e| match e {
+        call_as(state, None, command, args)
+    }
+
+    fn call_as(
+        state: &AppState,
+        user: Option<&AmpUser>,
+        command: &str,
+        args: Value,
+    ) -> Result<Value, String> {
+        dispatch(state, command, args, user).map_err(|e| match e {
             Failure::Unknown(e) => format!("unknown: {e}"),
             Failure::Command(e) => e,
         })
@@ -603,6 +670,62 @@ mod tests {
         let listed = call(&state, "list_comments", json!({ "reviewId": review_id })).unwrap();
         assert_eq!(listed.as_array().unwrap().len(), 1);
         assert_eq!(listed[0]["body"], "why beta?");
+    }
+
+    /// Through a portal, comments and replies are stored under the Amp
+    /// user's id and display name — whatever author the payload claims.
+    /// Without the headers they stay the reviewer's.
+    #[test]
+    fn portal_identity_headers_author_comments() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-amp-user-id", "user_ada".parse().unwrap());
+        // "Ada Lovelacé" as Amp sends non-ASCII: percent-encoded UTF-8.
+        headers.insert("x-amp-user-display-name", "Ada%20Lovelac%C3%A9".parse().unwrap());
+        headers.insert("x-amp-user-email", "ada@example.com".parse().unwrap());
+        let ada = AmpUser::from_headers(&headers).unwrap();
+        assert_eq!(ada.display_name, "Ada Lovelacé");
+        assert_eq!(AmpUser::from_headers(&HeaderMap::new()), None);
+        // Visible ASCII arrives unencoded; a stray % stays literal.
+        let mut literal = HeaderMap::new();
+        literal.insert("x-amp-user-id", "user_b".parse().unwrap());
+        literal.insert("x-amp-user-display-name", "100% Bob".parse().unwrap());
+        assert_eq!(AmpUser::from_headers(&literal).unwrap().display_name, "100% Bob");
+
+        let fixture = FixtureRepo::standard_review_fixture();
+        let dir = tempfile::tempdir().unwrap();
+        let state = state_for(&fixture, &dir);
+        let repo_path = fixture.path();
+        let opened = call(
+            &state,
+            "open_review",
+            json!({ "repoPath": repo_path, "branch": "feature", "baseRef": "main", "mode": "committed" }),
+        )
+        .unwrap();
+        let review_id = opened["review"]["id"].as_i64().unwrap();
+        let create = |user: Option<&AmpUser>, comment: Value| {
+            call_as(
+                &state,
+                user,
+                "create_comment",
+                json!({ "repoPath": repo_path, "base": "main", "head": "feature",
+                        "mode": "committed", "comment": comment }),
+            )
+            .unwrap()
+        };
+
+        let root = create(
+            Some(&ada),
+            json!({ "reviewId": review_id, "level": "review", "body": "hi",
+                    "author": "someone else", "authorId": "user_spoof" }),
+        );
+        assert_eq!((&root["author"], &root["authorId"]), (&json!("Ada Lovelacé"), &json!("user_ada")));
+        let reply = create(
+            Some(&ada),
+            json!({ "reviewId": review_id, "level": "review", "parentId": root["id"], "body": "ok" }),
+        );
+        assert_eq!(reply["authorId"], "user_ada");
+        let plain = create(None, json!({ "reviewId": review_id, "level": "review", "body": "cli" }));
+        assert_eq!((&plain["author"], &plain["authorId"]), (&json!("reviewer"), &Value::Null));
     }
 
     #[test]

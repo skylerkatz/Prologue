@@ -1,8 +1,9 @@
-import { useContext, useRef, useState } from "react";
+import { useContext, useRef, useState, useSyncExternalStore } from "react";
 import { AmpSentContext } from "./useAmpSend";
 import type { Comment, CommentState } from "../types";
 import { errorText } from "../ipc";
 import { isTauri } from "../platform";
+import { getWebViewer, subscribeWebViewer } from "../web";
 
 /**
  * Draft store shared by composers and comment editors. Virtualized rows
@@ -145,6 +146,21 @@ function authorName(author: string): string {
     : author;
 }
 
+/** "You" for the app's own writes and the viewer's portal comments; the
+ * author's name for everyone else. Until /api/me answers (or outside a
+ * portal) portal comments show their author's name. */
+function useAuthorLabel(comment: Comment): { label: string; you: boolean } {
+  const viewer = useSyncExternalStore(subscribeWebViewer, getWebViewer);
+  if (comment.authorId !== null) {
+    const you = viewer !== null && viewer.id === comment.authorId;
+    return { label: you ? "You" : comment.author, you };
+  }
+  if (comment.author === "reviewer") {
+    return { label: "You", you: true };
+  }
+  return { label: authorName(comment.author), you: false };
+}
+
 interface CommentCardProps {
   comment: Comment;
   editing: boolean;
@@ -220,6 +236,7 @@ export function CommentCard({
   const isReply = comment.parentId !== null;
   const location = describeLocation(comment);
   const ampSent = useContext(AmpSentContext);
+  const author = useAuthorLabel(comment);
   const ampPending =
     ampSent !== null && !isReply && comment.state === "open" && !ampSent.has(comment.id);
   return (
@@ -230,14 +247,18 @@ export function CommentCard({
       <header className="comment-header">
         {/* Teal avatar circle carrying the mono comment ID. */}
         <span className="comment-id">C{comment.id}</span>
-        {comment.author === "reviewer" ? (
+        {author.you ? (
           <span className="comment-you">You</span>
         ) : (
           <span
             className="comment-author"
-            title={`Written by ${authorName(comment.author)} (externally, via the prologue CLI)`}
+            title={
+              comment.authorId !== null
+                ? `Written by ${author.label} in Amp`
+                : `Written by ${author.label} (externally, via the prologue CLI)`
+            }
           >
-            {authorName(comment.author)}
+            {author.label}
           </span>
         )}
         {isReply && <span className="comment-reply-tag">(reply)</span>}

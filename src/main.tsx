@@ -15,12 +15,14 @@ import "@fontsource/ibm-plex-mono/600.css";
 import "@fontsource/ibm-plex-mono/700.css";
 import App from "./App";
 import { isTauri } from "./platform";
+import { loadWebViewer } from "./web";
 // Amp look for the browser UI, scoped to :root[data-ui="web"] so the Mac
 // app keeps Prologue's brand.
 import "./web-theme.css";
 
 if (!isTauri()) {
   document.documentElement.dataset.ui = "web";
+  loadWebViewer();
 }
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(

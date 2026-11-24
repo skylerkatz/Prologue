@@ -3539,6 +3539,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "clap",
+ "percent-encoding",
  "prologue-core",
  "prologue-runtime",
  "serde",

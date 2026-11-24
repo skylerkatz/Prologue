@@ -212,6 +212,7 @@ mod tests {
             parent_id,
             body: body.to_owned(),
             author: None,
+            author_id: None,
         }
     }
 

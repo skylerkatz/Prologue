@@ -44,6 +44,7 @@ fn line_comment(review_id: i64, start: u32, end: u32, body: &str) -> NewComment 
         parent_id: None,
         body: body.to_owned(),
         author: None,
+        author_id: None,
     }
 }
 

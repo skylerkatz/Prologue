@@ -565,6 +565,7 @@ mod tests {
             parent_id: None,
             body: body.to_owned(),
             author: None,
+            author_id: None,
         }
     }
 
@@ -585,6 +586,7 @@ mod tests {
             parent_id: None,
             body: "needs work".to_owned(),
             author: None,
+            author_id: None,
         }
     }
 

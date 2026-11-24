@@ -127,6 +127,10 @@ const MIGRATIONS: &[&str] = &[
         files_json TEXT NOT NULL
     );
     CREATE INDEX guide_sections_by_guide ON guide_sections (guide_id, position);",
+    // v6: who wrote a comment as an Amp user. prologue-server fills it (and
+    // `author` with their display name) from the Amp portal's identity
+    // headers; NULL for every other writer (the app, the CLI, older rows).
+    "ALTER TABLE comments ADD COLUMN author_id TEXT;",
 ];
 
 /// The newest schema version this build knows how to read and migrate to.

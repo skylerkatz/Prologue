@@ -96,8 +96,12 @@ pub struct Comment {
     pub parent_id: Option<i64>,
     /// Who wrote it: 'reviewer' for the app's own writes, anything else for
     /// external writers (e.g. 'agent' via the prologue CLI). The UI badges
-    /// non-reviewer authors.
+    /// non-reviewer authors. Comments written through the web UI by an
+    /// Amp user carry their display name.
     pub author: String,
+    /// The Amp user id behind `author` (web UI through an Amp portal);
+    /// None for the app, the CLI, and older comments.
+    pub author_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -132,6 +136,11 @@ pub struct NewComment {
     #[serde(default)]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub author: Option<String>,
+    /// Set only by trusted Rust callers (prologue-server, from the Amp
+    /// portal's identity headers); never read from an IPC payload.
+    #[serde(skip_deserializing)]
+    #[cfg_attr(feature = "ts", ts(skip))]
+    pub author_id: Option<String>,
 }
 
 /// How many comments (roots and replies) a review holds — a bare COUNT, so
@@ -147,7 +156,7 @@ pub fn comment_count(conn: &Connection, review_id: i64) -> Result<i64, String> {
 /// [`comment_row`]) so this list's order can never silently drift out of
 /// sync with the mapping; the constant just keeps the queries explicit.
 const COMMENT_COLUMNS: &str = "id, review_id, level, file_path, side, start_line, end_line, \
-     code_anchor, commit_sha, state, body, parent_id, author, created_at, updated_at";
+     code_anchor, commit_sha, state, body, parent_id, author, author_id, created_at, updated_at";
 
 /// Raw column values for one comment row, read by name inside the rusqlite
 /// row callback; parsed into a [`Comment`] by [`comment_from_row`] outside
@@ -166,6 +175,7 @@ struct CommentRow {
     body: String,
     parent_id: Option<i64>,
     author: String,
+    author_id: Option<String>,
     created_at: String,
     updated_at: String,
 }
@@ -185,6 +195,7 @@ fn comment_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<CommentRow> {
         body: r.get("body")?,
         parent_id: r.get("parent_id")?,
         author: r.get("author")?,
+        author_id: r.get("author_id")?,
         created_at: r.get("created_at")?,
         updated_at: r.get("updated_at")?,
     })
@@ -212,6 +223,7 @@ fn comment_from_row(row: CommentRow) -> Result<Comment, String> {
         body: row.body,
         parent_id: row.parent_id,
         author: row.author,
+        author_id: row.author_id,
         created_at: row.created_at,
         updated_at: row.updated_at,
     })
@@ -306,6 +318,7 @@ pub fn try_create_comment(
             parent_id,
             &comment.body,
             author,
+            comment.author_id.as_deref(),
         )
         .map_err(CoreError::from);
     }
@@ -345,8 +358,8 @@ pub fn try_create_comment(
     let changed = with_active_review_guard(conn, comment.review_id, || {
         conn.execute(
             "INSERT INTO comments (review_id, level, file_path, side, start_line, end_line,
-                                   code_anchor, commit_sha, body, author)
-             SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10
+                                   code_anchor, commit_sha, body, author, author_id)
+             SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11
              WHERE EXISTS (SELECT 1 FROM reviews WHERE id = ?1 AND status = 'active')",
             (
                 comment.review_id,
@@ -359,6 +372,7 @@ pub fn try_create_comment(
                 &commit_sha,
                 &comment.body,
                 author,
+                &comment.author_id,
             ),
         )
     })?;
@@ -400,6 +414,7 @@ fn create_reply(
     parent_id: i64,
     body: &str,
     author: &str,
+    author_id: Option<&str>,
 ) -> Result<Comment, String> {
     let parent = get_comment(conn, parent_id)?;
     let root = match parent.parent_id {
@@ -422,10 +437,10 @@ fn create_reply(
     let commit_sha = diff::resolve_commit(&repo, head)?.id().to_string();
     let changed = with_active_review_guard(conn, review_id, || {
         conn.execute(
-            "INSERT INTO comments (review_id, level, parent_id, commit_sha, body, author)
-             SELECT ?1, ?2, ?3, ?4, ?5, ?6
+            "INSERT INTO comments (review_id, level, parent_id, commit_sha, body, author, author_id)
+             SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7
              WHERE EXISTS (SELECT 1 FROM reviews WHERE id = ?1 AND status = 'active')",
-            (review_id, root.level.as_str(), root.id, &commit_sha, body, author),
+            (review_id, root.level.as_str(), root.id, &commit_sha, body, author, author_id),
         )
     })?;
     if changed == 0 {
@@ -748,6 +763,7 @@ mod tests {
             parent_id: None,
             body: body.to_owned(),
             author: None,
+            author_id: None,
         }
     }
 
@@ -777,6 +793,7 @@ mod tests {
             parent_id: None,
             body: "needs work".to_owned(),
             author: None,
+            author_id: None,
         }
     }
 
@@ -1040,6 +1057,32 @@ mod tests {
             .map(|c| c.author)
             .collect();
         assert_eq!(authors, ["reviewer", "reviewer", "agent", "skyler"]);
+
+        // An Amp user (prologue-server) is stored by id, on roots and
+        // replies; nobody else has one.
+        let mut amp_root = new_comment(review.id, CommentLevel::Review, "from the portal");
+        amp_root.author = Some("Ada Lovelace".to_owned());
+        amp_root.author_id = Some("user_ada".to_owned());
+        let amp_root = create(&conn, &fixture, amp_root);
+        let mut amp_reply = reply(review.id, root.id, "agreed");
+        amp_reply.author = Some("Ada Lovelace".to_owned());
+        amp_reply.author_id = Some("user_ada".to_owned());
+        create(&conn, &fixture, amp_reply);
+        let ids: Vec<Option<String>> = list_comments_impl(&conn, review.id)
+            .unwrap()
+            .into_iter()
+            .map(|c| c.author_id)
+            .collect();
+        let ada = Some("user_ada".to_owned());
+        assert_eq!(ids, [None, None, None, None, ada.clone(), ada]);
+        assert_eq!(amp_root.author, "Ada Lovelace");
+
+        // A browser cannot claim an identity through the IPC payload.
+        let payload: NewComment = serde_json::from_value(serde_json::json!({
+            "reviewId": review.id, "level": "review", "body": "x", "authorId": "user_spoof",
+        }))
+        .unwrap();
+        assert_eq!(payload.author_id, None);
     }
 
     /// Author validation lives at the core choke point, so every caller —

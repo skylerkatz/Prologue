@@ -375,6 +375,7 @@ fn run(cli: Cli) -> Result<(), String> {
                     parent_id: None,
                     body,
                     author: Some(author),
+                    author_id: None,
                 },
             )
             .map_err(|e| with_anchor_hint(e, file.as_deref()))?;
@@ -397,6 +398,7 @@ fn run(cli: Cli) -> Result<(), String> {
                     parent_id: Some(parent_id),
                     body,
                     author: Some(author),
+                    author_id: None,
                 },
             )?;
             print_created(&created, json)?;
@@ -808,6 +810,7 @@ mod tests {
                 parent_id: None,
                 body: "note".to_owned(),
                 author: Some("agent".to_owned()),
+                author_id: None,
             },
         )
         .unwrap();

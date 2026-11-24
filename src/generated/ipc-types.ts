@@ -81,9 +81,15 @@ parentId: number | null,
 /**
  * Who wrote it: 'reviewer' for the app's own writes, anything else for
  * external writers (e.g. 'agent' via the prologue CLI). The UI badges
- * non-reviewer authors.
+ * non-reviewer authors. Comments written through the web UI by an
+ * Amp user carry their display name.
  */
-author: string, createdAt: string, updatedAt: string, };
+author: string, 
+/**
+ * The Amp user id behind `author` (web UI through an Amp portal);
+ * None for the app, the CLI, and older comments.
+ */
+authorId: string | null, createdAt: string, updatedAt: string, };
 export type NewComment = { reviewId: number, level: CommentLevel, filePath?: string, side?: CommentSide, startLine?: number, endLine?: number, 
 /**
  * Set to any comment in a thread to reply; the reply attaches to the

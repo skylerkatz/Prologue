@@ -387,6 +387,7 @@ fn post_reply(
             parent_id: Some(reply.thread_id),
             body: reply.body.clone(),
             author: Some(author.to_owned()),
+            author_id: None,
         },
     )
 }
@@ -509,6 +510,7 @@ Revised:
                     parent_id: None,
                     body: body.to_owned(),
                     author: None,
+                    author_id: None,
                 },
             )
             .unwrap()

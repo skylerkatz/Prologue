@@ -30,6 +30,44 @@ export function webConfig(): Promise<WebConfig> {
   return configPromise;
 }
 
+/** The Amp user viewing this page, as the portal's identity headers name
+ * them; null outside a portal (or when the lookup fails). */
+export interface WebViewer {
+  id: string;
+  displayName: string;
+  email: string | null;
+}
+
+let viewer: WebViewer | null = null;
+let viewerStarted = false;
+const viewerListeners = new Set<() => void>();
+
+/** Ask the server once who is viewing; main.tsx starts it at load, so it
+ * runs in parallel with the first diff load and never blocks rendering. */
+export function loadWebViewer(): void {
+  if (viewerStarted) {
+    return;
+  }
+  viewerStarted = true;
+  fetch("/api/me")
+    .then((res) => (res.ok ? (res.json() as Promise<WebViewer | null>) : null))
+    .then((me) => {
+      viewer = me;
+      viewerListeners.forEach((notify) => notify());
+    })
+    .catch(() => {});
+}
+
+/** useSyncExternalStore source for the viewer. */
+export function subscribeWebViewer(notify: () => void): () => void {
+  viewerListeners.add(notify);
+  return () => viewerListeners.delete(notify);
+}
+
+export function getWebViewer(): WebViewer | null {
+  return viewer;
+}
+
 // The native menu's state, mirrored from the commands that drive it in the
 // app; the keyboard stand-ins below read it.
 const menu = { repoOpen: false, hideResolved: false };
