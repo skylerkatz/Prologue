@@ -124,12 +124,21 @@ if ! git diff --quiet package.json package-lock.json src-tauri/tauri.conf.json; 
 fi
 git push origin "$BRANCH"
 
-gh release create "v$VERSION" \
-  --repo "$REPO" \
-  --target "$(git rev-parse HEAD)" \
-  --title "Prologue v$VERSION" \
-  --notes-file "$NOTES_FILE" \
-  "$DMG" "$TAR" "$SIG" "$MANIFEST"
+# The web-mode workflow (.github/workflows/release-web.yml) may already
+# have created this release from the tag; take it over rather than fail.
+if gh release view "v$VERSION" --repo "$REPO" >/dev/null 2>&1; then
+  gh release upload "v$VERSION" --repo "$REPO" --clobber \
+    "$DMG" "$TAR" "$SIG" "$MANIFEST"
+  gh release edit "v$VERSION" --repo "$REPO" --latest \
+    --title "Prologue v$VERSION" --notes-file "$NOTES_FILE"
+else
+  gh release create "v$VERSION" \
+      --repo "$REPO" \
+      --target "$(git rev-parse HEAD)" \
+      --title "Prologue v$VERSION" \
+      --notes-file "$NOTES_FILE" \
+      "$DMG" "$TAR" "$SIG" "$MANIFEST"
+fi
 
 echo
 echo "released v$VERSION → https://github.com/$REPO/releases/tag/v$VERSION"
