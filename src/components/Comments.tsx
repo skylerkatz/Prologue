@@ -1,4 +1,5 @@
-import { useRef, useState } from "react";
+import { useContext, useRef, useState } from "react";
+import { AmpSentContext } from "./useAmpSend";
 import type { Comment, CommentState } from "../types";
 import { errorText } from "../ipc";
 
@@ -209,6 +210,9 @@ export function CommentCard({
 
   const isReply = comment.parentId !== null;
   const location = describeLocation(comment);
+  const ampSent = useContext(AmpSentContext);
+  const ampPending =
+    ampSent !== null && !isReply && comment.state === "open" && !ampSent.has(comment.id);
   return (
     <article
       className={`comment-card${closed ? " comment-card-closed" : ""}${isReply ? " comment-card-reply" : ""}`}
@@ -246,6 +250,14 @@ export function CommentCard({
             title="The commented code changed since this comment was made — re-review it."
           >
             ⚠ code changed since commented
+          </span>
+        )}
+        {ampPending && (
+          <span
+            className="comment-flag comment-flag-pending"
+            title="Not sent to Amp yet — Send to Amp includes it"
+          >
+            pending
           </span>
         )}
         {orphaned && (

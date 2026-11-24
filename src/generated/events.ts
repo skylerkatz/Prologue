@@ -1,4 +1,4 @@
-// Generated from src-tauri/src/events.rs by its events test.
+// Generated from src-tauri/prologue-runtime/src/events.rs by its events test.
 // Do not edit — run `cargo test` in src-tauri to refresh.
 
 /** Debounced repo activity; payload is the watched repoPath string. */

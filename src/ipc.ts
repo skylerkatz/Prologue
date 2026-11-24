@@ -1,4 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke as tauriInvoke, isTauri } from "@tauri-apps/api/core";
+import { webInvoke } from "./web";
 import type {
   ArchivedReview,
   BranchList,
@@ -18,7 +19,13 @@ import type {
   DiffMode,
 } from "./types";
 
-// Typed wrappers around the Tauri commands.
+// Typed wrappers around the backend commands. In the Tauri app they go over
+// the Tauri bridge; in a browser (web mode, served by prologue-server) the
+// same command names and args go over HTTP — see web.ts.
+
+function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  return isTauri() ? tauriInvoke<T>(command, args) : webInvoke<T>(command, args);
+}
 
 /**
  * Normalize a rejected IPC value for display: the Rust side rejects with
@@ -265,6 +272,23 @@ export function findGuide(
   mode: DiffMode,
 ): Promise<Guide | null> {
   return invoke("find_guide", { reviewId, base, head, mode });
+}
+
+/** Web mode only: root comment ids already sent to Amp for this review. */
+export function ampSentComments(reviewId: number): Promise<number[]> {
+  return invoke("amp_sent_comments", { reviewId });
+}
+
+/**
+ * Web mode only: have the server POST the review's open, not-yet-sent
+ * comment ids to its Amp webhook (the URL stays on the server).
+ */
+export function sendToAmp(
+  repoPath: string,
+  base: string,
+  reviewId: number,
+): Promise<{ commentIds: string[]; count: number }> {
+  return invoke("send_to_amp", { repoPath, base, reviewId });
 }
 
 /** Full new-side text of a file, for the rendered markdown preview. */

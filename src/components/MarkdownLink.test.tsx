@@ -8,6 +8,8 @@ import {
   markdownLinkComponents,
 } from "./MarkdownLink";
 
+// The Tauri app's path: links go to the opener plugin.
+vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => true }));
 vi.mock("@tauri-apps/plugin-opener", () => ({
   openUrl: vi.fn(() => Promise.resolve()),
 }));

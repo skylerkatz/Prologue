@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { writeClipboard } from "../platform";
 import { useToast, type ToastMessage } from "./useToast";
 
 /**
@@ -16,7 +16,7 @@ export function useCopyPath(repoPath: string): {
   // Stable so handlers built on it don't defeat row memoization.
   const copyPath = useCallback(
     (relativePath: string, absolute: boolean) => {
-      void writeText(absolute ? `${repoPath}/${relativePath}` : relativePath)
+      void writeClipboard(absolute ? `${repoPath}/${relativePath}` : relativePath)
         .then(() =>
           showToast(
             absolute

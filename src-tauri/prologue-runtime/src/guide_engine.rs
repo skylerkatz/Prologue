@@ -23,7 +23,6 @@ use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
-use tauri::Manager;
 
 /// Hardcoded per settled design decision 3 — no settings surface in v1.
 const GUIDE_MODEL: &str = "sonnet";
@@ -393,7 +392,7 @@ fn ensure_review_active(conn: &Connection, review_id: i64) -> Result<(), String>
 /// is held only for the pre-flight archived check and the final save —
 /// never while the model runs, so the rest of the app stays responsive.
 fn generate_blocking(
-    app: &tauri::AppHandle,
+    db: &Db,
     job: &GuideJob,
     repo_path: String,
     base: String,
@@ -401,9 +400,8 @@ fn generate_blocking(
     mode: DiffMode,
     review_id: i64,
 ) -> Result<Guide, String> {
-    let db = app.state::<Db>();
     {
-        let conn = crate::commands::lock(&db)?;
+        let conn = db.lock()?;
         ensure_review_active(&conn, review_id)?;
     }
     let claude = resolve_claude().ok_or_else(|| MISSING_CLI_ERROR.to_owned())?;
@@ -431,7 +429,7 @@ fn generate_blocking(
         .map(|f| (f.path.clone(), f.fingerprint.clone()))
         .collect();
 
-    let conn = crate::commands::lock(&db)?;
+    let conn = db.lock()?;
     // The review could have been archived while the model ran.
     ensure_review_active(&conn, review_id)?;
     guide::save_guide_impl(
@@ -451,32 +449,34 @@ fn generate_blocking(
 
 /// Generate (or regenerate — a full replace) the review guide for the
 /// current diff coordinates. One at a time; `cancel_guide` kills the
-/// subprocess mid-run; the run times out after ~120s.
-#[tauri::command]
-pub async fn generate_guide(
-    app: tauri::AppHandle,
+/// subprocess mid-run; the run times out after ~120s. Blocks for the whole
+/// run — hosts call it from a blocking thread.
+pub fn generate_guide(
+    db: &Db,
+    runtime: &GuideRuntime,
     repo_path: String,
     base: String,
     head: String,
     mode: DiffMode,
     review_id: i64,
 ) -> Result<Guide, String> {
-    let job = app.state::<GuideRuntime>().begin()?;
-    let result = tauri::async_runtime::spawn_blocking({
-        let app = app.clone();
-        move || generate_blocking(&app, &job, repo_path, base, head, mode, review_id)
-    })
-    .await
-    .unwrap_or_else(|e| Err(format!("Guide generation task failed: {e}")));
-    app.state::<GuideRuntime>().finish();
-    result
+    /// Frees the slot even if the pipeline panics, so one bad run cannot
+    /// leave every later generation refused as busy.
+    struct Finish<'a>(&'a GuideRuntime);
+    impl Drop for Finish<'_> {
+        fn drop(&mut self) {
+            self.0.finish();
+        }
+    }
+    let job = runtime.begin()?;
+    let _finish = Finish(runtime);
+    generate_blocking(db, &job, repo_path, base, head, mode, review_id)
 }
 
 /// Kill the in-flight guide generation, if any; returns whether there was
-/// one. The generating command itself reports the cancellation as its
-/// error — this only pulls the trigger.
-#[tauri::command]
-pub fn cancel_guide(runtime: tauri::State<'_, GuideRuntime>) -> bool {
+/// one. The generating call itself reports the cancellation as its error —
+/// this only pulls the trigger.
+pub fn cancel_guide(runtime: &GuideRuntime) -> bool {
     match runtime.slot().as_ref() {
         Some(job) => {
             job.cancel();
@@ -496,18 +496,14 @@ pub struct GuideCliStatus {
 
 /// Whether the `claude` CLI is reachable — the UI disables the Guide
 /// button (with an install hint) when it is not. Cheap once installed (a
-/// cached-path check); a miss re-probes, including the login-shell lookup.
-#[tauri::command]
-pub async fn guide_cli_status() -> GuideCliStatus {
-    tauri::async_runtime::spawn_blocking(|| {
-        let path = resolve_claude();
-        GuideCliStatus {
-            available: path.is_some(),
-            path: path.map(|p| p.display().to_string()),
-        }
-    })
-    .await
-    .unwrap_or(GuideCliStatus { available: false, path: None })
+/// cached-path check); a miss re-probes, including the login-shell lookup,
+/// so hosts call it from a blocking thread.
+pub fn guide_cli_status() -> GuideCliStatus {
+    let path = resolve_claude();
+    GuideCliStatus {
+        available: path.is_some(),
+        path: path.map(|p| p.display().to_string()),
+    }
 }
 
 #[cfg(test)]

@@ -1,11 +1,14 @@
+//! Filesystem watches behind the frontend's auto-refresh: the open repo
+//! (`repo-changed`) and the app-data dir holding reviews.db
+//! (`comments-changed`). Hosts supply the emit callback — Tauri events in
+//! the app, the SSE broadcast in the web server.
+
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::sync::Mutex;
 use std::time::Duration;
 
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
-use tauri::{AppHandle, Emitter, Manager, State};
-
-use crate::events;
+use prologue_core::db::Db;
 
 /// Quiet period after the last filesystem event before one refresh fires.
 /// Long enough to coalesce a commit's burst of `.git` writes, short enough
@@ -15,93 +18,91 @@ const DEBOUNCE_WINDOW: Duration = Duration::from_millis(500);
 /// The single active watch, following the open repo: replaced on repo
 /// switch, dropped on close. Dropping the `RecommendedWatcher` stops event
 /// delivery, which disconnects the channel and ends the debounce thread.
-pub struct RepoWatcher(pub Mutex<Option<RecommendedWatcher>>);
+#[derive(Default)]
+pub struct RepoWatcher(Mutex<Option<RecommendedWatcher>>);
 
-impl Default for RepoWatcher {
-    fn default() -> Self {
-        Self(Mutex::new(None))
+impl RepoWatcher {
+    /// Watch `repo_path` (working tree + `.git`, recursively) and call
+    /// `emit` with the path, debounced, on activity. Replaces any previous
+    /// watch. Gitignored paths (node_modules/, target/, …) are filtered
+    /// out, so builds and installs running in the reviewed repo don't
+    /// trigger refreshes.
+    ///
+    /// The host's own SQLite writes cannot trigger this: reviews.db lives
+    /// in the app data dir, never inside the watched repository.
+    pub fn start(
+        &self,
+        repo_path: String,
+        emit: impl Fn(&str) + Send + 'static,
+    ) -> Result<(), String> {
+        let (tx, rx): (Sender<()>, Receiver<()>) = std::sync::mpsc::channel();
+
+        let filter = prologue_core::repo::RepoEventFilter::new(&repo_path)?;
+        let mut watcher = change_watcher(tx, move |path| filter.is_relevant(path), "file")?;
+
+        watcher
+            .watch(std::path::Path::new(&repo_path), RecursiveMode::Recursive)
+            .map_err(|e| format!("Failed to watch {repo_path}: {e}"))?;
+
+        std::thread::spawn(move || {
+            debounce_loop(&rx, DEBOUNCE_WINDOW, || emit(&repo_path));
+        });
+
+        // Storing the new watcher drops the previous one (if any), ending
+        // its event stream and debounce thread.
+        *self.0.lock().map_err(|_| "Watcher state poisoned")? = Some(watcher);
+        Ok(())
+    }
+
+    /// Drop the active watch (repo closed / back to the welcome page).
+    pub fn stop(&self) -> Result<(), String> {
+        *self.0.lock().map_err(|_| "Watcher state poisoned")? = None;
+        Ok(())
     }
 }
 
-/// Watch `repo_path` (working tree + `.git`, recursively) and emit a
-/// debounced `repo-changed` event on activity. Replaces any previous watch.
-/// Gitignored paths (node_modules/, target/, …) are filtered out, so builds
-/// and installs running in the reviewed repo don't trigger refreshes.
+/// Watch the app-data dir (where reviews.db and its -wal live) and call
+/// `emit`, debounced, when an external connection committed to the
+/// database. Called once at startup; the watch lives as long as the host.
+/// `data_version` reads the host connection's [`data_version`].
 ///
-/// The app's own SQLite writes cannot trigger this: reviews.db lives in the
-/// app data dir, never inside the watched repository.
-#[tauri::command]
-pub fn start_watching(
-    app: AppHandle,
-    state: State<RepoWatcher>,
-    repo_path: String,
+/// `PRAGMA data_version` on the host's own connection moves only when a
+/// DIFFERENT connection commits, so the host's own writes — which do
+/// produce filesystem events here — are filtered out and never
+/// self-trigger a refresh.
+pub fn start_db_watching(
+    dir: &std::path::Path,
+    data_version: impl Fn() -> Option<i64> + Send + 'static,
+    emit: impl Fn() + Send + 'static,
 ) -> Result<(), String> {
-    let (tx, rx): (Sender<()>, Receiver<()>) = std::sync::mpsc::channel();
-
-    let filter = prologue_core::repo::RepoEventFilter::new(&repo_path)?;
-    let mut watcher = change_watcher(tx, move |path| filter.is_relevant(path), "file")?;
-
-    watcher
-        .watch(std::path::Path::new(&repo_path), RecursiveMode::Recursive)
-        .map_err(|e| format!("Failed to watch {repo_path}: {e}"))?;
-
-    std::thread::spawn(move || {
-        debounce_loop(&rx, DEBOUNCE_WINDOW, || {
-            let _ = app.emit(events::REPO_CHANGED, repo_path.clone());
-        });
-    });
-
-    // Storing the new watcher drops the previous one (if any), ending its
-    // event stream and debounce thread.
-    *state.0.lock().map_err(|_| "Watcher state poisoned")? = Some(watcher);
-    Ok(())
-}
-
-/// Drop the active watch (repo closed / back to the welcome page).
-#[tauri::command]
-pub fn stop_watching(state: State<RepoWatcher>) -> Result<(), String> {
-    *state.0.lock().map_err(|_| "Watcher state poisoned")? = None;
-    Ok(())
-}
-
-/// Watch the app-data dir (where reviews.db and its -wal live) and emit a
-/// debounced `comments-changed` event when an external connection committed
-/// to the database. Called once at setup; the watch lives as long as the app.
-///
-/// `PRAGMA data_version` on the app's own connection moves only when a
-/// DIFFERENT connection commits, so the app's own writes — which do produce
-/// filesystem events here — are filtered out and never self-trigger a
-/// refresh.
-pub fn start_db_watching(app: AppHandle, dir: std::path::PathBuf) -> Result<(), String> {
     let (tx, rx): (Sender<()>, Receiver<()>) = std::sync::mpsc::channel();
 
     let mut watcher = change_watcher(tx, |_| true, "database")?;
 
     watcher
-        .watch(&dir, RecursiveMode::NonRecursive)
+        .watch(dir, RecursiveMode::NonRecursive)
         .map_err(|e| format!("Failed to watch {}: {e}", dir.display()))?;
 
     std::thread::spawn(move || {
         // The watcher moves in with the debounce thread and lives (keeps
-        // sending) for the app's lifetime, so this loop never exits.
+        // sending) for the host's lifetime, so this loop never exits.
         let _watcher = watcher;
-        let mut last = data_version(&app);
+        let mut last = data_version();
         debounce_loop(&rx, DEBOUNCE_WINDOW, || {
-            let current = data_version(&app);
+            let current = data_version();
             if current.is_some() && current != last {
                 last = current;
-                let _ = app.emit(events::COMMENTS_CHANGED, ());
+                emit();
             }
         });
     });
     Ok(())
 }
 
-/// The app connection's `PRAGMA data_version`; None if the database state
+/// The host connection's `PRAGMA data_version`; None if the database state
 /// is unavailable (poisoned lock), which skips the comparison rather than
 /// emitting spuriously.
-fn data_version(app: &AppHandle) -> Option<i64> {
-    let db = app.state::<prologue_core::db::Db>();
+pub fn data_version(db: &Db) -> Option<i64> {
     let conn = db.0.lock().ok()?;
     conn.pragma_query_value(None, "data_version", |r| r.get(0)).ok()
 }

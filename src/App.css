@@ -1807,6 +1807,12 @@ body.sidebar-resizing * {
 /* Orphaned variant: informational, not a warning — the thread already
    reads as an appendix in its file section, so it mutes instead of
    alarming like the code-changed flag above. */
+.comment-flag-pending {
+  color: var(--text-muted);
+  border-style: dashed;
+  border-color: var(--text-muted);
+}
+
 .comment-flag-orphaned {
   color: var(--text-muted);
   border-color: var(--text-muted);

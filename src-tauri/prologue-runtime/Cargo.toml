@@ -1,0 +1,18 @@
+[package]
+name = "prologue-runtime"
+version = "0.1.0"
+description = "Host services shared by the Prologue app and web server: guide engine, watchers, event names. No Tauri."
+edition = "2021"
+
+[dependencies]
+prologue-core = { path = "../prologue-core" }
+serde = { version = "1", features = ["derive"] }
+# Guide engine: parse the `claude -p --output-format json` result envelope.
+serde_json = "1"
+notify = "8.2.0"
+
+[dev-dependencies]
+tempfile = "3"
+# FixtureRepo for the watcher's ignore-filter tests; the testutil feature
+# only ever ships in test builds.
+prologue-core = { path = "../prologue-core", features = ["testutil"] }

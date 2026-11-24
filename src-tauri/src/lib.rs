@@ -1,10 +1,8 @@
 mod cli_install;
 mod commands;
-mod events;
-mod guide_engine;
-mod watcher;
 
 use prologue_core::db;
+use prologue_runtime::{events, guide_engine, watcher};
 use std::sync::Mutex;
 use tauri::{Emitter, Manager};
 
@@ -233,7 +231,15 @@ pub fn run() {
             app.manage(guide_engine::GuideRuntime::default());
             // External writers (the prologue CLI) commit to reviews.db
             // behind the app's back; surface them as `comments-changed`.
-            watcher::start_db_watching(app.handle().clone(), dir)?;
+            let handle = app.handle().clone();
+            let emitter = app.handle().clone();
+            watcher::start_db_watching(
+                &dir,
+                move || watcher::data_version(&handle.state::<db::Db>()),
+                move || {
+                    let _ = emitter.emit(events::COMMENTS_CHANGED, ());
+                },
+            )?;
             setup_menu(app)?;
             // Last: the window's page load races the rest of setup, so
             // every managed state above must exist before the webview
@@ -316,12 +322,12 @@ pub fn run() {
             commands::list_archived_reviews,
             commands::export_review,
             commands::find_guide,
-            guide_engine::generate_guide,
-            guide_engine::cancel_guide,
-            guide_engine::guide_cli_status,
+            commands::generate_guide,
+            commands::cancel_guide,
+            commands::guide_cli_status,
             cli_install::install_cli,
-            watcher::start_watching,
-            watcher::stop_watching,
+            commands::start_watching,
+            commands::stop_watching,
             set_repo_menu_enabled,
             set_hide_resolved_checked
         ])

@@ -3,17 +3,14 @@
 //! seatbelt (`prologue_core::db::open`); the read path opens at the SQLite
 //! level with `SQLITE_OPEN_READ_ONLY` and never migrates.
 
-use prologue_core::db::{ensure_no_schema_sql, harden_connection, APP_IDENTIFIER, SCHEMA_VERSION};
+use prologue_core::db::{ensure_no_schema_sql, harden_connection, SCHEMA_VERSION};
 use prologue_core::rusqlite::{Connection, OpenFlags};
 use std::path::{Path, PathBuf};
 
-/// The Prologue app's database (its Tauri app-data directory).
+/// The Prologue app's database (its app-data directory) — also the web
+/// server's default, so the CLI reaches either without `--db`.
 pub fn default_db_path() -> Result<PathBuf, String> {
-    let home = std::env::var_os("HOME").ok_or("HOME is not set")?;
-    Ok(PathBuf::from(home)
-        .join("Library/Application Support")
-        .join(APP_IDENTIFIER)
-        .join("reviews.db"))
+    Ok(prologue_core::db::default_data_dir()?.join("reviews.db"))
 }
 
 /// Open `path` for reading, with `SQLITE_OPEN_READ_ONLY` — the file cannot
@@ -55,7 +52,7 @@ pub fn open_reviews_db_for_write(path: &Path) -> Result<Connection, String> {
 fn ensure_exists(path: &Path) -> Result<(), String> {
     if !path.is_file() {
         return Err(format!(
-            "No reviews database at {} — launch the Prologue app once to create it.",
+            "No reviews database at {} — launch the Prologue app (or prologue-server) once to create it.",
             path.display()
         ));
     }

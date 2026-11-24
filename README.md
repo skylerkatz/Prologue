@@ -29,6 +29,73 @@ App data (reviews.db) lives in
 `~/Library/Application Support/com.skylerkatz.prologue/`; the app creates it
 on first launch.
 
+## Web mode (headless server)
+
+`prologue-server` runs the same UI and review logic in a browser, with no
+Tauri and no display — e.g. inside a headless Linux Amp orb, opened
+through an Amp portal. The Mac app is unaffected.
+
+```sh
+npm ci && npm run build                        # frontend → dist/
+cd src-tauri && cargo build --release -p prologue-server -p prologue
+cd .. && PORT=8080 src-tauri/target/release/prologue-server \
+  --repo /path/to/repo --base main             # base is optional
+```
+
+- **Prebuilt:** every `v*` tag's GitHub release carries
+  `prologue-web-x86_64-linux.tar.gz` (built by
+  `.github/workflows/release-web.yml`): `prologue-server`, `prologue`, and
+  `dist/` side by side. Unpack it anywhere and run
+  `./prologue-server --repo …` — the server finds the `dist/` next to it.
+- **Config:** `--repo` / `PROLOGUE_REPO` (opened on page load), `--base` /
+  `PROLOGUE_BASE` (default: auto-detected, as in the app; a branch's stored
+  review base still wins), `--port` / `PORT` (default 8080), `--host` /
+  `PROLOGUE_HOST` (default 0.0.0.0), `--dist` / `PROLOGUE_DIST` (default:
+  `dist` next to the binary, else `./dist`), `--data-dir` /
+  `PROLOGUE_DATA_DIR` (where reviews.db lives).
+- **Send to Amp:** with `PROLOGUE_AMP_WEBHOOK_URL` set (and `AMP_THREAD_ID`
+  naming the thread), Export becomes "Send to Amp (N)", N being the open
+  comments not sent yet. The server — never the browser; the URL is a
+  credential — POSTs `{"threadID", "commentIds": ["C12", …], "count",
+  "repo", "base"}`, ids only, no comment text. Sent ids are kept in
+  `amp-sent.json` next to reviews.db; unsent open comments show a
+  "pending" badge. The agent then reads them with
+  `prologue show --open --json` (see below).
+- **In an Amp orb**, run it as a supervised service with a portal (paths
+  absolute — the service's working directory may differ):
+  `amp orb service start prologue --portal --command
+  "$PWD/src-tauri/target/release/prologue-server --repo /path/to/repo
+  --dist $PWD/dist"`.
+- **Transport:** `src/ipc.ts` uses Tauri `invoke` inside the app and
+  `POST /api/invoke/<command>` (same command names and args) in a browser.
+  Backend events (`repo-changed`, `comments-changed`) arrive over
+  Server-Sent Events at `/api/events`; the client reconnects with backoff
+  when the stream drops (Amp redeploys close it) and refreshes on
+  reconnect, since events may have been missed meanwhile.
+- **The `prologue` CLI** works unchanged on the same machine: the server
+  defaults to the app data directory the CLI reads
+  (`$XDG_DATA_HOME/com.skylerkatz.prologue`, default
+  `~/.local/share/…` on Linux), so `prologue show` / `prologue reply`
+  run from inside the repo need no `--db`. Replies appear in the browser
+  live, via `comments-changed`. With a custom `--data-dir`, pass the CLI
+  `--db <dir>/reviews.db`. For an agent's work list, `prologue show --open
+  --json` gives every open thread with ids, file and line range, the code
+  anchor, body, replies, `orphaned`, and `changed` (code changed since it
+  was commented); `prologue reply C12 --body "…"` answers one. Resolving
+  stays the reviewer's act, in the UI.
+- **Degraded in the browser:** Export copies to the clipboard where the
+  browser allows it and otherwise downloads the text as a file (export
+  delivery lives in `deliverExport` in `src/platform.ts` — the place to add
+  a webhook POST). Open Repository asks for a path on the server instead
+  of showing a file picker. There is no native menu: Refresh is automatic,
+  ⌘/Ctrl+⇧+H toggles resolved comments, ⌘/Ctrl+⇧+A opens archived
+  reviews, and `?` shows shortcuts. Install CLI and the updater are Mac-app
+  only. Guide generation works if the `claude` CLI is installed and logged
+  in on the server.
+- **No authentication** — anyone who can reach the port can read and write
+  reviews. Expose it only through an authenticated proxy such as an Amp
+  portal, or bind `--host 127.0.0.1`.
+
 ## Signing
 
 Bundles are ad-hoc signed (`signingIdentity: "-"` in `tauri.conf.json`): fine

@@ -27,7 +27,7 @@ mod tests {
     #[test]
     fn generated_events_module_is_current() {
         let expected = format!(
-            "// Generated from src-tauri/src/events.rs by its events test.\n\
+            "// Generated from src-tauri/prologue-runtime/src/events.rs by its events test.\n\
              // Do not edit — run `cargo test` in src-tauri to refresh.\n\
              \n\
              /** Debounced repo activity; payload is the watched repoPath string. */\n\
@@ -55,7 +55,7 @@ mod tests {
             menu_check_updates = super::MENU_CHECK_UPDATES,
             menu_whats_new = super::MENU_WHATS_NEW,
         );
-        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../src/generated/events.ts");
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../src/generated/events.ts");
         let current = std::fs::read_to_string(&path).unwrap_or_default();
         if current != expected {
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();

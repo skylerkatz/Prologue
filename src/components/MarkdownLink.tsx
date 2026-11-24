@@ -1,5 +1,5 @@
 import type { ComponentPropsWithoutRef, SyntheticEvent } from "react";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openExternal } from "../platform";
 import type { Components } from "react-markdown";
 import type { Element } from "hast";
 
@@ -63,7 +63,7 @@ export function MarkdownLink(
   const open = (event: SyntheticEvent) => {
     event.preventDefault();
     if (href !== undefined) {
-      void openUrl(href);
+      void openExternal(href);
     }
   };
   return (

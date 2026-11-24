@@ -1,11 +1,13 @@
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
+import { isTauri } from "@tauri-apps/api/core";
 
 /** The available update, or null (up to date, dev build, or offline). */
 export async function checkForUpdate(): Promise<Update | null> {
   // Dev builds run against the working copy, which is usually ahead of the
   // newest release; polling GitHub from `tauri dev` would nag forever.
-  if (!import.meta.env.PROD) {
+  // Web mode updates by redeploying the server, not in place.
+  if (!import.meta.env.PROD || !isTauri()) {
     return null;
   }
   try {

@@ -7,6 +7,8 @@ const { data, saves } = vi.hoisted(() => ({
   saves: { count: 0 },
 }));
 
+// The Tauri app's path: recents live in tauri-plugin-store.
+vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => true }));
 vi.mock("@tauri-apps/plugin-store", () => ({
   load: async () => ({
     get: async (key: string) => data.get(key),

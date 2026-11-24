@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { open, message } from "@tauri-apps/plugin-dialog";
-import { getVersion } from "@tauri-apps/api/app";
+import { appVersion, isTauri, pickDirectory, showMessage } from "./platform";
+import { webConfig } from "./web";
 import {
   errorText,
   findActiveReview,
@@ -85,6 +85,17 @@ function App() {
       .catch(() => setRecents([]));
   }, []);
 
+  // Web mode serves one repository (prologue-server --repo); open it on
+  // load. Its configured base arrives as the branch list's default base.
+  useEffect(() => {
+    if (!isTauri()) {
+      webConfig()
+        .then((config) => openRepoAt(config.repoPath))
+        .catch((e) => setError(errorText(e)));
+    }
+    // Once per page load; openRepoAt only uses state setters.
+  }, []);
+
   // One update check per launch; checkForUpdate resolves null in dev builds
   // and on network failure, so the banner only ever appears on a real hit.
   useEffect(() => {
@@ -95,7 +106,7 @@ function App() {
   // fresh install (or first launch with this feature): record it silently
   // rather than greeting a new user with a changelog.
   useEffect(() => {
-    getVersion().then((version) => {
+    appVersion().then((version) => {
       const seen = localStorage.getItem(LAST_SEEN_VERSION_KEY);
       localStorage.setItem(LAST_SEEN_VERSION_KEY, version);
       if (seen !== null && seen !== version && hasNotesFor(version)) {
@@ -147,12 +158,11 @@ function App() {
   }
 
   async function pickRepo() {
-    const selected = await open({
-      directory: true,
-      multiple: false,
-      title: "Choose a git repository",
-    });
-    if (typeof selected === "string") {
+    const selected = await pickDirectory(
+      "Choose a git repository",
+      recents[0],
+    );
+    if (selected !== null) {
       await openRepoAt(selected);
     }
   }
@@ -228,13 +238,13 @@ function App() {
           setUpdate(found);
           setUpdateState("idle");
         } else {
-          const version = await getVersion();
-          await message(`Prologue ${version} is the newest version.`, {
+          const version = await appVersion();
+          await showMessage(`Prologue ${version} is the newest version.`, {
             title: "You're up to date",
           });
         }
       } catch (e) {
-        await message(errorText(e), {
+        await showMessage(errorText(e), {
           title: "Could not check for updates",
           kind: "error",
         });

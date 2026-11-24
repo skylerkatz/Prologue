@@ -1,5 +1,6 @@
 //! Thin `#[tauri::command]` wrappers over `prologue-core`: lock the managed
-//! database state (where needed) and delegate. No logic lives here.
+//! database state (where needed) and delegate. No logic lives here. The web
+//! server (`prologue-server`) exposes the same commands over HTTP.
 
 use prologue_core::db::Db;
 use prologue_core::diff::{self, ContextLines, DiffMode, DiffSpec, DiffSummary, FileDiff};
@@ -12,10 +13,8 @@ use prologue_core::review::{
 };
 use prologue_core::rusqlite::Connection;
 
-pub(crate) fn lock<'a>(
-    db: &'a tauri::State<'_, Db>,
-) -> Result<std::sync::MutexGuard<'a, Connection>, String> {
-    db.0.lock().map_err(|_| "Review database is unavailable".to_owned())
+fn lock<'a>(db: &'a tauri::State<'_, Db>) -> Result<std::sync::MutexGuard<'a, Connection>, String> {
+    db.inner().lock()
 }
 
 /// Validate that `path` points to a local git repository and return its identity.
@@ -266,4 +265,70 @@ pub fn find_guide(
 ) -> Result<Option<Guide>, String> {
     let conn = lock(&db)?;
     guide::find_guide_impl(&conn, review_id, &base, &head, mode)
+}
+
+// ---------------------------------------------------------------------------
+// Host services from prologue-runtime, adapted to Tauri state and events.
+// ---------------------------------------------------------------------------
+
+use prologue_runtime::events;
+use prologue_runtime::guide_engine::{self, GuideCliStatus, GuideRuntime};
+use prologue_runtime::watcher::RepoWatcher;
+use tauri::{Emitter, Manager};
+
+/// Watch the repo (working tree + .git) and emit a debounced `repo-changed`
+/// event on activity. One watch at a time; a new call re-targets it.
+#[tauri::command]
+pub fn start_watching(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, RepoWatcher>,
+    repo_path: String,
+) -> Result<(), String> {
+    state.start(repo_path, move |path| {
+        let _ = app.emit(events::REPO_CHANGED, path.to_owned());
+    })
+}
+
+/// Drop the active repo watch (repo closed / back to the welcome page).
+#[tauri::command]
+pub fn stop_watching(state: tauri::State<'_, RepoWatcher>) -> Result<(), String> {
+    state.stop()
+}
+
+/// Generate (or regenerate) the review guide; see
+/// `prologue_runtime::guide_engine::generate_guide`.
+#[tauri::command]
+pub async fn generate_guide(
+    app: tauri::AppHandle,
+    repo_path: String,
+    base: String,
+    head: String,
+    mode: DiffMode,
+    review_id: i64,
+) -> Result<Guide, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        guide_engine::generate_guide(
+            &app.state::<Db>(),
+            &app.state::<GuideRuntime>(),
+            repo_path,
+            base,
+            head,
+            mode,
+            review_id,
+        )
+    })
+    .await
+    .unwrap_or_else(|e| Err(format!("Guide generation task failed: {e}")))
+}
+
+#[tauri::command]
+pub fn cancel_guide(runtime: tauri::State<'_, GuideRuntime>) -> bool {
+    guide_engine::cancel_guide(&runtime)
+}
+
+#[tauri::command]
+pub async fn guide_cli_status() -> GuideCliStatus {
+    tauri::async_runtime::spawn_blocking(guide_engine::guide_cli_status)
+        .await
+        .unwrap_or(GuideCliStatus { available: false, path: None })
 }

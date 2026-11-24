@@ -10,6 +10,7 @@ import { ArchivedReviews } from "./ArchivedReviews";
 import { BranchSelect } from "./BranchSelect";
 import { DiffView } from "./DiffView";
 import { ExportButton, type ExportTarget } from "./ExportButton";
+import { AmpSentContext, useAmpSend } from "./useAmpSend";
 import { FileJump } from "./FileJump";
 import { FileList } from "./FileList";
 import { GuideButton } from "./GuideButton";
@@ -240,8 +241,10 @@ export function ReviewShell({
         : null,
     [view, review, branchMerged, repo.path],
   );
+  const amp = useAmpSend(exportTarget, comments);
 
   return (
+    <AmpSentContext.Provider value={amp?.sent ?? null}>
     <div className="review-shell">
       <header className="toolbar">
         <button
@@ -282,7 +285,7 @@ export function ReviewShell({
           hasTarget={exportTarget !== null}
           emptyDiff={view !== null && view.summary.files.length === 0}
         />
-        <ExportButton target={exportTarget} openCount={openCount} />
+        <ExportButton target={exportTarget} openCount={openCount} amp={amp} />
       </header>
       <main className="diff-main">
         {error !== null ? (
@@ -428,5 +431,6 @@ export function ReviewShell({
       )}
       {showHelp && <ShortcutHelp onClose={() => setShowHelp(false)} />}
     </div>
+    </AmpSentContext.Provider>
   );
 }

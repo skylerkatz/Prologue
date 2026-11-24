@@ -3,14 +3,40 @@ use rusqlite::{Connection, OpenFlags};
 use std::path::Path;
 use std::sync::Mutex;
 
-/// Review database handle; the app manages it as Tauri state.
+/// Review database handle; the app manages it as Tauri state, the web
+/// server as shared state.
 pub struct Db(pub Mutex<Connection>);
+
+impl Db {
+    pub fn lock(&self) -> Result<std::sync::MutexGuard<'_, Connection>, String> {
+        self.0.lock().map_err(|_| "Review database is unavailable".to_owned())
+    }
+}
 
 /// The app's bundle identifier — also the name of its data directory under
 /// ~/Library/Application Support, where reviews.db lives. Must stay in sync
 /// with tauri.conf.json's `identifier` (the app debug-asserts the match at
 /// startup); the CLI derives its default database path from it.
 pub const APP_IDENTIFIER: &str = "com.skylerkatz.prologue";
+
+/// The directory holding reviews.db: the app's data directory, which the
+/// CLI and the web server default to as well so all of them share one
+/// database. macOS: ~/Library/Application Support/<id> (the Tauri app's);
+/// elsewhere $XDG_DATA_HOME/<id>, default ~/.local/share/<id> (Tauri's
+/// convention on Linux, where the headless web server runs).
+pub fn default_data_dir() -> Result<std::path::PathBuf, String> {
+    use std::path::PathBuf;
+    let home = || std::env::var_os("HOME").map(PathBuf::from).ok_or("HOME is not set");
+    let base = if cfg!(target_os = "macos") {
+        home()?.join("Library/Application Support")
+    } else {
+        match std::env::var_os("XDG_DATA_HOME").filter(|v| !v.is_empty()) {
+            Some(dir) => PathBuf::from(dir),
+            None => home()?.join(".local/share"),
+        }
+    };
+    Ok(base.join(APP_IDENTIFIER))
+}
 
 /// Timestamp expression used for all created_at/updated_at columns:
 /// ISO-8601 UTC with millisecond precision.

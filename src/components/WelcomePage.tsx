@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getVersion } from "@tauri-apps/api/app";
+import { appVersion } from "../platform";
 import logo from "../assets/prologue-logo.svg";
 
 interface WelcomePageProps {
@@ -19,7 +19,7 @@ export function WelcomePage({
 }: WelcomePageProps) {
   const [version, setVersion] = useState("");
   useEffect(() => {
-    getVersion()
+    appVersion()
       .then(setVersion)
       .catch(() => {});
   }, []);
