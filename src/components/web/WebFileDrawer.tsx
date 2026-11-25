@@ -5,6 +5,10 @@ import type { ReactNode } from "react";
  * moves into a drawer so the diff keeps the whole width. */
 export const NARROW_LAYOUT_QUERY = "(max-width: 899px)";
 
+/** Phone widths: the code gets the screen; the toolbar collapses to one
+ * row that slides away while scrolling down. */
+export const PHONE_LAYOUT_QUERY = "(max-width: 599px)";
+
 export function useMediaQuery(query: string): boolean {
   const [matches, setMatches] = useState(
     () => window.matchMedia(query).matches,

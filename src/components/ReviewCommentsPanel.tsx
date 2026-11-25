@@ -1,4 +1,3 @@
-import { useState } from "react";
 import type { Comment, CommentState, RepliesByRoot } from "../types";
 import { CommentComposer, CommentThread, useThreadEditing } from "./Comments";
 
@@ -12,6 +11,13 @@ interface ReviewCommentsPanelProps {
   onUpdate: (id: number, body: string, expectedUpdatedAt?: string) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
   onSetState: (id: number, state: CommentState) => Promise<void>;
+  /** The new-comment composer is open; ReviewShell owns it so the phone
+   * toolbar's menu can open it too. */
+  adding: boolean;
+  onAddingChange: (adding: boolean) => void;
+  /** Phone layout: render nothing while there is nothing to show, and
+   * leave "Add review comment" to the toolbar menu. */
+  compact?: boolean;
 }
 
 /** Overall review notes, pinned above the diff. */
@@ -23,9 +29,15 @@ export function ReviewCommentsPanel({
   onUpdate,
   onDelete,
   onSetState,
+  adding,
+  onAddingChange: setAdding,
+  compact = false,
 }: ReviewCommentsPanelProps) {
-  const [adding, setAdding] = useState(false);
   const threadEditing = useThreadEditing(onUpdate, onCreateReply);
+
+  if (compact && comments.length === 0 && !adding) {
+    return null;
+  }
 
   return (
     <section className="review-comments" aria-label="Review comments">
@@ -34,7 +46,7 @@ export function ReviewCommentsPanel({
           Review comments
           {comments.length > 0 && ` (${comments.length})`}
         </span>
-        {!adding && (
+        {!adding && !compact && (
           <button
             type="button"
             className="add-comment-button"

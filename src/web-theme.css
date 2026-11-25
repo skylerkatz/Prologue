@@ -759,3 +759,230 @@
     display: none;
   }
 }
+
+/* --- Phone widths (ReviewShell's PHONE_LAYOUT_QUERY) ---------------- */
+
+/* The ⋯ menu exists only in the compact toolbar. */
+:root[data-ui="web"] .web-menu {
+  position: relative;
+}
+
+:root[data-ui="web"] .web-menu-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+:root[data-ui="web"] .web-menu-button[aria-expanded="true"] {
+  background: var(--amp-accent);
+}
+
+:root[data-ui="web"] .web-menu-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  width: min(300px, calc(100vw - 16px));
+  padding: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--bg-app);
+  box-shadow: var(--shadow-menu);
+}
+
+/* Menu rows are full-width and finger-sized. */
+:root[data-ui="web"] .web-menu-panel .control {
+  justify-content: space-between;
+}
+
+:root[data-ui="web"] .web-menu-panel .refresh-button,
+:root[data-ui="web"] .web-menu-panel .mode-option[role="switch"],
+:root[data-ui="web"] .web-menu-panel .branch-select-button {
+  justify-content: center;
+  width: 100%;
+  height: 36px;
+  font-size: 13px;
+}
+
+:root[data-ui="web"] .web-menu-panel .control .branch-select-button {
+  width: auto;
+}
+
+:root[data-ui="web"] .web-menu-panel .mode-toggle {
+  height: auto;
+}
+
+:root[data-ui="web"] .web-menu-panel .mode-toggle[role="radiogroup"] {
+  flex-direction: column;
+}
+
+:root[data-ui="web"] .web-menu-panel .mode-toggle[role="radiogroup"] .mode-option {
+  height: 34px;
+  font-size: 13px;
+}
+
+:root[data-ui="web"] .web-menu-panel .mode-toggle:has(> [role="switch"]) {
+  width: 100%;
+}
+
+@media (max-width: 599px) {
+  /* One slim row that slides up out of view while scrolling down. */
+  :root[data-ui="web"] .web-toolbar.compact {
+    flex-wrap: nowrap;
+    position: relative;
+    z-index: 20;
+    height: 49px;
+    padding: 6px 8px;
+    transition: margin-top 160ms ease;
+  }
+
+  :root[data-ui="web"] .web-toolbar.compact.hidden {
+    margin-top: -49px;
+  }
+
+  :root[data-ui="web"] .web-toolbar.compact .web-files-button,
+  :root[data-ui="web"] .web-toolbar.compact .refresh-button.send-to-amp,
+  :root[data-ui="web"] .web-toolbar.compact > .refresh-button {
+    height: 36px;
+    font-size: 13px;
+  }
+
+  /* Review notes scroll with the diff (ReviewShell puts them in it). */
+  :root[data-ui="web"] .diff-scroll .review-comments {
+    max-height: none;
+    overflow: visible;
+    margin-top: 10px;
+    padding: 0;
+    border-bottom: none;
+  }
+
+  :root[data-ui="web"] .diff-scroll {
+    padding: 0 6px 32px;
+  }
+
+  /* Compact sticky file header: the path gets the room; "Add comment"
+     and "Viewed" keep their controls but drop their words. */
+  :root[data-ui="web"] .diff-file-header {
+    gap: 6px;
+    padding: 4px 6px;
+  }
+
+  :root[data-ui="web"] .diff-file-header .button-label {
+    display: none;
+  }
+
+  :root[data-ui="web"] .diff-file-header .file-path {
+    /* Truncate from the left, keeping the file name (as the sidebar). */
+    direction: rtl;
+    text-align: left;
+  }
+
+  :root[data-ui="web"] .diff-file-header .add-comment-button {
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    font-size: 16px;
+  }
+
+  :root[data-ui="web"] .diff-file-header .file-toggle {
+    width: 28px;
+    height: 30px;
+  }
+
+  :root[data-ui="web"] .diff-file-header .reviewed-toggle input {
+    width: 18px;
+    height: 18px;
+    margin: 0 4px;
+  }
+
+  :root[data-ui="web"] .diff-file-header .file-counts {
+    gap: 4px;
+    font-size: 11px;
+  }
+
+  /* One line-number column: the new side, or the old for deletions. */
+  :root[data-ui="web"] .diff-line {
+    grid-template-columns: 36px 12px 1fr;
+    font-size: 11.5px;
+    line-height: 19px;
+    min-height: 19px;
+  }
+
+  :root[data-ui="web"] .diff-line .lineno-old,
+  :root[data-ui="web"] .diff-line-deletion .lineno-new {
+    display: none;
+  }
+
+  :root[data-ui="web"] .diff-line-deletion .lineno-old {
+    display: block;
+  }
+
+  /* The gutter is the comment tap target: the full 36px column, with no
+     grey tap flash or double-tap zoom. */
+  :root[data-ui="web"] .lineno {
+    padding-right: 6px;
+  }
+
+  :root[data-ui="web"] .lineno-commentable {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Wrap at spaces where possible, not mid-identifier. */
+  :root[data-ui="web"] .line-content {
+    word-break: normal;
+    overflow-wrap: anywhere;
+    padding-right: 6px;
+  }
+
+  :root[data-ui="web"] .hunk-header {
+    padding: 0 8px;
+    font-size: 11px;
+  }
+
+  :root[data-ui="web"] .inline-comment {
+    padding: 4px 4px 4px 10px;
+  }
+
+  /* Headers wrap here; keep the author at the start of the line. */
+  :root[data-ui="web"] .comment-header {
+    justify-content: flex-start;
+  }
+
+  :root[data-ui="web"] .comment-card-reply,
+  :root[data-ui="web"] .inline-comment .comment-card-reply,
+  :root[data-ui="web"] .reply-composer .comment-composer,
+  :root[data-ui="web"] .inline-comment.reply-composer .comment-composer {
+    margin-left: 10px;
+  }
+}
+
+/* Touch screens have no hover: keep a tapped gutter from staying lit. */
+@media (hover: none) {
+  :root[data-ui="web"] .diff-line:not(.diff-line-selected) .lineno-commentable:hover {
+    background: transparent;
+    color: color-mix(in srgb, var(--text-muted) 75%, transparent);
+  }
+
+  :root[data-ui="web"] .diff-line-addition:not(.diff-line-selected) .lineno-commentable:hover {
+    background: var(--diff-add-gutter);
+    color: var(--text-muted);
+  }
+
+  :root[data-ui="web"] .diff-line-deletion:not(.diff-line-selected) .lineno-commentable:hover {
+    background: var(--diff-del-gutter);
+    color: var(--text-muted);
+  }
+}

@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type { CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties, UIEvent } from "react";
 import { useTauriEvent } from "../useTauriEvent";
 import {
   MENU_SHOW_SHORTCUTS_EVENT,
@@ -22,6 +22,7 @@ import { ShortcutHelp } from "./ShortcutHelp";
 import { WhitespaceToggle } from "./WhitespaceToggle";
 import {
   NARROW_LAYOUT_QUERY,
+  PHONE_LAYOUT_QUERY,
   useMediaQuery,
   WebFileDrawer,
 } from "./web/WebFileDrawer";
@@ -103,6 +104,7 @@ export function ReviewShell({
   } = useCommentMutations(session);
   const sidebar = useResizableSidebar();
 
+  const [addingReviewComment, setAddingReviewComment] = useState(false);
   const [showArchive, setShowArchive] = useState(false);
   const [showFileJump, setShowFileJump] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -263,8 +265,36 @@ export function ReviewShell({
   // header, and at Portal-pane widths keeps the file list in a drawer.
   const webMode = !isTauri();
   const narrow = useMediaQuery(NARROW_LAYOUT_QUERY) && webMode;
+  const phone = useMediaQuery(PHONE_LAYOUT_QUERY) && webMode;
   const [filesOpen, setFilesOpen] = useState(false);
   const closeFiles = useCallback(() => setFilesOpen(false), []);
+
+  // Phone: the toolbar slides away while the diff scrolls down and comes
+  // back on any scroll up (or near the top). Scroll events don't bubble,
+  // so the shell listens in the capture phase.
+  const [toolbarHidden, setToolbarHidden] = useState(false);
+  const lastScrollTop = useRef(0);
+  useEffect(() => {
+    if (!phone) {
+      setToolbarHidden(false);
+    }
+  }, [phone]);
+  const onScrollCapture = (e: UIEvent) => {
+    const el = e.target;
+    if (!(el instanceof HTMLElement) || !el.classList.contains("diff-scroll")) {
+      return;
+    }
+    const top = el.scrollTop;
+    const delta = top - lastScrollTop.current;
+    if (top < 48) {
+      setToolbarHidden(false);
+    } else if (Math.abs(delta) < 8) {
+      return; // Ignore jitter; measure the next move from here.
+    } else {
+      setToolbarHidden(delta > 0);
+    }
+    lastScrollTop.current = top;
+  };
 
   const baseControl = (
     <div className="control">
@@ -315,9 +345,27 @@ export function ReviewShell({
       />
     );
 
+  const reviewPanel = (
+    <ReviewCommentsPanel
+      comments={reviewComments}
+      repliesByRoot={repliesByRoot}
+      onCreate={onCreateReviewComment}
+      onCreateReply={onCreateReply}
+      onUpdate={onUpdate}
+      onDelete={onDelete}
+      onSetState={onSetState}
+      adding={addingReviewComment}
+      onAddingChange={setAddingReviewComment}
+      compact={phone}
+    />
+  );
+
   return (
     <AmpSentContext.Provider value={ampStates}>
-    <div className="review-shell">
+    <div
+      className="review-shell"
+      onScrollCapture={phone ? onScrollCapture : undefined}
+    >
       {webMode ? (
         <WebToolbar
           base={baseControl}
@@ -325,6 +373,11 @@ export function ReviewShell({
           send={exportButton}
           onOpenFiles={narrow ? () => setFilesOpen(true) : null}
           fileCount={view?.summary.files.length ?? null}
+          compact={phone}
+          hidden={toolbarHidden}
+          onAddReviewComment={
+            exportTarget !== null ? () => setAddingReviewComment(true) : null
+          }
         />
       ) : (
         <header className="toolbar">
@@ -431,17 +484,13 @@ export function ReviewShell({
               </>
             )}
             <div className="diff-pane">
-              <ReviewCommentsPanel
-                comments={reviewComments}
-                repliesByRoot={repliesByRoot}
-                onCreate={onCreateReviewComment}
-                onCreateReply={onCreateReply}
-                onUpdate={onUpdate}
-                onDelete={onDelete}
-                onSetState={onSetState}
-              />
+              {!phone && reviewPanel}
               <DiffView
                 topContent={
+                  <>
+                  {/* On a phone the review notes scroll away with the
+                      diff instead of holding the top of the screen. */}
+                  {phone && reviewPanel}
                   <OrphanedComments
                     comments={orphanedComments}
                     repliesByRoot={repliesByRoot}
@@ -450,6 +499,7 @@ export function ReviewShell({
                     onDelete={onDelete}
                     onSetState={onSetState}
                   />
+                  </>
                 }
                 repoPath={repo.path}
                 base={view.base}

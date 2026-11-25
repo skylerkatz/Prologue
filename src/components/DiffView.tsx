@@ -1698,9 +1698,10 @@ function FileHeaderRow({
         type="button"
         className="add-comment-button"
         title={`Comment on ${file.path}`}
+        aria-label={`Comment on ${file.path}`}
         onClick={onAddComment}
       >
-        + Add comment
+        +<span className="button-label"> Add comment</span>
       </button>
       {file.binary ? (
         <span className="file-counts file-binary">BIN</span>
@@ -1713,6 +1714,7 @@ function FileHeaderRow({
       <label className="reviewed-toggle" title="Mark this file as reviewed (v)">
         <input
           type="checkbox"
+          aria-label="Viewed"
           checked={reviewState === "reviewed"}
           onChange={(e) => {
             // Blur so the window keydown handler (which ignores INPUT
@@ -1721,7 +1723,7 @@ function FileHeaderRow({
             onToggleReviewed();
           }}
         />
-        Viewed
+        <span className="button-label">Viewed</span>
       </label>
     </div>
   );
@@ -1820,8 +1822,13 @@ function LineRow({
       className={`diff-line diff-line-${line.kind}${selected ? " diff-line-selected" : ""}`}
       onMouseEnter={commentable ? () => onRowEnter(path, hi, line) : undefined}
     >
-      <span {...gutterProps}>{line.oldLineno ?? ""}</span>
-      <span {...gutterProps}>{line.newLineno ?? ""}</span>
+      {/* lineno-old/-new let the phone layout keep just one column. */}
+      <span {...gutterProps} className={`${gutterProps.className} lineno-old`}>
+        {line.oldLineno ?? ""}
+      </span>
+      <span {...gutterProps} className={`${gutterProps.className} lineno-new`}>
+        {line.newLineno ?? ""}
+      </span>
       <span className="line-sign" aria-hidden="true">
         {line.kind === "addition" ? "+" : line.kind === "deletion" ? "−" : ""}
       </span>
