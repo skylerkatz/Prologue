@@ -1,0 +1,32 @@
+src-tauri/prologue-core/Cargo.toml
+  s_2d0c615ca603dd::t_b1569744e52263 3
+src-tauri/prologue-runtime/Cargo.toml
+  s_2d0c615ca603dd::t_b1569744e52263 3
+src-tauri/prologue/Cargo.toml
+  s_2d0c615ca603dd::t_b1569744e52263 3
+src-tauri/Cargo.toml
+  s_2d0c615ca603dd::t_b1569744e52263 7-11,14
+src-tauri/prologue-server/Cargo.toml
+  s_2d0c615ca603dd::t_b1569744e52263 3
+scripts/release.sh
+  s_2d0c615ca603dd::t_7902b4aca8ba74 139-142
+  s_2d0c615ca603dd::t_3397477284774e 86-103
+src-tauri/Cargo.lock
+  s_2d0c615ca603dd::t_ba43e494282b2a 3546,3558,3579,3593,3604
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1d3544ed14b74ee2019e9c265f3daaa8d12bf491",
+  "prompts": {},
+  "sessions": {
+    "s_2d0c615ca603dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "470cc72b-f054-4df1-942a-4fe54af74433",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
