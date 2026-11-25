@@ -38,7 +38,8 @@ thread, run `plugins: reload` from the command palette.
    the checkout has changes), or run **Prologue: Start Review** from the
    command palette, or ask the agent to start a Prologue review. The first
    time, Prologue asks which base ref to review against, such as
-   `origin/main`, and remembers it for the project. **Prologue: Set Base
+   `origin/main`, and remembers it for the project (or uses
+   `PROLOGUE_DEFAULT_BASE`, below, without asking). **Prologue: Set Base
    Ref** changes it.
 3. Comment in the Portal pane, then press **Send to Amp (N)**. The thread
    gets a message naming the open comments, and the bundled
@@ -57,6 +58,11 @@ installed instead).
   CLI, and the built UI) from this repository's GitHub releases, verifies
   it against the release's `.sha256`, and caches it. Set
   `PROLOGUE_CHANNEL=main` to follow every push to main instead.
+- Set `PROLOGUE_DEFAULT_BASE` (for example `origin/production`) as a
+  workspace or project environment variable to review against that ref
+  without asking. A base remembered for the project still wins, and
+  **Prologue: Set Base Ref** offers the variable's value. Remote refs the
+  checkout lacks are fetched when the review starts.
 - It starts `prologue-server` as an orb service bound to `127.0.0.1` behind
   an Amp portal, which handles sign-in, and links `prologue` into
   `~/.local/bin`.

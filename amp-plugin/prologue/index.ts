@@ -24,13 +24,18 @@ const START_COMMAND = 'start-review'
  * running plugin's version with the one its release was built from and offers an update.
  * CI fails a change under amp-plugin/prologue that leaves it unchanged.
  */
-const PLUGIN_VERSION = 2
+const PLUGIN_VERSION = 3
 /**
  * Release tags the plugin installs: v* releases, plus the rolling main-<sha> builds of every
  * push to main when PROLOGUE_CHANNEL=main.
  */
 const CHANNEL_MAIN = process.env.PROLOGUE_CHANNEL === 'main'
 const wantedTag = (tag: string) => tag.startsWith('v') || (CHANNEL_MAIN && tag.startsWith('main-'))
+/**
+ * Workspace default base ref, such as origin/production: used without asking when a project has
+ * no remembered base, and preferred over the auto-detected candidates.
+ */
+const DEFAULT_BASE = process.env.PROLOGUE_DEFAULT_BASE?.trim() || undefined
 
 interface Bundle {
 	server: string
@@ -477,6 +482,7 @@ export default async function (amp: PluginAPI) {
 	}
 
 	async function suggestBase(repo: string): Promise<string> {
+		if (DEFAULT_BASE) return DEFAULT_BASE
 		const head = await git(repo, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD')
 		if (head.code === 0 && head.stdout.trim()) return head.stdout.trim()
 		for (const candidate of ['origin/main', 'origin/master', 'main', 'master']) {
@@ -645,11 +651,14 @@ export default async function (amp: PluginAPI) {
 		const key = await projectKey(repo)
 		const remembered = (await loadSettings()).bases[key]
 		let base = options.base?.trim() || (options.askBase ? undefined : remembered)
+		// The workspace default isn't remembered, so a later change to it still applies.
+		const fromDefault = !base && !options.askBase && !!DEFAULT_BASE
+		if (fromDefault) base = DEFAULT_BASE
 		if (!base) {
 			base = await askBase(ui, repo, key, remembered)
 			if (!base) return 'Cancelled: no base ref.'
 		}
-		if (base !== remembered) {
+		if (!fromDefault && base !== remembered) {
 			const chosen = base
 			await updateSettings((s) => {
 				s.bases[key] = chosen
@@ -702,7 +711,8 @@ export default async function (amp: PluginAPI) {
 			properties: {
 				base: {
 					type: 'string',
-					description: 'Base ref to review against, such as origin/main. Omit to use the remembered base for this project (the user is asked the first time).',
+					description:
+						'Base ref to review against, such as origin/main. Omit to use the remembered base for this project, else PROLOGUE_DEFAULT_BASE (otherwise the user is asked the first time).',
 				},
 			},
 		},
@@ -726,11 +736,15 @@ export default async function (amp: PluginAPI) {
 		return repos
 	}
 
-	/** The remembered base, else origin's default branch. Local refs only; never fetches or asks. */
+	/**
+	 * The remembered base, else PROLOGUE_DEFAULT_BASE, else origin's default branch. Local refs only;
+	 * never fetches or asks, so a base that isn't fetched yet (shallow orb checkouts often lack
+	 * origin/production) falls through to the next candidate until Start Review fetches it.
+	 */
 	async function checkBase(repo: string): Promise<string | undefined> {
 		const remembered = (await loadSettings()).bases[await projectKey(repo)]
 		const head = (await git(repo, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD')).stdout.trim()
-		for (const candidate of [remembered, head, 'origin/main', 'origin/master']) {
+		for (const candidate of [remembered, DEFAULT_BASE, head, 'origin/main', 'origin/master']) {
 			if (candidate && (await git(repo, 'rev-parse', '--verify', '--quiet', `${candidate}^{commit}`)).code === 0) {
 				return candidate
 			}
