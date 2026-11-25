@@ -7,7 +7,9 @@
 //!   JSON result, or 4xx/5xx with the error string as a JSON string.
 //! - `GET /api/events` — Server-Sent Events carrying what the app emits as
 //!   Tauri events (`repo-changed`, `comments-changed`). The first event of
-//!   every connection is `hello`, so a reconnecting client can catch up.
+//!   every connection is `hello`, so a reconnecting client can catch up,
+//!   and names the frontend build, so a page can tell when the server it
+//!   reconnected to serves a newer one.
 //! - `GET /api/config` — the repo and base ref this server was started for.
 //! - `GET /api/me` — the Amp user the portal says is asking (or null).
 //!
@@ -163,6 +165,8 @@ struct AppState {
     owner: Owner,
     /// The built frontend; index.html is served with the boot state added.
     dist: PathBuf,
+    /// [`build_id`] of `dist`, sent in every `hello`.
+    build: String,
 }
 
 impl AppState {
@@ -733,13 +737,26 @@ async fn me(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Json<Opti
     Json(AmpUser::from_headers(&headers, &state.owner))
 }
 
+/// Identifies the frontend build in `dist`: FNV-1a of its index.html, which
+/// names every hashed asset, so two builds with the same frontend share an
+/// id. Empty without one. Stable across compilers, unlike `DefaultHasher`.
+fn build_id(dist: &std::path::Path) -> String {
+    let Ok(html) = std::fs::read(dist.join("index.html")) else {
+        return String::new();
+    };
+    let hash = html.iter().fold(0xcbf2_9ce4_8422_2325_u64, |h, &b| {
+        (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+    });
+    format!("{hash:016x}")
+}
+
 async fn event_stream(
     State(state): State<Arc<AppState>>,
 ) -> Sse<impl tokio_stream::Stream<Item = Result<Event, Infallible>>> {
     let watching = state.watched.lock().ok().and_then(|w| w.clone());
     let hello = Event::default()
         .event("hello")
-        .data(json!({ "watching": watching }).to_string());
+        .data(json!({ "watching": watching, "build": state.build }).to_string());
     let live = BroadcastStream::new(state.events.subscribe()).filter_map(|item| {
         // A lagged receiver dropped events; the client recovers on the next
         // one (every event means "refetch", never a delta).
@@ -848,6 +865,7 @@ fn build_state(cli: &Cli) -> Result<Arc<AppState>, String> {
         amp,
         owner: Owner::new(cli.owner_id.clone(), cli.owner_email.clone()),
         dist: cli.dist_dir(),
+        build: build_id(&cli.dist_dir()),
     });
 
     // External writers (the prologue CLI) commit to reviews.db behind the
@@ -923,6 +941,7 @@ mod tests {
             amp: None,
             owner: Owner::default(),
             dist: PathBuf::new(),
+            build: String::new(),
         }
     }
 
@@ -1391,6 +1410,40 @@ mod tests {
             assert!(html.contains(r#"id="prologue-boot""#), "{page}");
             assert!(html.starts_with(r#"<html data-ui="web">"#), "{page}");
         }
+    }
+
+    /// Every `hello` names the frontend build, which changes with index.html
+    /// (a release with new assets) and not with the folder it is served from.
+    #[tokio::test]
+    async fn hello_names_the_frontend_build() {
+        use axum::body::Body;
+        use axum::http::Request;
+        use tower::ServiceExt as _;
+        let fixture = FixtureRepo::standard_review_fixture();
+        let dir = tempfile::tempdir().unwrap();
+        let write = |name: &str, html: &str| {
+            let dist = dir.path().join(name);
+            std::fs::create_dir_all(&dist).unwrap();
+            std::fs::write(dist.join("index.html"), html).unwrap();
+            dist
+        };
+        let old = build_id(&write("v1", r#"<script src="/assets/index-aaa.js"></script>"#));
+        let new = build_id(&write("v2", r#"<script src="/assets/index-bbb.js"></script>"#));
+        let same = build_id(&write("v3", r#"<script src="/assets/index-aaa.js"></script>"#));
+        assert_eq!(old.len(), 16);
+        assert_ne!(old, new);
+        assert_eq!(old, same);
+        assert_eq!(build_id(&dir.path().join("missing")), "");
+
+        let mut state = state_for(&fixture, &dir);
+        state.build = new.clone();
+        let app = router(Arc::new(state), dir.path());
+        let res = app.oneshot(Request::get("/api/events").body(Body::empty()).unwrap()).await.unwrap();
+        let mut body = res.into_body().into_data_stream();
+        let first = String::from_utf8(body.next().await.unwrap().unwrap().to_vec()).unwrap();
+        assert!(first.starts_with("event: hello\n"), "{first}");
+        let data: Value = serde_json::from_str(first.lines().find_map(|l| l.strip_prefix("data: ")).unwrap()).unwrap();
+        assert_eq!(data["build"], json!(new));
     }
 
     /// Only a plugin-started server (webhook set) asks for an update: one

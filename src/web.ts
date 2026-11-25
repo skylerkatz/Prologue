@@ -252,6 +252,11 @@ export function listenWeb(event: string, handler: Handler): () => void {
   return () => set.delete(handler);
 }
 
+/** Dispatched here, not sent: the server this page reconnected to serves
+ * a different frontend build (the Amp plugin moved it to a newer release),
+ * so this page's code is out of date until it reloads. */
+export const SERVER_UPDATED_EVENT = "server-updated";
+
 /** Events the server sends; each means "refetch", never a delta. */
 const SERVER_EVENTS = [REPO_CHANGED_EVENT, COMMENTS_CHANGED_EVENT];
 /** Short enough that viewers are back within seconds of a portal redeploy;
@@ -280,6 +285,8 @@ function ensureEvents() {
   started = true;
   installMenuShortcuts();
   let connectedBefore = false;
+  /** The build named by the first `hello`: the server that served this page. */
+  let pageBuild: string | undefined;
   let retryMs = 1000;
   const connect = () => {
     const source = new EventSource("/api/events");
@@ -298,9 +305,14 @@ function ensureEvents() {
     source.addEventListener("hello", (e) => {
       alive();
       retryMs = 1000;
-      const { watching } = JSON.parse((e as MessageEvent).data) as {
+      const { watching, build } = JSON.parse((e as MessageEvent).data) as {
         watching: string | null;
+        build?: string;
       };
+      pageBuild ??= build;
+      if (build !== pageBuild) {
+        dispatch(SERVER_UPDATED_EVENT, null);
+      }
       // On the first connect the start_watching that opened this stream is
       // still in flight; only a reconnect can find the watch lost.
       if (connectedBefore && watchedRepo !== null && watching !== watchedRepo) {

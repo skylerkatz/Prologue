@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import { appVersion, isTauri, pickDirectory, showMessage } from "./platform";
-import { finishBoot, rememberView, webConfig } from "./web";
+import {
+  finishBoot,
+  rememberView,
+  SERVER_UPDATED_EVENT,
+  webConfig,
+} from "./web";
 import type { PluginUpdate } from "./web";
 import {
   errorText,
@@ -83,6 +88,7 @@ function App() {
   >("idle");
   const [showWhatsNew, setShowWhatsNew] = useState(false);
   const [pluginUpdate, setPluginUpdate] = useState<PluginUpdate | null>(null);
+  const [serverUpdated, setServerUpdated] = useState(false);
 
   useEffect(() => {
     getRecentRepos()
@@ -309,6 +315,11 @@ function App() {
     })();
   });
 
+  // Web mode: the server now serves a newer build than this page's.
+  useTauriEvent(SERVER_UPDATED_EVENT, () => {
+    setServerUpdated(true);
+  });
+
   // Prologue > What's New… — reopen the release notes on demand.
   useTauriEvent(MENU_WHATS_NEW_EVENT, () => {
     setShowWhatsNew(true);
@@ -343,6 +354,19 @@ function App() {
             disabled={updateState === "installing"}
           >
             ×
+          </button>
+        </div>
+      )}
+      {serverUpdated && (
+        <div className="update-banner plugin-update-banner" role="status">
+          <span className="update-banner-text">
+            Prologue was updated. Reload to use the new version.
+          </span>
+          <button
+            className="refresh-button"
+            onClick={() => location.reload()}
+          >
+            Reload
           </button>
         </div>
       )}

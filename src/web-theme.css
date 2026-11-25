@@ -1099,7 +1099,7 @@
   }
 }
 
-/* --- Plugin update notice (PluginUpdateBanner) ------------------------- */
+/* --- Plugin update and server updated notices (PluginUpdateBanner, App) -- */
 
 :root[data-ui="web"] .plugin-update-banner {
   gap: 12px;

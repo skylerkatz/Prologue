@@ -24,7 +24,7 @@ const START_COMMAND = 'start-review'
  * running plugin's version with the one its release was built from and offers an update.
  * CI fails a change under amp-plugin/prologue that leaves it unchanged.
  */
-const PLUGIN_VERSION = 3
+const PLUGIN_VERSION = 4
 /**
  * Release tags the plugin installs: v* releases, plus the rolling main-<sha> builds of every
  * push to main when PROLOGUE_CHANNEL=main.
@@ -381,14 +381,9 @@ export default async function (amp: PluginAPI) {
 			}
 			await writeFile(join(staging, 'meta.json'), meta)
 			await rm(dir, { recursive: true, force: true })
+			// Older releases stay: a running server reads its dist/ on every page load, and the cache
+			// goes away with the orb.
 			await rename(staging, dir)
-			// Older releases are no longer needed; a server still running from one keeps its open files.
-			const root = join(cacheDir, 'releases')
-			for (const tag of await readdir(root)) {
-				if (tag !== release.tag && !tag.includes('.download-')) {
-					await rm(join(root, tag), { recursive: true, force: true })
-				}
-			}
 		} catch (error) {
 			await rm(staging, { recursive: true, force: true })
 			const why = `Couldn’t download Prologue ${release.tag}: ${error instanceof Error ? error.message : error}`
@@ -426,6 +421,24 @@ export default async function (amp: PluginAPI) {
 		return { bundle: result.bundle, notice: result.notice }
 	}
 
+	/**
+	 * Move a running server onto a newer bundle with the same repo, base, and webhook. The portal
+	 * URL stays the same; open pages reconnect and offer to reload into the new build.
+	 */
+	let swapping = false
+	async function swapToBundle(bundle: Bundle): Promise<void> {
+		const previous = (await loadSettings()).service
+		if (swapping || !previous || previous.server === bundle.server || !(await serviceRunning())) return
+		swapping = true
+		try {
+			log(`swapping the running server to ${bundle.label}`)
+			const url = await startServer(undefined, previous.repo, previous.base, bundle)
+			log(url ? `swapped to ${bundle.label}` : `swap to ${bundle.label} failed`)
+		} finally {
+			swapping = false
+		}
+	}
+
 	/** Look for a newer build in the background, at most every few minutes, so a click rarely waits. */
 	const PREFETCH_INTERVAL_MS = 3 * 60_000
 	let lastPrefetch = 0
@@ -434,7 +447,11 @@ export default async function (amp: PluginAPI) {
 		lastPrefetch = Date.now()
 		void bundleJob().promise.then((result) => {
 			if ('error' in result) log(`prefetch failed: ${result.error}`)
-			else log(`prefetch ready: ${result.bundle.label}${result.notice ? ` (${result.notice})` : ''}`)
+			else {
+				log(`prefetch ready: ${result.bundle.label}${result.notice ? ` (${result.notice})` : ''}`)
+				// A notice means the lookup failed and this may not be the newest build.
+				if (!result.notice) return swapToBundle(result.bundle).catch((error) => log(`swap failed: ${error}`))
+			}
 		})
 	}
 
@@ -566,7 +583,8 @@ export default async function (amp: PluginAPI) {
 
 	let webhookURL: Promise<string | undefined> = Promise.resolve(undefined)
 
-	async function startServer(ui: PluginUI, repo: string, base: string, bundle: Bundle): Promise<string | undefined> {
+	/** Without `ui` (a background swap), progress and failures go to the log only. */
+	async function startServer(ui: PluginUI | undefined, repo: string, base: string, bundle: Bundle): Promise<string | undefined> {
 		const webhook = (await webhookURL) ?? ''
 		// The thread owner: Prologue lets them edit and delete anyone's comments. Older releases ignore it.
 		const ownerId = amp.system.user?.id ?? ''
@@ -611,7 +629,7 @@ export default async function (amp: PluginAPI) {
 		await writeFile(script, lines.join('\n'), { mode: 0o700 })
 		await chmod(script, 0o700)
 
-		await ui.notify(`Starting Prologue (${bundle.label}) for ${repo} against ${base}…`)
+		await ui?.notify(`Starting Prologue (${bundle.label}) for ${repo} against ${base}…`)
 		const started = await service(
 			'start',
 			'--command', `exec ${shellQuote(script)}`,
@@ -624,7 +642,8 @@ export default async function (amp: PluginAPI) {
 		if (started.code !== 0 || !url) {
 			const logs = await service('logs')
 			const tail = (logs.stdout || started.stderr || started.stdout).trim().split('\n').slice(-5).join('\n')
-			await ui.notify(`Prologue didn’t start.\n${tail}`)
+			if (ui) await ui.notify(`Prologue didn’t start.\n${tail}`)
+			else log(`Prologue didn’t start: ${tail}`)
 			return undefined
 		}
 		await excludePortalManifest().catch(() => {})
