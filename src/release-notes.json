@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.8.0",
+    "date": "2026-11-25",
+    "notes": "## New\n\n- When a newer Prologue is released, an open review in Amp moves to it on its own, at the same portal address. The page shows a banner to reload into the new version when you’re ready, so a comment you’re writing isn’t lost\n- Set `PROLOGUE_DEFAULT_BASE` (for example `origin/production`) as a workspace or project environment variable and reviews in Amp use that base without asking. A base remembered for the project still wins\n\n## Fixed\n\n- An open review in Amp no longer turns into a blank “No index.html” page after a new Prologue release is downloaded"
+  },
+  {
     "version": "0.7.1",
     "date": "2026-11-25",
     "notes": "## Fixed\n\n- Send to Amp now reaches the thread you sent it from. With Prologue open in two threads of the same project, comments sent from one could land in the other and then go back to unsent. Update the Prologue plugin when the review offers it\n\n## Other\n\n- `prologue --version` reports the real release version instead of 0.1.0"
