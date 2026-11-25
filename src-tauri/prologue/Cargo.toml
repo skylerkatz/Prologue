@@ -1,6 +1,6 @@
 [package]
 name = "prologue"
-version = "0.1.0"
+version.workspace = true
 description = "Command-line access to Prologue code reviews"
 edition = "2021"
 

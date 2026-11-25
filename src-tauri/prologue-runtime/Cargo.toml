@@ -1,6 +1,6 @@
 [package]
 name = "prologue-runtime"
-version = "0.1.0"
+version.workspace = true
 description = "Host services shared by the Prologue app and web server: guide engine, watchers, event names. No Tauri."
 edition = "2021"
 

@@ -83,6 +83,24 @@ node -e '
   conf.version = process.argv[1];
   fs.writeFileSync(path, JSON.stringify(conf, null, 2) + "\n");
 ' "$VERSION"
+# The Rust crates (CLI, server, app) share [workspace.package].version, so
+# `prologue --version` and the web bundle match the app. Refresh the lock
+# now: CI builds the web bundle with --locked from this commit.
+node -e '
+  const fs = require("fs");
+  const path = "src-tauri/Cargo.toml";
+  const toml = fs.readFileSync(path, "utf8");
+  const bumped = toml.replace(
+    /(\[workspace\.package\]\nversion = ")[^"]*(")/,
+    `$1${process.argv[1]}$2`,
+  );
+  if (bumped === toml && !toml.includes(`[workspace.package]\nversion = "${process.argv[1]}"`)) {
+    console.error("no [workspace.package] version in src-tauri/Cargo.toml");
+    process.exit(1);
+  }
+  fs.writeFileSync(path, bumped);
+' "$VERSION"
+(cd src-tauri && cargo update --workspace --offline --quiet)
 
 # The release overlay turns on updater artifacts (.app.tar.gz + .sig), which
 # need the signing key — everyday `npm run tauri build` stays key-free.
@@ -118,8 +136,10 @@ node -e '
 ' "$VERSION" "$SIG" "$NOTES_FILE" "$MANIFEST"
 
 # No bump commit when re-releasing the version already in the files.
-if ! git diff --quiet package.json package-lock.json src-tauri/tauri.conf.json; then
-  git add package.json package-lock.json src-tauri/tauri.conf.json
+VERSION_FILES=(package.json package-lock.json src-tauri/tauri.conf.json
+  src-tauri/Cargo.toml src-tauri/Cargo.lock)
+if ! git diff --quiet "${VERSION_FILES[@]}"; then
+  git add "${VERSION_FILES[@]}"
   git commit -m "release: v$VERSION"
 fi
 git push origin "$BRANCH"

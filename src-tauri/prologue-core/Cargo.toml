@@ -1,6 +1,6 @@
 [package]
 name = "prologue-core"
-version = "0.1.0"
+version.workspace = true
 description = "Review, diff, and persistence core shared by the Prologue app and CLI"
 edition = "2021"
 

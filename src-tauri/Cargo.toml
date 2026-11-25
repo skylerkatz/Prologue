@@ -4,9 +4,14 @@ members = ["prologue-core", "prologue", "prologue-runtime", "prologue-server"]
 # "Rust Checks" process) must cover every crate, not just the root package.
 default-members = [".", "prologue-core", "prologue", "prologue-runtime", "prologue-server"]
 
+# One version for every crate (the app, the CLI, the server), bumped by
+# scripts/release.sh alongside package.json and tauri.conf.json.
+[workspace.package]
+version = "0.7.0"
+
 [package]
 name = "prologue-app"
-version = "0.1.0"
+version.workspace = true
 description = "Prologue — a local git diff review app"
 authors = ["Skyler Katz"]
 edition = "2021"

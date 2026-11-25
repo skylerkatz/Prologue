@@ -1,6 +1,6 @@
 [package]
 name = "prologue-server"
-version = "0.1.0"
+version.workspace = true
 description = "Headless Prologue: the app's commands over HTTP, events over SSE, and the built frontend — no Tauri, no display"
 edition = "2021"
 
