@@ -1,0 +1,19 @@
+package.json
+  s_2d0c615ca603dd::t_4b6bc60d1b7cd0 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ecbe2b591726c5979b73ce7987d40829f53b6a03",
+  "prompts": {},
+  "sessions": {
+    "s_2d0c615ca603dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "470cc72b-f054-4df1-942a-4fe54af74433",
+        "model": "unknown"
+      },
+      "human_author": "Skyler Katz <skylerkatz@hey.com>"
+    }
+  }
+}
