@@ -6,6 +6,11 @@ multiplayer thread) leave comments on lines, files, or the whole review,
 then **Send to Amp**: the agent works through each comment, changes the code
 or answers it, and its replies appear in the review live.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/review-dark.png">
+  <img alt="A Prologue review: the Guide orders the changed files into sections, a teammate follows up on Amp's reply to a line comment, and Send to Amp has one pending comment" src="docs/images/review-light.png">
+</picture>
+
 Reviews live in a local SQLite database, never inside the reviewed
 repository.
 
