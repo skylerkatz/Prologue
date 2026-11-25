@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.7.1",
+    "date": "2026-11-25",
+    "notes": "## Fixed\n\n- Send to Amp now reaches the thread you sent it from. With Prologue open in two threads of the same project, comments sent from one could land in the other and then go back to unsent. Update the Prologue plugin when the review offers it\n\n## Other\n\n- `prologue --version` reports the real release version instead of 0.1.0"
+  },
+  {
     "version": "0.7.0",
     "date": "2026-11-25",
     "notes": "## New\n\n- Prologue now runs inside Amp orbs as an Amp plugin. Click Prologue Review in a thread to open the orb’s changes in the Portal pane, comment on them, then press Send to Amp and the agent works through each comment and replies in the review. The README explains how to install it\n- Reviews in Amp are shared: everyone in a multiplayer thread sees new comments, replies, and edits as they happen, each comment shows who wrote it, and the thread owner can edit or delete any comment\n- If a Send to Amp never reaches the thread, its comments go back to unsent and Prologue shows the message to paste into the thread yourself\n- Reviewing in Amp works on a phone: the toolbar shrinks to one row, and tapping a line number comments on that line or selects a range\n- When an older copy of the plugin starts a review, a banner offers to update it: Update with Amp asks the agent to do it, or copy the prompt and paste it yourself\n- Guide works with the Amp CLI when Claude Code isn’t installed, and its button says which one it uses\n- `prologue show` flags comments whose code changed since they were written, and `--open` lists only the open ones\n\n## Fixed\n\n- A branch with uncommitted work but no commits of its own is no longer treated as merged and archived. Its changes stay reviewable, and an empty view offers Show uncommitted changes"
