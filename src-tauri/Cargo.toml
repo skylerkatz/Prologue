@@ -7,7 +7,7 @@ default-members = [".", "prologue-core", "prologue", "prologue-runtime", "prolog
 # One version for every crate (the app, the CLI, the server), bumped by
 # scripts/release.sh alongside package.json and tauri.conf.json.
 [workspace.package]
-version = "0.7.0"
+version = "0.7.1"
 
 [package]
 name = "prologue-app"

@@ -3543,7 +3543,7 @@ dependencies = [
 
 [[package]]
 name = "prologue"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "clap",
  "git2",
@@ -3555,7 +3555,7 @@ dependencies = [
 
 [[package]]
 name = "prologue-app"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "prologue-core",
  "prologue-runtime",
@@ -3576,7 +3576,7 @@ dependencies = [
 
 [[package]]
 name = "prologue-core"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "base64 0.22.1",
  "git2",
@@ -3590,7 +3590,7 @@ dependencies = [
 
 [[package]]
 name = "prologue-runtime"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "notify",
  "prologue-core",
@@ -3601,7 +3601,7 @@ dependencies = [
 
 [[package]]
 name = "prologue-server"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "axum",
  "clap",
