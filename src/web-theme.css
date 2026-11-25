@@ -1098,3 +1098,26 @@
     display: none;
   }
 }
+
+/* --- Plugin update notice (PluginUpdateBanner) ------------------------- */
+
+:root[data-ui="web"] .plugin-update-banner {
+  gap: 12px;
+  padding: 6px 12px;
+  background: color-mix(in srgb, var(--amp-warning) 10%, var(--bg-app));
+  border-bottom: 1px solid var(--amp-warning-border);
+}
+
+:root[data-ui="web"] .plugin-update-banner .update-banner-text {
+  color: var(--amp-warning-text);
+}
+
+:root[data-ui="web"] .plugin-update-banner .refresh-button {
+  flex: none;
+  white-space: nowrap;
+}
+
+:root[data-ui="web"] .plugin-update-banner .update-banner-dismiss:hover {
+  background: var(--amp-accent);
+  color: var(--text-strong);
+}

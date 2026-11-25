@@ -18,12 +18,27 @@ export function finishBoot(): void {
   document.getElementById("boot-skeleton")?.remove();
 }
 
+/** An older Amp plugin started the server (see `plugin_update` in
+ * prologue-server). */
+export interface PluginUpdate {
+  /** Null for plugins from before version checks. */
+  current: number | null;
+  latest: number;
+  /** The plugin takes `request_plugin_update`; older ones only get
+   * `prompt` to paste into the thread. */
+  direct: boolean;
+  prompt: string;
+}
+
 /** What the server was started for (`prologue-server --repo … --base …`). */
 export interface WebConfig {
   repoPath: string;
   baseRef: string | null;
   /** Send to Amp is configured (the webhook URL never leaves the server). */
   ampWebhook: boolean;
+  /** The Amp plugin that started the server is older than this release's;
+   * null when it is current or no plugin started the server. */
+  pluginUpdate: PluginUpdate | null;
   /** open_repo, list_branches, and find_active_review for the served repo,
    * answered up front to save their round trips; null if any failed. */
   start: {

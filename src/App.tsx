@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { appVersion, isTauri, pickDirectory, showMessage } from "./platform";
 import { finishBoot, rememberView, webConfig } from "./web";
+import type { PluginUpdate } from "./web";
 import {
   errorText,
   findActiveReview,
@@ -31,6 +32,7 @@ import { ReviewShell } from "./components/ReviewShell";
 import { WhatsNew, hasNotesFor } from "./components/WhatsNew";
 import { TitleBar } from "./components/TitleBar";
 import { WelcomePage } from "./components/WelcomePage";
+import { PluginUpdateBanner } from "./components/web/PluginUpdateBanner";
 import "./App.css";
 
 interface OpenRepoState {
@@ -80,6 +82,7 @@ function App() {
     "idle" | "installing" | "failed"
   >("idle");
   const [showWhatsNew, setShowWhatsNew] = useState(false);
+  const [pluginUpdate, setPluginUpdate] = useState<PluginUpdate | null>(null);
 
   useEffect(() => {
     getRecentRepos()
@@ -92,15 +95,16 @@ function App() {
   useEffect(() => {
     if (!isTauri()) {
       webConfig()
-        .then((config) =>
-          config.start !== null
+        .then((config) => {
+          setPluginUpdate(config.pluginUpdate);
+          return config.start !== null
             ? showRepo(
                 config.start.repo,
                 config.start.branchList,
                 config.start.activeReview,
               )
-            : openRepoAt(config.repoPath),
-        )
+            : openRepoAt(config.repoPath);
+        })
         .catch((e) => setError(errorText(e)));
     }
     // Once per page load; openRepoAt only uses state setters.
@@ -342,6 +346,7 @@ function App() {
           </button>
         </div>
       )}
+      {pluginUpdate !== null && <PluginUpdateBanner update={pluginUpdate} />}
       {!openState ? (
         <WelcomePage
           recents={recents}

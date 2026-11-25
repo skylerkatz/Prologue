@@ -63,6 +63,11 @@ installed instead).
 - "Send to Amp" posts comment IDs (never comment text) to a webhook the
   plugin registers; the plugin only accepts a thread this orb hosts and a
   repository in its workspace.
+- Each release knows the plugin version it was built with. When an older
+  plugin starts it, the review shows an update banner: **Update with Amp**
+  asks the agent in the thread to update the plugin, and plugins too old for
+  that get **Copy update prompt** to paste instead. Dismissing it hides it
+  until the next plugin version.
 
 ### Security notes
 
@@ -138,6 +143,9 @@ again.
   `prologue-server`, the `prologue` CLI, and the Mac app).
 - `npm run generate:ipc` — regenerate `src/generated/` from the Rust types.
 - `.agents/setup` prepares a fresh Amp orb to build and test everything.
+- Bump `PLUGIN_VERSION` in `amp-plugin/prologue/index.ts` with every change
+  to the plugin or its skill; CI fails a plugin change without it
+  (`scripts/check-plugin-version.sh`).
 
 **Transport:** `src/ipc.ts` calls `POST /api/invoke/<command>` in the
 browser (Tauri `invoke` in the Mac app) with the same command names and

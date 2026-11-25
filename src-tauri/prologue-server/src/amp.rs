@@ -65,7 +65,7 @@ impl AmpSink {
             "repo": repo,
             "base": base,
         });
-        if let Err(e) = self.post(&send_id, &payload) {
+        if let Err(e) = self.post(&send_id, "the comments", &payload) {
             amp_sends::fail_send(&*db.lock()?, &send_id)?;
             return Err(e);
         }
@@ -74,7 +74,7 @@ impl AmpSink {
 
     /// POST and log the outcome; Err unless 2xx. Neither the log nor the
     /// error may echo the URL: it is a credential.
-    fn post(&self, send_id: &str, payload: &serde_json::Value) -> Result<(), String> {
+    fn post(&self, send_id: &str, what: &str, payload: &serde_json::Value) -> Result<(), String> {
         let agent: ureq::Agent = ureq::Agent::config_builder()
             .timeout_global(Some(Duration::from_secs(15)))
             .http_status_as_error(false)
@@ -89,13 +89,13 @@ impl AmpSink {
                 if (200..300).contains(&status) {
                     Ok(())
                 } else {
-                    Err(format!("Amp did not accept the comments (HTTP {status}). Try again."))
+                    Err(format!("Amp did not accept {what} (HTTP {status}). Try again."))
                 }
             }
             Err(e) => {
                 let e = redact(&e, &self.url);
                 eprintln!("prologue-server: Send to Amp {send_id}: webhook failed: {e}");
-                Err(format!("Amp did not accept the comments: {e}"))
+                Err(format!("Amp did not accept {what}: {e}"))
             }
         }
     }
@@ -145,6 +145,37 @@ pub fn handoff_message(repo: &str, comment_ids: &[i64]) -> String {
          then give me a short summary.",
         comment_ids.len()
     )
+}
+
+/// The Amp plugin built from the same commit as this server, whose
+/// `PLUGIN_VERSION` is the newest a release knows of.
+const PLUGIN_SOURCE: &str = include_str!("../../../amp-plugin/prologue/index.ts");
+
+/// `PLUGIN_VERSION` in the plugin source above.
+pub fn latest_plugin_version() -> u32 {
+    PLUGIN_SOURCE
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("const PLUGIN_VERSION = "))
+        .and_then(|rest| rest.trim_end_matches(';').trim().parse().ok())
+        .expect("amp-plugin/prologue/index.ts declares const PLUGIN_VERSION = <number>")
+}
+
+/// The message that asks the agent to update the plugin: copied by the
+/// reviewer for plugins too old to take an update request, and added to
+/// the thread by newer ones. Mirrors the plugin's text exactly; keep them
+/// in step.
+pub const PLUGIN_UPDATE_MESSAGE: &str =
+    "Update my Prologue Amp plugin to the latest version: clone the plugin repository it is \
+     installed in (my personal plugins, unless it is a workspace plugin), replace its `prologue` \
+     directory with `amp-plugin/prologue` from the main branch of \
+     https://github.com/skylerkatz/prologue, commit, and push. Then reload plugins.";
+
+impl AmpSink {
+    /// Ask the plugin to add [`PLUGIN_UPDATE_MESSAGE`] to the thread. The
+    /// payload names only the request; the plugin writes the message itself.
+    pub fn request_plugin_update(&self) -> Result<(), String> {
+        self.post("plugin update", "the update request", &json!({ "type": "update-plugin", "threadID": self.thread_id }))
+    }
 }
 
 fn redact(e: &ureq::Error, url: &str) -> String {

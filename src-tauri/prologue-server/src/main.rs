@@ -79,6 +79,10 @@ struct Cli {
     /// The Amp thread named in Send to Amp payloads.
     #[arg(long, env = "AMP_THREAD_ID", default_value = "")]
     amp_thread_id: String,
+    /// `PLUGIN_VERSION` of the Amp plugin that started this server. Plugins
+    /// from before version checks set none.
+    #[arg(long, env = "PROLOGUE_PLUGIN_VERSION")]
+    plugin_version: Option<String>,
     /// Amp user id of the thread's owner, who may edit and delete anyone's
     /// comments (everyone else only their own).
     #[arg(long, env = "PROLOGUE_OWNER_ID")]
@@ -109,6 +113,35 @@ struct WebConfig {
     base_ref: Option<String>,
     /// Whether Send to Amp is configured; the URL itself stays here.
     amp_webhook: bool,
+    /// Set when the Amp plugin that started this server is older than the
+    /// one this release was built with.
+    plugin_update: Option<PluginUpdate>,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct PluginUpdate {
+    /// The running plugin's version; None for plugins from before
+    /// version checks.
+    current: Option<u32>,
+    latest: u32,
+    /// The plugin takes `request_plugin_update`; older ones only get the
+    /// prompt to paste.
+    direct: bool,
+    prompt: &'static str,
+}
+
+/// Whether the plugin that started the server needs an update. Only a
+/// plugin sets the webhook, so a server started by hand without one never
+/// asks; a plugin that sets the webhook but no version predates the check.
+fn plugin_update(webhook: bool, version: Option<&str>, latest: u32) -> Option<PluginUpdate> {
+    let current = version.and_then(|v| v.trim().parse::<u32>().ok());
+    (webhook && current.unwrap_or(0) < latest).then_some(PluginUpdate {
+        current,
+        latest,
+        direct: current.is_some(),
+        prompt: amp::PLUGIN_UPDATE_MESSAGE,
+    })
 }
 
 #[derive(Clone)]
@@ -612,6 +645,11 @@ fn run_command(
                 .inspect_err(|_| notify())
                 .map(ok)?
         }
+        "request_plugin_update" => {
+            let amp = state.amp.as_ref().ok_or("Send to Amp is not configured")?;
+            amp.request_plugin_update()?;
+            ok(())
+        }
         "install_cli" => Err(Failure::Command(
             "Installing the command line tool is only available in the Mac app. \
                  In web mode, build it with `cargo build --release -p prologue` and put \
@@ -796,6 +834,11 @@ fn build_state(cli: &Cli) -> Result<Arc<AppState>, String> {
             repo_path,
             base_ref: cli.base.clone(),
             amp_webhook: amp.is_some(),
+            plugin_update: plugin_update(
+                amp.is_some(),
+                cli.plugin_version.as_deref(),
+                amp::latest_plugin_version(),
+            ),
         },
         db: Arc::clone(&db),
         guides: GuideRuntime::default(),
@@ -871,7 +914,7 @@ mod tests {
     fn state_for(fixture: &FixtureRepo, dir: &tempfile::TempDir) -> AppState {
         let conn = db::open(&dir.path().join("reviews.db")).unwrap();
         AppState {
-            config: WebConfig { repo_path: fixture.path(), base_ref: None, amp_webhook: false },
+            config: WebConfig { repo_path: fixture.path(), base_ref: None, amp_webhook: false, plugin_update: None },
             db: Arc::new(Db(Mutex::new(conn))),
             guides: GuideRuntime::default(),
             repo_watcher: RepoWatcher::default(),
@@ -1348,6 +1391,25 @@ mod tests {
             assert!(html.contains(r#"id="prologue-boot""#), "{page}");
             assert!(html.starts_with(r#"<html data-ui="web">"#), "{page}");
         }
+    }
+
+    /// Only a plugin-started server (webhook set) asks for an update: one
+    /// from before version checks (no version) or with an older version
+    /// does; a current or newer plugin, or a server run by hand, does not.
+    #[test]
+    fn plugin_update_is_offered_only_to_older_plugins() {
+        let latest = amp::latest_plugin_version();
+        assert!(latest >= 1);
+        let update = |webhook, version: Option<&str>| plugin_update(webhook, version, 3);
+        assert_eq!(update(false, None), None);
+        assert_eq!(update(true, Some("3")), None);
+        assert_eq!(update(true, Some("4")), None);
+        let unversioned = update(true, None).unwrap();
+        assert_eq!((unversioned.current, unversioned.latest, unversioned.direct), (None, 3, false));
+        let older = update(true, Some("2")).unwrap();
+        assert_eq!((older.current, older.direct), (Some(2), true));
+        // Garbage reads as no version: the copy fallback still works.
+        assert!(!update(true, Some("x")).unwrap().direct);
     }
 
     /// /api/config answers the UI's startup calls the way the commands

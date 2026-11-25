@@ -20,6 +20,12 @@ const ASSET = 'prologue-web-x86_64-linux.tar.gz'
 const SERVICE = 'prologue'
 const START_COMMAND = 'start-review'
 /**
+ * Bump on every change to this plugin, including its skill: prologue-server compares the
+ * running plugin's version with the one its release was built from and offers an update.
+ * CI fails a change under amp-plugin/prologue that leaves it unchanged.
+ */
+const PLUGIN_VERSION = 1
+/**
  * Release tags the plugin installs: v* releases, plus the rolling main-<sha> builds of every
  * push to main when PROLOGUE_CHANNEL=main.
  */
@@ -40,6 +46,7 @@ interface ServiceConfig {
 	webhook: string
 	ownerId?: string
 	ownerEmail?: string
+	pluginVersion?: number
 	url?: string
 }
 
@@ -80,6 +87,10 @@ function formatCommentIds(ids: number[]): string {
 	}
 	return runs.length > 8 ? `${runs.slice(0, 8).join(', ')}, …` : runs.join(', ')
 }
+
+/** Mirrors PLUGIN_UPDATE_MESSAGE in prologue-server's amp.rs exactly; keep them in step. */
+const PLUGIN_UPDATE_MESSAGE =
+	'Update my Prologue Amp plugin to the latest version: clone the plugin repository it is installed in (my personal plugins, unless it is a workspace plugin), replace its `prologue` directory with `amp-plugin/prologue` from the main branch of https://github.com/skylerkatz/prologue, commit, and push. Then reload plugins.'
 
 function reviewMessage(ids: number[], count: number, repo?: string): string {
 	const noun = count === 1 ? 'open review comment' : 'open review comments'
@@ -564,7 +575,8 @@ export default async function (amp: PluginAPI) {
 				previous.server === bundle.server &&
 				previous.webhook === webhook &&
 				(previous.ownerId ?? '') === ownerId &&
-				(previous.ownerEmail ?? '') === ownerEmail
+				(previous.ownerEmail ?? '') === ownerEmail &&
+				previous.pluginVersion === PLUGIN_VERSION
 			) {
 				const url = (await portalURL()) ?? previous.url
 				if (url) return url
@@ -584,6 +596,7 @@ export default async function (amp: PluginAPI) {
 			webhook ? `export PROLOGUE_AMP_WEBHOOK_URL=${shellQuote(webhook)}` : 'unset PROLOGUE_AMP_WEBHOOK_URL',
 			ownerId ? `export PROLOGUE_OWNER_ID=${shellQuote(ownerId)}` : 'unset PROLOGUE_OWNER_ID',
 			ownerEmail ? `export PROLOGUE_OWNER_EMAIL=${shellQuote(ownerEmail)}` : 'unset PROLOGUE_OWNER_EMAIL',
+			`export PROLOGUE_PLUGIN_VERSION=${PLUGIN_VERSION}`,
 			// Loopback only: the server has no authentication of its own, and the portal reaches it there.
 			`exec ${shellQuote(bundle.server)} --host 127.0.0.1 --dist ${shellQuote(bundle.dist)}`,
 			'',
@@ -610,7 +623,7 @@ export default async function (amp: PluginAPI) {
 		}
 		await excludePortalManifest().catch(() => {})
 		await updateSettings((s) => {
-			s.service = { repo, base, server: bundle.server, webhook, ownerId, ownerEmail, url }
+			s.service = { repo, base, server: bundle.server, webhook, ownerId, ownerEmail, pluginVersion: PLUGIN_VERSION, url }
 		})
 		return url
 	}
@@ -869,11 +882,29 @@ export default async function (amp: PluginAPI) {
 				if (inFlight.has(event.id)) return
 				inFlight.add(event.id)
 				try {
-					let payload: { threadID?: unknown; commentIds?: unknown; count?: unknown; repo?: unknown; sendId?: unknown }
+					let payload: { type?: unknown; threadID?: unknown; commentIds?: unknown; count?: unknown; repo?: unknown; sendId?: unknown }
 					try {
 						payload = JSON.parse(new TextDecoder().decode(event.body))
 					} catch {
 						log(`webhook ${event.id}: ignored, body is not JSON`)
+						return
+					}
+					// Anyone holding the webhook URL controls the payload, so its thread must be one this
+					// orb hosts.
+					const payloadThread =
+						typeof payload.threadID === 'string' && startActions.has(payload.threadID as ThreadID)
+							? (payload.threadID as ThreadID)
+							: ctx.thread.id
+
+					// The update banner's button: the message is this plugin's own text, never the payload's.
+					if (payload.type === 'update-plugin') {
+						if ((await loadSettings()).handledEvents.includes(event.id)) return
+						const thread = payloadThread === ctx.thread.id ? ctx.thread : amp.threads.get(payloadThread)
+						await thread.appendUserMessage({ type: 'user-message', content: PLUGIN_UPDATE_MESSAGE })
+						log(`webhook ${event.id}: update request appended to ${payloadThread}`)
+						await updateSettings((s) => {
+							s.handledEvents = [...s.handledEvents, event.id].slice(-200)
+						})
 						return
 					}
 					const ids = (Array.isArray(payload.commentIds) ? payload.commentIds : [])
@@ -885,8 +916,7 @@ export default async function (amp: PluginAPI) {
 						typeof payload.sendId === 'string' && /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(payload.sendId)
 							? payload.sendId
 							: undefined
-					// Anyone holding the webhook URL controls the payload, so its repository must be a
-					// checkout in this workspace and its thread one this orb hosts.
+					// Likewise, its repository must be a checkout in this workspace.
 					const claimedRepo = typeof payload.repo === 'string' ? resolve(payload.repo) : undefined
 					const payloadRepo =
 						claimedRepo &&
@@ -902,10 +932,7 @@ export default async function (amp: PluginAPI) {
 						log(`${what}: already delivered, not appending again`)
 					} else {
 						if (count > 0) {
-							const threadID =
-								typeof payload.threadID === 'string' && startActions.has(payload.threadID as ThreadID)
-									? (payload.threadID as ThreadID)
-									: ctx.thread.id
+							const threadID = payloadThread
 							const thread = threadID === ctx.thread.id ? ctx.thread : amp.threads.get(threadID)
 							const repoNote = payloadRepo && payloadRepo !== workspaceRoot ? payloadRepo : undefined
 							try {

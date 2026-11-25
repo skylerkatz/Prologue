@@ -69,6 +69,18 @@ jobs:
         working-directory: src-tauri
         run: cargo test --locked
 
+  plugin-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Plugin changes bump PLUGIN_VERSION
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: scripts/check-plugin-version.sh "$BASE"
+
   bundle:
     uses: ./.github/workflows/web-bundle.yml
 

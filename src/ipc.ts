@@ -364,6 +364,14 @@ export function sendToAmp(
   return invoke("send_to_amp", { repoPath, base, reviewId });
 }
 
+/**
+ * Web mode only: have the server ask the Amp plugin to add its update
+ * prompt to the thread.
+ */
+export function requestPluginUpdate(): Promise<void> {
+  return invoke("request_plugin_update", {});
+}
+
 /** Full new-side text of a file, for the rendered markdown preview. */
 export function getFileContent(
   repoPath: string,
