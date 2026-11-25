@@ -59,8 +59,10 @@ struct Cli {
     /// Port to listen on.
     #[arg(long, env = "PORT", default_value_t = 8080)]
     port: u16,
-    /// Address to bind.
-    #[arg(long, env = "PROLOGUE_HOST", default_value = "0.0.0.0")]
+    /// Address to bind. Loopback by default: the server has no
+    /// authentication, so expose it through an authenticated proxy such as
+    /// an Amp portal, which reaches loopback.
+    #[arg(long, env = "PROLOGUE_HOST", default_value = "127.0.0.1")]
     host: String,
     /// The built frontend (`npm run build` output). Default: `dist` next to
     /// this binary (the release bundle's layout), else `./dist`.
@@ -1342,7 +1344,9 @@ mod tests {
             assert_eq!(res.status(), StatusCode::OK, "{page}");
             assert_eq!(cache(&res).as_deref(), Some("no-cache"), "{page}");
             let html = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
-            assert!(String::from_utf8_lossy(&html).contains(r#"id="prologue-boot""#), "{page}");
+            let html = String::from_utf8_lossy(&html);
+            assert!(html.contains(r#"id="prologue-boot""#), "{page}");
+            assert!(html.starts_with(r#"<html data-ui="web">"#), "{page}");
         }
     }
 

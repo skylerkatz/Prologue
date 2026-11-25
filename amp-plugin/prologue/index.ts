@@ -6,10 +6,11 @@ import type {
 	ThreadID,
 } from '@ampcode/plugin'
 import { execFile } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { appendFile, chmod, lstat, mkdir, readFile, readdir, rename, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 
 export const description =
 	'Review the orb’s changes in Prologue: starts the Prologue web UI in the Portal pane and turns “Send to Amp” into a thread message for the prologue-review skill.'
@@ -18,8 +19,12 @@ const GITHUB_REPO = 'skylerkatz/prologue'
 const ASSET = 'prologue-web-x86_64-linux.tar.gz'
 const SERVICE = 'prologue'
 const START_COMMAND = 'start-review'
-/** Bases to suggest the first time a project is reviewed. */
-const SUGGESTED_BASES: Record<string, string> = { 'internachi/www': 'origin/production' }
+/**
+ * Release tags the plugin installs: v* releases, plus the rolling main-<sha> builds of every
+ * push to main when PROLOGUE_CHANNEL=main.
+ */
+const CHANNEL_MAIN = process.env.PROLOGUE_CHANNEL === 'main'
+const wantedTag = (tag: string) => tag.startsWith('v') || (CHANNEL_MAIN && tag.startsWith('main-'))
 
 interface Bundle {
 	server: string
@@ -166,7 +171,7 @@ export default async function (amp: PluginAPI) {
 		const root = join(cacheDir, 'releases')
 		const dated: { tag: string; at: number }[] = []
 		for (const tag of await readdir(root).catch(() => [] as string[])) {
-			if (!tag.includes('.download-')) dated.push({ tag, at: await cachedAt(join(root, tag)) })
+			if (!tag.includes('.download-') && wantedTag(tag)) dated.push({ tag, at: await cachedAt(join(root, tag)) })
 		}
 		dated.sort((a, b) => b.at - a.at)
 		for (const { tag } of dated) {
@@ -214,7 +219,7 @@ export default async function (amp: PluginAPI) {
 		let best: Release | undefined
 		for (const r of releases) {
 			const asset = r.assets.find((a) => a.name === ASSET)
-			if (r.draft || !asset || !r.published_at) continue
+			if (r.draft || !asset || !r.published_at || !wantedTag(r.tag_name)) continue
 			if (!best || Date.parse(r.published_at) > Date.parse(best.publishedAt)) {
 				best = { tag: r.tag_name, publishedAt: r.published_at, url: asset.browser_download_url }
 			}
@@ -237,8 +242,8 @@ export default async function (amp: PluginAPI) {
 		for (const [, entry] of xml.matchAll(/<entry>([\s\S]*?)<\/entry>/g)) {
 			const tag = entry!.match(/\/releases\/tag\/([^"<]+)"/)?.[1]
 			const updated = entry!.match(/<updated>([^<]+)<\/updated>/)?.[1]
-			if (tag && updated && !Number.isNaN(Date.parse(updated))) {
-				const decoded = decodeURIComponent(tag)
+			const decoded = tag && decodeURIComponent(tag)
+			if (decoded && wantedTag(decoded) && updated && !Number.isNaN(Date.parse(updated))) {
 				entries.push({ tag: decoded, publishedAt: updated, url: assetURL(decoded) })
 			}
 		}
@@ -343,8 +348,15 @@ export default async function (amp: PluginAPI) {
 		try {
 			const response = await fetch(release.url, { signal: AbortSignal.timeout(180_000) })
 			if (!response.ok) throw new Error(`download failed with HTTP ${response.status}`)
+			const bytes = new Uint8Array(await response.arrayBuffer())
+			// Releases publish `sha256sum` output next to the archive; refuse a build without one.
+			const sums = await fetch(`${release.url}.sha256`, { signal: AbortSignal.timeout(20_000) })
+			if (!sums.ok) throw new Error(`no ${ASSET}.sha256 in the release (HTTP ${sums.status})`)
+			const expected = (await sums.text()).trim().split(/\s+/)[0]?.toLowerCase()
+			const actual = createHash('sha256').update(bytes).digest('hex')
+			if (expected !== actual) throw new Error(`checksum mismatch: expected ${expected}, got ${actual}`)
 			const archive = join(staging, ASSET)
-			await writeFile(archive, new Uint8Array(await response.arrayBuffer()))
+			await writeFile(archive, bytes)
 			const untar = await run('tar', ['-xzf', archive, '-C', staging])
 			if (untar.code !== 0) throw new Error(`tar failed: ${untar.stderr.trim()}`)
 			await rm(archive)
@@ -453,8 +465,7 @@ export default async function (amp: PluginAPI) {
 		return match ? match[1]!.toLowerCase() : repo
 	}
 
-	async function suggestBase(repo: string, key: string): Promise<string> {
-		if (SUGGESTED_BASES[key]) return SUGGESTED_BASES[key]
+	async function suggestBase(repo: string): Promise<string> {
 		const head = await git(repo, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD')
 		if (head.code === 0 && head.stdout.trim()) return head.stdout.trim()
 		for (const candidate of ['origin/main', 'origin/master', 'main', 'master']) {
@@ -467,7 +478,7 @@ export default async function (amp: PluginAPI) {
 		const base = await ui.input({
 			title: `Prologue: Base for ${key}`,
 			helpText: 'Prologue reviews the changes on this branch since this ref. It is remembered for this project.',
-			initialValue: current ?? (await suggestBase(repo, key)),
+			initialValue: current ?? (await suggestBase(repo)),
 			submitButtonText: 'Review',
 		})
 		return base?.trim() || undefined
@@ -573,7 +584,8 @@ export default async function (amp: PluginAPI) {
 			webhook ? `export PROLOGUE_AMP_WEBHOOK_URL=${shellQuote(webhook)}` : 'unset PROLOGUE_AMP_WEBHOOK_URL',
 			ownerId ? `export PROLOGUE_OWNER_ID=${shellQuote(ownerId)}` : 'unset PROLOGUE_OWNER_ID',
 			ownerEmail ? `export PROLOGUE_OWNER_EMAIL=${shellQuote(ownerEmail)}` : 'unset PROLOGUE_OWNER_EMAIL',
-			`exec ${shellQuote(bundle.server)} --dist ${shellQuote(bundle.dist)}`,
+			// Loopback only: the server has no authentication of its own, and the portal reaches it there.
+			`exec ${shellQuote(bundle.server)} --host 127.0.0.1 --dist ${shellQuote(bundle.dist)}`,
 			'',
 		]
 		await mkdir(cacheDir, { recursive: true })
@@ -873,8 +885,16 @@ export default async function (amp: PluginAPI) {
 						typeof payload.sendId === 'string' && /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(payload.sendId)
 							? payload.sendId
 							: undefined
-					const payloadRepo = typeof payload.repo === 'string' ? payload.repo : undefined
-					const repo = payloadRepo && existsSync(join(payloadRepo, '.git')) ? payloadRepo : (await loadSettings()).service?.repo
+					// Anyone holding the webhook URL controls the payload, so its repository must be a
+					// checkout in this workspace and its thread one this orb hosts.
+					const claimedRepo = typeof payload.repo === 'string' ? resolve(payload.repo) : undefined
+					const payloadRepo =
+						claimedRepo &&
+						(claimedRepo === workspaceRoot || claimedRepo.startsWith(`${workspaceRoot}/`)) &&
+						existsSync(join(claimedRepo, '.git'))
+							? claimedRepo
+							: undefined
+					const repo = payloadRepo ?? (await loadSettings()).service?.repo
 					const what = `webhook ${event.id}: sendId ${sendId ?? 'none'}, comments ${ids.length ? formatCommentIds(ids) : `${count} (no ids)`}`
 
 					const redelivered = (await loadSettings()).handledEvents.includes(event.id)
@@ -883,7 +903,7 @@ export default async function (amp: PluginAPI) {
 					} else {
 						if (count > 0) {
 							const threadID =
-								typeof payload.threadID === 'string' && /^T-[0-9a-f-]+$/i.test(payload.threadID)
+								typeof payload.threadID === 'string' && startActions.has(payload.threadID as ThreadID)
 									? (payload.threadID as ThreadID)
 									: ctx.thread.id
 							const thread = threadID === ctx.thread.id ? ctx.thread : amp.threads.get(threadID)

@@ -3,11 +3,13 @@
 # tagged main-<short sha>, and the previous main-* prerelease is deleted, so
 # exactly one main build is on the releases page at a time.
 #
-# Each main build gets its own tag because the Amp Prologue plugin takes the
-# newest release that has prologue-web-x86_64-linux.tar.gz and caches it by
-# tag name: a tag that moved would never be downloaded again. The release is
-# never "latest", so the Mac updater's latest.json is unaffected, and a later
-# v* release is newer, so the plugin switches to it until main moves again.
+# Each main build gets its own tag because the Amp Prologue plugin
+# (amp-plugin/prologue), when PROLOGUE_CHANNEL=main, takes the newest release
+# that has prologue-web-x86_64-linux.tar.gz and caches it by tag name: a tag
+# that moved would never be downloaded again. Without that setting the plugin
+# ignores main-* builds. The release is never "latest", so the Mac updater's
+# latest.json is unaffected, and a later v* release is newer, so the plugin
+# switches to it until main moves again.
 name: CI
 
 on:
@@ -91,10 +93,12 @@ jobs:
       - name: Publish main-<short sha> prerelease
         run: |
           tag="main-${GITHUB_SHA::7}"
+          # The Amp plugin refuses a bundle without its checksum.
+          sha256sum "$ASSET" > "$ASSET.sha256"
           if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" "$ASSET" --clobber
+            gh release upload "$tag" "$ASSET" "$ASSET.sha256" --clobber
           else
-            gh release create "$tag" "$ASSET" --target "$GITHUB_SHA" \
+            gh release create "$tag" "$ASSET" "$ASSET.sha256" --target "$GITHUB_SHA" \
               --prerelease --latest=false \
               --title "Prologue main ($tag)" \
               --notes "Linux web-mode bundle built from main at $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$GITHUB_SHA by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID. Replaced by the next main build."

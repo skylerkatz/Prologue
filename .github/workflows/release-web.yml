@@ -50,4 +50,6 @@ jobs:
               --notes "Linux web-mode bundle (prologue-server, prologue CLI, frontend)." \
               || true
           fi
-          gh release upload "$TAG" "$ASSET" --clobber
+          # The Amp plugin refuses a bundle without its checksum.
+          sha256sum "$ASSET" > "$ASSET.sha256"
+          gh release upload "$TAG" "$ASSET" "$ASSET.sha256" --clobber
