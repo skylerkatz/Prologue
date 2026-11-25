@@ -258,7 +258,10 @@ pub async fn index(State(state): State<Arc<AppState>>, uri: Uri, headers: Header
             (header::CONTENT_TYPE, "text/html; charset=utf-8"),
             (header::CACHE_CONTROL, "no-cache"),
         ],
-        html.replacen("</head>", &inject, 1),
+        // data-ui="web" from the first paint, not once main.tsx runs: it
+        // applies the web theme and shows index.html's loading skeleton.
+        html.replacen("<html", "<html data-ui=\"web\"", 1)
+            .replacen("</head>", &inject, 1),
     )
         .into_response()
 }

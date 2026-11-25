@@ -12,6 +12,12 @@ import {
 import type { BranchList, DiffMode, RepoInfo, Review } from "./types";
 import type { LoadedReview } from "./ipc";
 
+/** Remove index.html's loading skeleton: the review, or an error, is on
+ * screen. Safe to call again. */
+export function finishBoot(): void {
+  document.getElementById("boot-skeleton")?.remove();
+}
+
 /** What the server was started for (`prologue-server --repo … --base …`). */
 export interface WebConfig {
   repoPath: string;

@@ -986,3 +986,115 @@
     color: var(--text-muted);
   }
 }
+
+/* --- Loading skeleton (index.html #boot-skeleton) ---------------------- */
+
+/* Covers the page from the first paint until the review renders, so the
+   welcome page and "Select branches" never flash past. The Mac app never
+   sets data-ui, so it never shows. */
+.boot-skeleton {
+  display: none;
+}
+
+:root[data-ui="web"] .boot-skeleton {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-app);
+}
+
+:root[data-ui="web"] .boot-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 45px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+:root[data-ui="web"] .boot-toolbar .boot-bar {
+  /* Shrink rather than overflow on a phone. */
+  flex: 0 1 auto;
+  min-width: 24px;
+  height: 28px;
+  border-radius: 6px;
+}
+
+:root[data-ui="web"] .boot-spacer {
+  flex: 1;
+}
+
+:root[data-ui="web"] .boot-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+:root[data-ui="web"] .boot-sidebar {
+  width: 288px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 14px;
+  border-right: 1px solid var(--border);
+}
+
+:root[data-ui="web"] .boot-diff {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  background: var(--bg-card);
+}
+
+:root[data-ui="web"] .boot-bar {
+  display: block;
+  flex: none;
+  height: 12px;
+  border-radius: 4px;
+  background: linear-gradient(
+      90deg,
+      transparent 0%,
+      var(--amp-accent) 50%,
+      transparent 100%
+    )
+    0 0 / 200% 100% no-repeat,
+    var(--amp-muted);
+  animation: boot-shimmer 1.4s ease-in-out infinite;
+}
+
+/* A file header: taller, with room above it. */
+:root[data-ui="web"] .boot-diff .boot-file {
+  height: 22px;
+  margin: 6px 0 4px;
+}
+
+:root[data-ui="web"] .boot-diff .boot-file:first-child {
+  margin-top: 0;
+}
+
+@keyframes boot-shimmer {
+  from {
+    background-position: 150% 0, 0 0;
+  }
+  to {
+    background-position: -50% 0, 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-ui="web"] .boot-bar {
+    animation: none;
+  }
+}
+
+/* The file list is a drawer at these widths. */
+@media (max-width: 899px) {
+  :root[data-ui="web"] .boot-sidebar {
+    display: none;
+  }
+}

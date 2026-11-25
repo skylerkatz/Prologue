@@ -7,6 +7,41 @@
   </head>
 
   <body>
+    <!-- Web mode's loading screen: the shape of the review, shown from the
+         first paint until the review renders (finishBoot in src/web.ts).
+         Hidden unless <html data-ui="web">, so the Mac app never shows it. -->
+    <div id="boot-skeleton" class="boot-skeleton" aria-busy="true" aria-label="Loading review">
+      <div class="boot-toolbar">
+        <span class="boot-bar" style="width: 120px"></span>
+        <span class="boot-bar" style="width: 200px"></span>
+        <span class="boot-bar" style="width: 90px"></span>
+        <span class="boot-spacer"></span>
+        <span class="boot-bar" style="width: 110px"></span>
+      </div>
+      <div class="boot-body">
+        <div class="boot-sidebar">
+          <span class="boot-bar" style="width: 70%"></span>
+          <span class="boot-bar" style="width: 55%"></span>
+          <span class="boot-bar" style="width: 80%"></span>
+          <span class="boot-bar" style="width: 62%"></span>
+          <span class="boot-bar" style="width: 74%"></span>
+          <span class="boot-bar" style="width: 48%"></span>
+        </div>
+        <div class="boot-diff">
+          <span class="boot-bar boot-file" style="width: 40%"></span>
+          <span class="boot-bar" style="width: 64%"></span>
+          <span class="boot-bar" style="width: 52%"></span>
+          <span class="boot-bar" style="width: 78%"></span>
+          <span class="boot-bar" style="width: 36%"></span>
+          <span class="boot-bar" style="width: 70%"></span>
+          <span class="boot-bar" style="width: 58%"></span>
+          <span class="boot-bar boot-file" style="width: 34%"></span>
+          <span class="boot-bar" style="width: 60%"></span>
+          <span class="boot-bar" style="width: 82%"></span>
+          <span class="boot-bar" style="width: 46%"></span>
+        </div>
+      </div>
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

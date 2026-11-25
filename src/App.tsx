@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { appVersion, isTauri, pickDirectory, showMessage } from "./platform";
-import { rememberView, webConfig } from "./web";
+import { finishBoot, rememberView, webConfig } from "./web";
 import {
   errorText,
   findActiveReview,
@@ -105,6 +105,14 @@ function App() {
     }
     // Once per page load; openRepoAt only uses state setters.
   }, []);
+
+  // The repository didn't open: drop web mode's loading skeleton to show
+  // the welcome page with the error.
+  useEffect(() => {
+    if (error !== null) {
+      finishBoot();
+    }
+  }, [error]);
 
   // Mirror the view into a cookie: the server inlines the review for this
   // view into the next page load (it cannot read localStorage).

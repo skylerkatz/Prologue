@@ -27,6 +27,7 @@ import {
   WebFileDrawer,
 } from "./web/WebFileDrawer";
 import { WebToolbar } from "./web/WebToolbar";
+import { finishBoot } from "../web";
 import { guideOrderedFiles } from "../diff/guideOrder";
 import { useCommentMutations } from "./useCommentMutations";
 import { useGuide } from "./useGuide";
@@ -264,6 +265,13 @@ export function ReviewShell({
   // working changes), so there is no repo or branch to pick. It has its own
   // header, and at Portal-pane widths keeps the file list in a drawer.
   const webMode = !isTauri();
+  // Web mode's loading skeleton stays up until the diff, or why there is
+  // none, is on screen.
+  useEffect(() => {
+    if (view !== null || error !== null) {
+      finishBoot();
+    }
+  }, [view, error]);
   const narrow = useMediaQuery(NARROW_LAYOUT_QUERY) && webMode;
   const phone = useMediaQuery(PHONE_LAYOUT_QUERY) && webMode;
   const [filesOpen, setFilesOpen] = useState(false);
