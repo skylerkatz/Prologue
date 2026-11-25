@@ -122,6 +122,8 @@ export interface WebViewer {
   /** The thread's owner: may edit and delete anyone's comments (the
    * server enforces it). */
   isOwner: boolean;
+  /** An owner is configured: comments with no stored author are theirs. */
+  ownerConfigured: boolean;
 }
 
 let viewer: WebViewer | null = null;

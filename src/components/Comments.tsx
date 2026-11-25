@@ -146,9 +146,12 @@ const STATE_BADGES: Record<Exclude<CommentState, "open">, string> = {
 /** How an author reads in a card. Web mode runs inside Amp, whose agent
  * writes through the CLI as "agent" (the default) or "amp". */
 function authorName(author: string): string {
-  return !isTauri() && ["agent", "amp"].includes(author.toLowerCase())
-    ? "Amp"
-    : author;
+  return !isTauri() && isAgentAuthor(author) ? "Amp" : author;
+}
+
+/** The CLI's identity-less agent authors (prologue-server is_agent_author). */
+function isAgentAuthor(author: string): boolean {
+  return ["agent", "amp"].includes(author.toLowerCase());
 }
 
 /** "You" for the app's own writes and the viewer's portal comments; the
@@ -244,10 +247,13 @@ export function CommentCard({
   const author = useAuthorLabel(comment);
   const viewer = useSyncExternalStore(subscribeWebViewer, getWebViewer);
   // Comments by an Amp user are theirs (and the thread owner's) to edit or
-  // delete — the server enforces it; the app's, the agent's, and
-  // unattributed ones stay open to all.
+  // delete — the server enforces it. Unattributed ones are the owner's
+  // when the server names one; the agent's stay open to all.
   const mayModify =
-    comment.authorId === null || author.you || viewer?.isOwner === true;
+    viewer?.isOwner === true ||
+    (comment.authorId !== null
+      ? author.you
+      : viewer?.ownerConfigured !== true || isAgentAuthor(comment.author));
   const ampTracked = ampSent !== null && !isReply && comment.state === "open";
   const ampSending = ampTracked && ampSent.sending.has(comment.id);
   const ampPending =

@@ -149,6 +149,9 @@ struct AmpUser {
     email: Option<String>,
     /// The thread's owner (see [`Owner`]): may edit and delete any comment.
     is_owner: bool,
+    /// An owner is configured, so comments with no stored author are the
+    /// owner's (see [`check_author`]); the UI hides their Edit and Delete.
+    owner_configured: bool,
 }
 
 /// Who owns the Amp thread, as the plugin tells the server (the portal's
@@ -173,6 +176,10 @@ impl Owner {
             (None, None) => false,
         }
     }
+
+    fn is_configured(&self) -> bool {
+        self.id.is_some() || self.email.is_some()
+    }
 }
 
 impl AmpUser {
@@ -191,15 +198,21 @@ impl AmpUser {
         // Comment authors are printable and at most 64 characters (the
         // core's rule); a display name is shown, so fit it rather than
         // refuse the comment.
+        let email = header("x-amp-user-email");
+        // Without a display name, the email's local part reads better than
+        // an opaque user id.
         let display_name: String = header("x-amp-user-display-name")
-            .unwrap_or_else(|| id.clone())
+            .or_else(|| {
+                let local = email.as_deref()?.split('@').next()?.trim();
+                (!local.is_empty()).then(|| local.to_owned())
+            })
+            .unwrap_or_else(|| "Amp user".to_owned())
             .chars()
             .filter(|c| !c.is_control())
             .take(64)
             .collect();
-        let email = header("x-amp-user-email");
         let is_owner = owner.is(&id, email.as_deref());
-        Some(AmpUser { id, display_name, email, is_owner })
+        Some(AmpUser { id, display_name, email, is_owner, owner_configured: owner.is_configured() })
     }
 }
 
@@ -255,14 +268,22 @@ fn reviewer(user: Option<&AmpUser>) -> &str {
     user.map_or(review::LOCAL_REVIEWER, |u| u.id.as_str())
 }
 
+/// Agent comments: the CLI writes them with no identity as "agent" (its
+/// default) or "amp". Anyone may edit or delete them.
+fn is_agent_author(author: &str) -> bool {
+    author.eq_ignore_ascii_case("agent") || author.eq_ignore_ascii_case("amp")
+}
+
 /// A comment written by an Amp user is theirs alone to edit or delete —
 /// and the thread owner's, who may change any comment. Comments with no
-/// stored identity (the agent's, the app's, older rows) stay editable by
-/// anyone, as before. Returns the comment.
+/// stored identity (the app's, older rows, web writes without headers) are
+/// the owner's when one is configured; with none, anyone's, as before.
+/// Agent comments stay editable by anyone. Returns the comment.
 fn check_author(
     conn: &prologue_core::rusqlite::Connection,
     comment_id: i64,
     user: Option<&AmpUser>,
+    owner: &Owner,
     action: &str,
 ) -> Result<review::Comment, String> {
     let comment = review::get_comment(conn, comment_id)?;
@@ -271,6 +292,9 @@ fn check_author(
         Some(author) if user.map(|u| &u.id) != Some(author) => Err(format!(
             "Only {} can {action} C{comment_id} — it is their comment. Reply instead.",
             comment.author
+        )),
+        None if owner.is_configured() && !is_agent_author(&comment.author) => Err(format!(
+            "Only the thread owner can {action} C{comment_id}. Reply instead."
         )),
         _ => Ok(comment),
     }
@@ -438,7 +462,7 @@ fn run_command(
             let expected: Option<String> = a.get("expectedUpdatedAt")?;
             let comment_id: i64 = a.get("commentId")?;
             let conn = state.db.lock()?;
-            let current = check_author(&conn, comment_id, user, "edit")?;
+            let current = check_author(&conn, comment_id, user, &state.owner, "edit")?;
             // Someone other than the author (the owner, or anyone on an
             // agent's comment) is named next to it; the author's own edit
             // clears that.
@@ -456,7 +480,7 @@ fn run_command(
         "delete_comment" => {
             let comment_id: i64 = a.get("commentId")?;
             let conn = state.db.lock()?;
-            check_author(&conn, comment_id, user, "delete")?;
+            check_author(&conn, comment_id, user, &state.owner, "delete")?;
             ok(review::delete_comment_impl(&conn, comment_id)?)
         }
         "update_comment_state" => {
@@ -1011,7 +1035,7 @@ mod tests {
         let fixture = FixtureRepo::standard_review_fixture();
         let dir = tempfile::tempdir().unwrap();
         let state = state_for(&fixture, &dir);
-        let user = |id: &str| AmpUser { id: id.to_owned(), display_name: id.to_owned(), email: None, is_owner: false };
+        let user = |id: &str| AmpUser { id: id.to_owned(), display_name: id.to_owned(), email: None, is_owner: false, owner_configured: false };
         let (ada, grace) = (user("ada"), user("grace"));
         let repo_path = fixture.path();
         let opened = call(
@@ -1116,6 +1140,67 @@ mod tests {
         call_as(&state, Some(&sky), "delete_comment", json!({ "commentId": graces })).unwrap();
     }
 
+    /// With an owner configured, comments with no stored author (the app's,
+    /// older rows) are the owner's: others may only reply. Agent comments
+    /// stay open to all, and without an owner nothing changes.
+    #[test]
+    fn unattributed_comments_belong_to_the_owner() {
+        let fixture = FixtureRepo::standard_review_fixture();
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = state_for(&fixture, &dir);
+        let owner = Owner::new(Some("sky".into()), None);
+        let user = |id: &str| {
+            let mut h = HeaderMap::new();
+            h.insert("x-amp-user-id", id.parse().unwrap());
+            AmpUser::from_headers(&h, &owner).unwrap()
+        };
+        let (sky, grace) = (user("sky"), user("grace"));
+        let repo_path = fixture.path();
+        let review_id = call(
+            &state,
+            "open_review",
+            json!({ "repoPath": repo_path, "branch": "feature", "baseRef": "main", "mode": "committed" }),
+        )
+        .unwrap()["review"]["id"]
+            .as_i64()
+            .unwrap();
+        // Written as the CLI and the app write: no identity.
+        let unattributed = |state: &AppState, author: &str| {
+            call(state, "create_comment",
+                json!({ "repoPath": repo_path, "base": "main", "head": "feature", "mode": "committed",
+                        "comment": { "reviewId": review_id, "level": "review", "body": "x", "author": author } }))
+                .unwrap()["id"].clone()
+        };
+        let (apps, agents, amps) =
+            (unattributed(&state, "reviewer"), unattributed(&state, "agent"), unattributed(&state, "Amp"));
+
+        // No owner configured: anyone, as before.
+        call_as(&state, Some(&grace), "update_comment", json!({ "commentId": apps, "body": "a" })).unwrap();
+
+        state.owner = owner.clone();
+        let err = call_as(&state, Some(&grace), "update_comment", json!({ "commentId": apps, "body": "b" }))
+            .unwrap_err();
+        assert!(err.contains("Only the thread owner"), "{err}");
+        call_as(&state, Some(&grace), "delete_comment", json!({ "commentId": apps })).unwrap_err();
+        call_as(&state, None, "delete_comment", json!({ "commentId": apps })).unwrap_err();
+        call_as(&state, Some(&grace), "update_comment", json!({ "commentId": agents, "body": "c" })).unwrap();
+        call_as(&state, Some(&grace), "delete_comment", json!({ "commentId": amps })).unwrap();
+        call_as(&state, Some(&sky), "update_comment", json!({ "commentId": apps, "body": "d" })).unwrap();
+        call_as(&state, Some(&sky), "delete_comment", json!({ "commentId": apps })).unwrap();
+        assert!(grace.owner_configured && !grace.is_owner && sky.is_owner);
+    }
+
+    /// Without a display-name header, a viewer is named by their email's
+    /// local part, else generically — never by their opaque user id.
+    #[test]
+    fn a_missing_display_name_falls_back_to_the_email() {
+        let mut h = HeaderMap::new();
+        h.insert("x-amp-user-id", "user_01abc".parse().unwrap());
+        assert_eq!(AmpUser::from_headers(&h, &Owner::default()).unwrap().display_name, "Amp user");
+        h.insert("x-amp-user-email", "skyler@example.com".parse().unwrap());
+        assert_eq!(AmpUser::from_headers(&h, &Owner::default()).unwrap().display_name, "skyler");
+    }
+
     /// load_review answers what the separate calls would, in one: the
     /// opened review, its comments with anchors, this viewer's marks, and
     /// hunks identical to get_file_diff's for the files that open expanded
@@ -1125,7 +1210,7 @@ mod tests {
         let fixture = FixtureRepo::standard_review_fixture();
         let dir = tempfile::tempdir().unwrap();
         let state = state_for(&fixture, &dir);
-        let ada = AmpUser { id: "ada".into(), display_name: "Ada".into(), email: None, is_owner: false };
+        let ada = AmpUser { id: "ada".into(), display_name: "Ada".into(), email: None, is_owner: false, owner_configured: false };
         let repo_path = fixture.path();
         let spec = json!({ "repoPath": repo_path, "base": "main", "head": "feature", "mode": "committed" });
         let load = |who: Option<&AmpUser>| {
