@@ -24,7 +24,7 @@ const START_COMMAND = 'start-review'
  * running plugin's version with the one its release was built from and offers an update.
  * CI fails a change under amp-plugin/prologue that leaves it unchanged.
  */
-const PLUGIN_VERSION = 1
+const PLUGIN_VERSION = 2
 /**
  * Release tags the plugin installs: v* releases, plus the rolling main-<sha> builds of every
  * push to main when PROLOGUE_CHANNEL=main.
@@ -875,9 +875,13 @@ export default async function (amp: PluginAPI) {
 	}
 
 	const inFlight = new Set<string>()
+	// Project threads owned by the same user share a registration per key, and its handler runs in
+	// whichever thread owns it, so each thread needs its own key: otherwise a send from a second
+	// thread is appended to, and confirmed in, the first thread's orb.
+	const threadKey = process.env.AMP_THREAD_ID?.startsWith('T-') ? `-${process.env.AMP_THREAD_ID}` : ''
 	webhookURL = amp
 		.createWebhook({
-			key: 'send-to-amp',
+			key: `send-to-amp${threadKey}`,
 			handler: async (event, ctx) => {
 				if (inFlight.has(event.id)) return
 				inFlight.add(event.id)
