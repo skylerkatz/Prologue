@@ -75,6 +75,8 @@ import { OrphanOrigin } from "./OrphanedComments";
 import { useCopyPath } from "./useCopyPath";
 import { Toast } from "./useToast";
 import { prefetchedFileDiff, type DiffParams } from "../diff/prefetch";
+import { nudgeRange, touchRange, type TouchAnchor } from "../diff/touchRange";
+import { useMediaQuery } from "./web/WebFileDrawer";
 
 /** Parallel `get_file_diff` calls; each recomputes the repo diff in Rust. */
 const MAX_CONCURRENT_LOADS = 3;
@@ -273,6 +275,23 @@ export function DiffView({
     selectionRef.current = sel;
     setSelection(sel);
   }, []);
+
+  // Touch (`pointer: coarse`): a gutter tap selects one line and offers
+  // Comment / Select range; in range mode the next tap sets the other end.
+  // Taps arrive as the browser's synthesized mouse events, which only fire
+  // for taps — a scroll that starts on the gutter never selects anything.
+  // The pick only shows while the selection still matches it, so every
+  // path that clears or replaces the selection dismisses it too.
+  const coarse = useMediaQuery("(pointer: coarse)");
+  const coarseRef = useRef(coarse);
+  coarseRef.current = coarse;
+  const [touchPick, setTouchPick] = useState<
+    (TouchAnchor & { path: string; mode: "bar" | "range" }) | null
+  >(null);
+  const touchPickRef = useRef(touchPick);
+  touchPickRef.current = touchPick;
+  // The last range tap fell in another hunk and was clamped to this one.
+  const [rangeClamped, setRangeClamped] = useState(false);
 
   // ── Refresh reconciliation ─────────────────────────────────────────────
   // A new summary adjusts state during render (React's derived-state
@@ -654,6 +673,35 @@ export function DiffView({
   const gutterDown = useCallback((path: string, hi: number, line: DiffLine, shiftKey: boolean) => {
     const side = lineSide(line);
     const n = lineNumber(line);
+    if (coarseRef.current) {
+      const pick = touchPickRef.current;
+      if (pick?.mode === "range" && pick.path === path) {
+        if (pick.hi === hi && pick.side === side && pick.line === n) {
+          setTouchPick(null);
+          applySelection(null);
+          return;
+        }
+        const hunks = statesRef.current.get(path)?.diff?.hunks ?? [];
+        const range = touchRange(hunks, pick, { hi, line });
+        if (range !== null) {
+          setTouchPick(null);
+          setRangeClamped(range.clamped);
+          applySelection({ path, hi: pick.hi, side: pick.side, start: range.start, end: range.end });
+          setComposer({
+            level: "line",
+            path,
+            side: pick.side,
+            startLine: range.start,
+            endLine: range.end,
+          });
+        }
+        return;
+      }
+      applySelection({ path, hi, side, start: n, end: n });
+      setComposer(null);
+      setTouchPick({ path, hi, side, line: n, mode: "bar" });
+      return;
+    }
     const prev = selectionRef.current;
     if (
       shiftKey &&
@@ -784,6 +832,49 @@ export function DiffView({
     applySelection(null);
   }, []);
 
+  /** The composer's ↑/↓ range controls: move one end by a line within the
+   * selection's hunk and side, keeping highlight and composer in step. */
+  const nudgeComposerRange = useCallback(
+    (edge: "start" | "end", delta: number) => {
+      const target = composerRef.current;
+      const sel = selectionRef.current;
+      if (target?.level !== "line" || sel === null || sel.path !== target.path) {
+        return;
+      }
+      const hunk = statesRef.current.get(sel.path)?.diff?.hunks[sel.hi];
+      if (hunk === undefined) {
+        return;
+      }
+      const next = nudgeRange(
+        hunk,
+        sel.side,
+        { start: target.startLine, end: target.endLine },
+        edge,
+        delta,
+      );
+      setRangeClamped(false);
+      applySelection({ ...sel, start: next.start, end: next.end });
+      setComposer({ ...target, startLine: next.start, endLine: next.end });
+    },
+    [applySelection],
+  );
+
+  const pickedLineComment = () => {
+    const pick = touchPickRef.current;
+    if (pick === null) {
+      return;
+    }
+    setTouchPick(null);
+    setRangeClamped(false);
+    setComposer({
+      level: "line",
+      path: pick.path,
+      side: pick.side,
+      startLine: pick.line,
+      endLine: pick.line,
+    });
+  };
+
   const saveComment = useCallback(
     (id: number, body: string, expectedUpdatedAt?: string) =>
       onUpdateComment(id, body, expectedUpdatedAt).then(() =>
@@ -878,6 +969,32 @@ export function DiffView({
     rangeExtractor,
   });
   const items = virtualizer.getVirtualItems();
+
+  // The touch pick shows only while the selection is still its one line
+  // (bar) or its start (range mode); the bar floats under that line's row.
+  const pickActive =
+    touchPick !== null &&
+    selection !== null &&
+    selection.path === touchPick.path &&
+    selection.hi === touchPick.hi &&
+    selection.side === touchPick.side &&
+    selection.start === touchPick.line &&
+    selection.end === touchPick.line &&
+    composer === null;
+  let pickBar: { index: number; top: number } | null = null;
+  if (pickActive && touchPick.mode === "bar") {
+    const item = items.find((it) => {
+      const row = rows[it.index];
+      return (
+        row.kind === "line" &&
+        row.hi === touchPick.hi &&
+        summary.files[row.fi].path === touchPick.path &&
+        lineSide(row.line) === touchPick.side &&
+        lineNumber(row.line) === touchPick.line
+      );
+    });
+    pickBar = item === undefined ? null : { index: item.index, top: item.start - topHeight };
+  }
 
   // Push-out: once the pinned file's last row nears the top, slide the
   // header up with it (GitHub-style) instead of hovering over the tail.
@@ -1326,6 +1443,9 @@ export function DiffView({
               onStartReply={startReply}
               onComposerSubmit={submitComposer}
               onComposerCancel={cancelComposer}
+              rangeControls={coarse && selection !== null}
+              rangeClamped={rangeClamped}
+              onNudgeRange={nudgeComposerRange}
               onEditStart={setEditingId}
               onEditCancel={cancelEdit}
               onSaveComment={saveComment}
@@ -1335,7 +1455,52 @@ export function DiffView({
           </div>
           );
         })}
+        {pickBar !== null && (
+          <div
+            className="touch-line-bar"
+            role="toolbar"
+            aria-label={`Line ${touchPick?.line}`}
+            style={{ top: pickBar.top }}
+            ref={(el) => {
+              // Float just under the line itself, not under its row's threads.
+              const line = el?.parentElement?.querySelector<HTMLElement>(
+                `.diff-row[data-index="${pickBar.index}"] .diff-line`,
+              );
+              if (el && line) el.style.top = `${pickBar.top + line.offsetHeight}px`;
+            }}
+          >
+            <button type="button" className="composer-submit" onClick={pickedLineComment}>
+              Comment
+            </button>
+            <button
+              type="button"
+              className="composer-cancel"
+              onClick={() =>
+                setTouchPick((pick) => (pick === null ? null : { ...pick, mode: "range" }))
+              }
+            >
+              Select range
+            </button>
+          </div>
+        )}
       </div>
+      {pickActive && touchPick?.mode === "range" && (
+        <div className="touch-range-hint" role="status">
+          <span>
+            Line {touchPick.line} selected. Tap the end line to set the range.
+          </span>
+          <button
+            type="button"
+            className="composer-cancel"
+            onClick={() => {
+              setTouchPick(null);
+              applySelection(null);
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
       {toast !== null && <Toast {...toast} />}
     </div>
   );
@@ -1367,6 +1532,10 @@ interface RowContentProps {
   onStartReply: (path: string, rootId: number) => void;
   onComposerSubmit: (body: string) => Promise<void>;
   onComposerCancel: () => void;
+  /** Touch: the line composer shows its range with ↑/↓ end controls. */
+  rangeControls: boolean;
+  rangeClamped: boolean;
+  onNudgeRange: (edge: "start" | "end", delta: number) => void;
   onEditStart: (id: number) => void;
   onEditCancel: () => void;
   onSaveComment: (id: number, body: string, expectedUpdatedAt?: string) => Promise<void>;
@@ -1406,6 +1575,9 @@ const RowContent = memo(function RowContent({
   onStartReply,
   onComposerSubmit,
   onComposerCancel,
+  rangeControls,
+  rangeClamped,
+  onNudgeRange,
   onEditStart,
   onEditCancel,
   onSaveComment,
@@ -1558,6 +1730,14 @@ const RowContent = memo(function RowContent({
         <div
           className={`inline-comment${composer?.level === "reply" ? " reply-composer" : ""}`}
         >
+          {rangeControls && composer?.level === "line" && (
+            <RangeControls
+              start={composer.startLine}
+              end={composer.endLine}
+              clamped={rangeClamped}
+              onNudge={onNudgeRange}
+            />
+          )}
           <CommentComposer
             drafts={drafts}
             draftKey={
@@ -1589,6 +1769,50 @@ const RowContent = memo(function RowContent({
       );
   }
 });
+
+/** "Lines 30–42" with ↑/↓ for each end, above a touch line composer. */
+function RangeControls({
+  start,
+  end,
+  clamped,
+  onNudge,
+}: {
+  start: number;
+  end: number;
+  clamped: boolean;
+  onNudge: (edge: "start" | "end", delta: number) => void;
+}) {
+  const nudge = (edge: "start" | "end", delta: number, label: string) => (
+    <button
+      type="button"
+      className="range-nudge"
+      aria-label={label}
+      onClick={() => onNudge(edge, delta)}
+    >
+      {delta < 0 ? "↑" : "↓"}
+    </button>
+  );
+  return (
+    <div className="range-controls" role="group" aria-label="Comment range">
+      <span className="range-label">
+        {start === end ? `Line ${start}` : `Lines ${start}–${end}`}
+      </span>
+      <span className="range-edge">
+        Start
+        {nudge("start", -1, "Move start up a line")}
+        {nudge("start", 1, "Move start down a line")}
+      </span>
+      <span className="range-edge">
+        End
+        {nudge("end", -1, "Move end up a line")}
+        {nudge("end", 1, "Move end down a line")}
+      </span>
+      {clamped && (
+        <span className="range-note">A comment's lines stay within one hunk.</span>
+      )}
+    </div>
+  );
+}
 
 function FileHeaderRow({
   file,
