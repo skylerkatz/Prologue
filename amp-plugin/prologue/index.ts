@@ -16,7 +16,8 @@ export const description =
 	'Review the orb’s changes in Prologue: starts the Prologue web UI in the Portal pane and turns “Send to Amp” into a thread message for the prologue-review skill.'
 
 const GITHUB_REPO = 'skylerkatz/prologue'
-const ASSET = 'prologue-web-x86_64-linux.tar.gz'
+const WEB_ARCH = process.arch === 'x64' ? 'x86_64' : process.arch === 'arm64' ? 'aarch64' : undefined
+const ASSET = WEB_ARCH && `prologue-web-${WEB_ARCH}-linux.tar.gz`
 const SERVICE = 'prologue'
 const START_COMMAND = 'start-review'
 /**
@@ -24,7 +25,7 @@ const START_COMMAND = 'start-review'
  * running plugin's version with the one its release was built from and offers an update.
  * CI fails a change under amp-plugin/prologue that leaves it unchanged.
  */
-const PLUGIN_VERSION = 4
+const PLUGIN_VERSION = 5
 /**
  * Release tags the plugin installs: v* releases, plus the rolling main-<sha> builds of every
  * push to main when PROLOGUE_CHANNEL=main.
@@ -323,8 +324,8 @@ export default async function (amp: PluginAPI) {
 
 	/** Find the newest release with the web asset and make sure it is extracted in the cache. Never notifies. */
 	async function resolveBundle(current: BundleJob): Promise<BundleResult> {
-		if (process.platform !== 'linux' || process.arch !== 'x64') {
-			return { error: `Prologue’s web release is built for x86_64 Linux only, not ${process.platform}/${process.arch}.` }
+		if (process.platform !== 'linux' || !ASSET) {
+			return { error: `Prologue’s web release supports x86_64 and aarch64 Linux, not ${process.platform}/${process.arch}.` }
 		}
 
 		const { release, errors } = await lookupRelease()

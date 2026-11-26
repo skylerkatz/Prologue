@@ -1,11 +1,11 @@
-# Checks every push to main and every PR, and builds the Linux web bundle
-# (web-bundle.yml). On main, the bundle is also published as a prerelease
-# tagged main-<short sha>, and the previous main-* prerelease is deleted, so
+# Checks every push to main and every PR, and builds the Linux web bundles
+# (web-bundle.yml). On main, the bundles are published as a prerelease tagged
+# main-<short sha>, and the previous main-* prerelease is deleted, so
 # exactly one main build is on the releases page at a time.
 #
 # Each main build gets its own tag because the Amp Prologue plugin
 # (amp-plugin/prologue), when PROLOGUE_CHANNEL=main, takes the newest release
-# that has prologue-web-x86_64-linux.tar.gz and caches it by tag name: a tag
+# that has a bundle for its architecture and caches it by tag name: a tag
 # that moved would never be downloaded again. Without that setting the plugin
 # ignores main-* builds. The release is never "latest", so the Mac updater's
 # latest.json is unaffected, and a later v* release is newer, so the plugin
@@ -91,13 +91,13 @@ jobs:
     permissions:
       contents: write
     env:
-      ASSET: prologue-web-x86_64-linux.tar.gz
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
     steps:
       - uses: actions/download-artifact@v8
         with:
-          name: prologue-web-x86_64-linux.tar.gz
+          pattern: prologue-web-*-linux.tar.gz
+          merge-multiple: true
 
       # Publish the new build before pruning the old one, so the plugin
       # always finds a main build. Tags created with GITHUB_TOKEN start no
@@ -105,12 +105,16 @@ jobs:
       - name: Publish main-<short sha> prerelease
         run: |
           tag="main-${GITHUB_SHA::7}"
-          # The Amp plugin refuses a bundle without its checksum.
-          sha256sum "$ASSET" > "$ASSET.sha256"
+          # Require both bundles and include a checksum for each.
+          assets=()
+          for asset in prologue-web-{x86_64,aarch64}-linux.tar.gz; do
+            sha256sum "$asset" > "$asset.sha256"
+            assets+=("$asset" "$asset.sha256")
+          done
           if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" "$ASSET" "$ASSET.sha256" --clobber
+            gh release upload "$tag" "${assets[@]}" --clobber
           else
-            gh release create "$tag" "$ASSET" "$ASSET.sha256" --target "$GITHUB_SHA" \
+            gh release create "$tag" "${assets[@]}" --target "$GITHUB_SHA" \
               --prerelease --latest=false \
               --title "Prologue main ($tag)" \
               --notes "Linux web-mode bundle built from main at $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$GITHUB_SHA by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID. Replaced by the next main build."

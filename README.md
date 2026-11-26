@@ -53,11 +53,12 @@ installed instead).
 
 ## How the plugin runs Prologue
 
-- It downloads the newest `v*` release that carries
-  `prologue-web-x86_64-linux.tar.gz` (`prologue-server`, the `prologue`
-  CLI, and the built UI) from this repository's GitHub releases, verifies
-  it against the release's `.sha256`, and caches it. Set
-  `PROLOGUE_CHANNEL=main` to follow every push to main instead.
+- It downloads the bundle for the orb's architecture from the newest `v*`
+  release that carries it: `prologue-web-x86_64-linux.tar.gz` or
+  `prologue-web-aarch64-linux.tar.gz` (ARM64). Each contains `prologue-server`,
+  the `prologue` CLI, and the built UI. The plugin verifies the bundle against
+  its `.sha256` and caches it. Set `PROLOGUE_CHANNEL=main` to follow every push
+  to main instead.
 - Set `PROLOGUE_DEFAULT_BASE` (for example `origin/production`) as a
   workspace or project environment variable to review against that ref
   without asking. A base remembered for the project still wins, and
@@ -111,7 +112,7 @@ cd .. && src-tauri/target/release/prologue-server \
   --repo /path/to/repo --base origin/main      # base is optional
 ```
 
-Or unpack `prologue-web-x86_64-linux.tar.gz` from a release and run
+Or unpack the Linux bundle for your architecture from a release and run
 `./prologue-server --repo …`; it finds the `dist/` next to it. In an orb,
 run it as a supervised service with a portal (absolute paths; the service's
 working directory may differ):
@@ -161,8 +162,9 @@ when the stream drops and refreshes on reconnect, since events may have
 been missed meanwhile.
 
 **Releases:** every push to main publishes a `main-<sha>` prerelease, and
-every `v*` tag gets the web bundle attached by
-`.github/workflows/release-web.yml`, each with its `.sha256`.
+every `v*` tag gets both Linux web bundles attached by
+`.github/workflows/release-web.yml`. Both release types include a `.sha256`
+for each bundle.
 
 ## macOS app
 

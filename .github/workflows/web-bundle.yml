@@ -1,5 +1,5 @@
-# Builds the Linux web-mode bundle, prologue-web-x86_64-linux.tar.gz, and
-# uploads it as a workflow artifact of the same name. The tarball holds
+# Builds the x86_64 and aarch64 Linux web-mode bundles and uploads each
+# prologue-web-<arch>-linux.tar.gz as a workflow artifact. Each tarball holds
 # prologue-server, the prologue CLI, and dist/ at its top level;
 # prologue-server serves the dist/ next to its binary by default.
 #
@@ -19,9 +19,16 @@ jobs:
   linux-bundle:
     # 22.04's glibc (2.35) keeps the binaries runnable on older distros,
     # including Debian 12 orbs.
-    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            arch: x86_64
+          - runner: ubuntu-22.04-arm
+            arch: aarch64
+    runs-on: ${{ matrix.runner }}
     env:
-      ASSET: prologue-web-x86_64-linux.tar.gz
+      ASSET: prologue-web-${{ matrix.arch }}-linux.tar.gz
     steps:
       - uses: actions/checkout@v7
         with:
@@ -51,8 +58,11 @@ jobs:
 
       - name: Package
         run: |
+          test "$(uname -m)" = "${{ matrix.arch }}"
           mkdir -p bundle
           cp src-tauri/target/release/prologue-server src-tauri/target/release/prologue bundle/
+          ./bundle/prologue-server --help >/dev/null
+          ./bundle/prologue --help >/dev/null
           cp -R dist bundle/dist
           tar -C bundle -czf "$ASSET" prologue-server prologue dist
           tar -tzf "$ASSET" | head -5
@@ -60,7 +70,7 @@ jobs:
       # Unzipped: the artifact is the tarball itself, named after it.
       - uses: actions/upload-artifact@v7
         with:
-          path: prologue-web-x86_64-linux.tar.gz
+          path: ${{ env.ASSET }}
           archive: false
           if-no-files-found: error
           retention-days: 14
