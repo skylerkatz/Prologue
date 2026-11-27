@@ -1,6 +1,5 @@
-# Web mode release bundle: on a v* tag, build the Linux web bundle
-# (web-bundle.yml) and attach prologue-web-x86_64-linux.tar.gz to that tag's
-# GitHub release.
+# Web mode release bundles: on a v* tag, build the x86_64 and aarch64 Linux
+# web bundles (web-bundle.yml) and attach both to that tag's GitHub release.
 #
 # The Mac release (scripts/release.sh) publishes to the same release; this
 # job creates the release only if it does not exist yet, never as "latest",
@@ -30,16 +29,22 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TAG: ${{ inputs.tag || github.ref_name }}
-      ASSET: prologue-web-x86_64-linux.tar.gz
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
     steps:
       - uses: actions/download-artifact@v8
         with:
-          name: prologue-web-x86_64-linux.tar.gz
+          pattern: prologue-web-*-linux.tar.gz
+          merge-multiple: true
 
       - name: Attach to the release
         run: |
+          # Require both bundles and include a checksum for each.
+          assets=()
+          for asset in prologue-web-{x86_64,aarch64}-linux.tar.gz; do
+            sha256sum "$asset" > "$asset.sha256"
+            assets+=("$asset" "$asset.sha256")
+          done
           prerelease=()
           [[ "$TAG" == *-* ]] && prerelease=(--prerelease)
           if ! gh release view "$TAG" >/dev/null 2>&1; then
@@ -50,6 +55,4 @@ jobs:
               --notes "Linux web-mode bundle (prologue-server, prologue CLI, frontend)." \
               || true
           fi
-          # The Amp plugin refuses a bundle without its checksum.
-          sha256sum "$ASSET" > "$ASSET.sha256"
-          gh release upload "$TAG" "$ASSET" "$ASSET.sha256" --clobber
+          gh release upload "$TAG" "${assets[@]}" --clobber
