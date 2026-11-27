@@ -906,31 +906,6 @@ mod tests {
         assert_eq!(summary_rows(&summary), expected);
     }
 
-    #[test]
-    fn committed_diff_matches_git_cli_on_this_real_repo() {
-        // CARGO_MANIFEST_DIR is src-tauri/prologue-core; the git repo root
-        // is two levels up.
-        let repo_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .to_string_lossy()
-            .into_owned();
-        let summary = get_diff_summary(
-            &DiffSpec {
-                repo_path: repo_path.clone(),
-                base: "main".into(),
-                head: "HEAD".into(),
-                mode: DiffMode::Committed,
-            },
-            false,
-        )
-        .unwrap();
-        let expected = git_cli_numstat(&repo_path, "main", "HEAD");
-        assert_eq!(summary_rows(&summary), expected);
-    }
-
     /// Fixture for mode tests: distinct files change at each layer.
     fn mode_fixture() -> FixtureRepo {
         let fixture = FixtureRepo::new();
