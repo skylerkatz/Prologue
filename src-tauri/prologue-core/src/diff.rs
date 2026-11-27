@@ -917,17 +917,20 @@ mod tests {
             .unwrap()
             .to_string_lossy()
             .into_owned();
+        // HEAD~1 rather than main: PR checkouts are a detached merge commit
+        // with no local main, and on main itself main...HEAD is empty.
         let summary = get_diff_summary(
             &DiffSpec {
                 repo_path: repo_path.clone(),
-                base: "main".into(),
+                base: "HEAD~1".into(),
                 head: "HEAD".into(),
                 mode: DiffMode::Committed,
             },
             false,
         )
         .unwrap();
-        let expected = git_cli_numstat(&repo_path, "main", "HEAD");
+        let expected = git_cli_numstat(&repo_path, "HEAD~1", "HEAD");
+        assert!(!expected.is_empty());
         assert_eq!(summary_rows(&summary), expected);
     }
 
